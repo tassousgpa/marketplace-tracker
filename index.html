@@ -1,80 +1,147 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <meta charset="UTF-8" />
-    <title>Marketplace Tracker</title>
-  </head>
+<head>
+  <meta charset="UTF-8" />
+  <title>Marketplace Tracker</title>
+</head>
 
-  <body>
-    <h1>🚀 Marketplace Tracker</h1>
+<body style="font-family: Arial; padding: 20px;">
 
-    <!-- KPI -->
-    <div id="kpi" style="margin-bottom: 20px;">
-      Chargement des KPI...
+<h1>🚀 Marketplace Tracker</h1>
+
+<div id="kpi"></div>
+
+<hr>
+
+<div id="products"></div>
+
+<script>
+const API = "https://pmxsthzdxubqbemdgtbr.supabase.co/rest/v1/product_snapshots";
+const KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBteHN0aHpkeHVicWJlbWRndGJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk4NDQsImV4cCI6MjA5MDAyNTg0NH0.GpfAw91eJ8D7RIeZLFIejCt9DTwGpXvOGcxYlhZS78I";
+
+async function load() {
+  const res = await fetch(`${API}?select=product_id,price,delivery_days,date,url&order=product_id.asc,date.desc`, {
+    headers: {
+      apikey: KEY,
+      Authorization: `Bearer ${KEY}`
+    }
+  });
+
+  const data = await res.json();
+
+  // =====================
+  // LATEST / PREVIOUS
+  // =====================
+  const latest = {};
+  const previous = {};
+
+  data.forEach(d => {
+    if (!latest[d.product_id]) {
+      latest[d.product_id] = d;
+    } else if (!previous[d.product_id]) {
+      previous[d.product_id] = d;
+    }
+  });
+
+  const latestArr = Object.values(latest);
+
+  // =====================
+  // KPI
+  // =====================
+  const total = latestArr.length;
+
+  const avgPrice = Math.round(
+    latestArr.reduce((s, d) => s + (d.price || 0), 0) / total
+  );
+
+  const avgDelay = Math.round(
+    latestArr.reduce((s, d) => s + (d.delivery_days || 0), 0) / total
+  );
+
+  let delayUp = 0;
+  let delayDown = 0;
+  let priceUp = 0;
+
+  const delayUpList = [];
+  const delayDownList = [];
+  const priceUpList = [];
+
+  latestArr.forEach(l => {
+    const p = previous[l.product_id];
+    if (!p) return;
+
+    const dDiff = l.delivery_days - p.delivery_days;
+    const pDiff = (l.price - p.price) / p.price;
+
+    if (dDiff > 5) {
+      delayUp++;
+      delayUpList.push(`${l.product_id}: ${p.delivery_days} → ${l.delivery_days}`);
+    }
+
+    if (dDiff < -5) {
+      delayDown++;
+      delayDownList.push(`${l.product_id}: ${p.delivery_days} → ${l.delivery_days}`);
+    }
+
+    if (pDiff > 0.1) {
+      priceUp++;
+      priceUpList.push(`${l.product_id}: ${p.price} → ${l.price}`);
+    }
+  });
+
+  // =====================
+  // KPI RENDER
+  // =====================
+  document.getElementById("kpi").innerHTML = `
+    <div><strong>Produits suivis :</strong> ${total}</div>
+    <div><strong>Prix moyen :</strong> ${avgPrice} €</div>
+    <div><strong>Délai moyen :</strong> ${avgDelay} jours</div>
+
+    <br>
+
+    <div>
+      <strong>Délai en hausse (>5j) :</strong> ${Math.round(delayUp/total*100)}%
+      <button onclick="show(delayUpList)">voir</button>
     </div>
 
-    <!-- LISTE PRODUITS -->
-    <div id="app">Chargement...</div>
+    <div>
+      <strong>Délai en baisse (>5j) :</strong> ${Math.round(delayDown/total*100)}%
+      <button onclick="show(delayDownList)">voir</button>
+    </div>
 
-    <script>
-      async function loadData() {
-        const res = await fetch(
-          "https://pmxsthzdxubqbemdgtbr.supabase.co/rest/v1/product_snapshots?select=product_id,price,delivery_days,date,url&order=product_id.asc,date.desc",
-          {
-            headers: {
-              apikey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBteHN0aHpkeHVicWJlbWRndGJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk4NDQsImV4cCI6MjA5MDAyNTg0NH0.GpfAw91eJ8D7RIeZLFIejCt9DTwGpXvOGcxYlhZS78I",
-              Authorization: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBteHN0aHpkeHVicWJlbWRndGJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk4NDQsImV4cCI6MjA5MDAyNTg0NH0.GpfAw91eJ8D7RIeZLFIejCt9DTwGpXvOGcxYlhZS78I"
-            }
-          }
-        );
+    <div>
+      <strong>Prix en hausse (>10%) :</strong> ${Math.round(priceUp/total*100)}%
+      <button onclick="show(priceUpList)">voir</button>
+    </div>
+  `;
 
-        const data = await res.json();
+  // =====================
+  // LIST PRODUITS
+  // =====================
+  document.getElementById("products").innerHTML = latestArr.map(d => {
+    const p = previous[d.product_id];
 
-        // 🔥 garder uniquement le dernier snapshot par produit
-        const seen = new Set();
-        const finalData = [];
+    let tag = "";
+    if (p) {
+      const diff = d.delivery_days - p.delivery_days;
+      if (diff > 5) tag = " 🔴 délai ↑";
+      if (diff < -5) tag = " 🟢 délai ↓";
+    }
 
-        for (const d of data) {
-          if (!seen.has(d.product_id)) {
-            seen.add(d.product_id);
-            finalData.push(d);
-          }
-        }
+    return `
+      <div style="margin-bottom:8px;">
+        <strong>${d.product_id}</strong> — ${d.price}€ — ${d.delivery_days}j ${tag}
+      </div>
+    `;
+  }).join("");
+}
 
-        // =====================
-        // KPI
-        // =====================
-        const total = finalData.length;
+function show(list) {
+  alert(list.length ? list.join("\n") : "Aucun résultat");
+}
 
-        const avgPrice =
-          finalData.reduce((sum, d) => sum + (d.price || 0), 0) / total;
+load();
+</script>
 
-        const avgDelay =
-          finalData.reduce((sum, d) => sum + (d.delivery_days || 0), 0) / total;
-
-        document.getElementById("kpi").innerHTML = `
-          <div><strong>Produits suivis :</strong> ${total}</div>
-          <div><strong>Prix moyen :</strong> ${Math.round(avgPrice)} €</div>
-          <div><strong>Délai moyen :</strong> ${Math.round(avgDelay)} jours</div>
-        `;
-
-        // =====================
-        // LISTE PRODUITS
-        // =====================
-        const container = document.getElementById("app");
-
-        container.innerHTML = finalData
-          .map(
-            (d) => `
-          <div style="margin-bottom: 10px;">
-            <strong>${d.product_id}</strong> — ${d.price}€ — ${d.delivery_days} jours
-          </div>
-        `
-          )
-          .join("");
-      }
-
-      loadData();
-    </script>
-  </body>
+</body>
 </html>
