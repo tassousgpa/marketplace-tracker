@@ -9,15 +9,22 @@
 
 <h1>🚀 Marketplace Tracker</h1>
 
-<div id="kpi"></div>
+<!-- ONGLETS -->
+<div style="margin-bottom: 20px;">
+  <button onclick="showTab('synthese')">Synthèse</button>
+  <button onclick="showTab('produits')">Produits</button>
+  <button onclick="showTab('historique')">Historique</button>
+</div>
 
-<hr>
-
-<div id="products"></div>
+<!-- CONTENU -->
+<div id="content"></div>
 
 <script>
 const API = "https://pmxsthzdxubqbemdgtbr.supabase.co/rest/v1/product_snapshots";
-const KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBteHN0aHpkeHVicWJlbWRndGJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk4NDQsImV4cCI6MjA5MDAyNTg0NH0.GpfAw91eJ8D7RIeZLFIejCt9DTwGpXvOGcxYlhZS78I";
+const KEY = "TA_CLE";
+
+let latestArr = [];
+let previous = {};
 
 async function load() {
   const res = await fetch(`${API}?select=product_id,price,delivery_days,date,url&order=product_id.asc,date.desc`, {
@@ -29,11 +36,8 @@ async function load() {
 
   const data = await res.json();
 
-  // =====================
-  // LATEST / PREVIOUS
-  // =====================
   const latest = {};
-  const previous = {};
+  previous = {};
 
   data.forEach(d => {
     if (!latest[d.product_id]) {
@@ -43,11 +47,18 @@ async function load() {
     }
   });
 
-  const latestArr = Object.values(latest);
+  latestArr = Object.values(latest);
 
-  // =====================
-  // KPI
-  // =====================
+  showTab("synthese");
+}
+
+function showTab(tab) {
+  if (tab === "synthese") renderSynthese();
+  if (tab === "produits") renderProduits();
+  if (tab === "historique") renderHistorique();
+}
+
+function renderSynthese() {
   const total = latestArr.length;
 
   const avgPrice = Math.round(
@@ -58,86 +69,41 @@ async function load() {
     latestArr.reduce((s, d) => s + (d.delivery_days || 0), 0) / total
   );
 
-  let delayUp = 0;
-  let delayDown = 0;
-  let priceUp = 0;
-
-  const delayUpList = [];
-  const delayDownList = [];
-  const priceUpList = [];
-
-  latestArr.forEach(l => {
-    const p = previous[l.product_id];
-    if (!p) return;
-
-    const dDiff = l.delivery_days - p.delivery_days;
-    const pDiff = (l.price - p.price) / p.price;
-
-    if (dDiff > 5) {
-      delayUp++;
-      delayUpList.push(`${l.product_id}: ${p.delivery_days} → ${l.delivery_days}`);
-    }
-
-    if (dDiff < -5) {
-      delayDown++;
-      delayDownList.push(`${l.product_id}: ${p.delivery_days} → ${l.delivery_days}`);
-    }
-
-    if (pDiff > 0.1) {
-      priceUp++;
-      priceUpList.push(`${l.product_id}: ${p.price} → ${l.price}`);
-    }
-  });
-
-  // =====================
-  // KPI RENDER
-  // =====================
-  document.getElementById("kpi").innerHTML = `
-    <div><strong>Produits suivis :</strong> ${total}</div>
+  document.getElementById("content").innerHTML = `
+    <h2>Synthèse</h2>
+    <div><strong>Produits :</strong> ${total}</div>
     <div><strong>Prix moyen :</strong> ${avgPrice} €</div>
     <div><strong>Délai moyen :</strong> ${avgDelay} jours</div>
-
-    <br>
-
-    <div>
-      <strong>Délai en hausse (>5j) :</strong> ${Math.round(delayUp/total*100)}%
-      <button onclick="show(delayUpList)">voir</button>
-    </div>
-
-    <div>
-      <strong>Délai en baisse (>5j) :</strong> ${Math.round(delayDown/total*100)}%
-      <button onclick="show(delayDownList)">voir</button>
-    </div>
-
-    <div>
-      <strong>Prix en hausse (>10%) :</strong> ${Math.round(priceUp/total*100)}%
-      <button onclick="show(priceUpList)">voir</button>
-    </div>
   `;
-
-  // =====================
-  // LIST PRODUITS
-  // =====================
-  document.getElementById("products").innerHTML = latestArr.map(d => {
-    const p = previous[d.product_id];
-
-    let tag = "";
-    if (p) {
-      const diff = d.delivery_days - p.delivery_days;
-      if (diff > 5) tag = " 🔴 délai ↑";
-      if (diff < -5) tag = " 🟢 délai ↓";
-    }
-
-    return `
-      <div style="margin-bottom:8px;">
-        <strong>${d.product_id}</strong> — ${d.price}€ — ${d.delivery_days}j ${tag}
-      </div>
-    `;
-  }).join("");
 }
 
-function show(list) {
-  alert(list.length ? list.join("\n") : "Aucun résultat");
+function renderProduits() {
+  document.getElementById("content").innerHTML = `
+    <h2>Produits</h2>
+    ${latestArr.map(d => {
+      const p = previous[d.product_id];
+
+      let variation = "";
+      if (p) {
+        const diff = d.delivery_days - p.delivery_days;
+        if (diff > 5) variation = "🔴 + délai";
+        if (diff < -5) variation = "🟢 - délai";
+      }
+
+      return `
+        <div style="margin-bottom:8px;">
+          <strong>${d.product_id}</strong> — ${d.price}€ — ${d.delivery_days}j ${variation}
+        </div>
+      `;
+    }).join("")}
+  `;
+}
+
+function renderHistorique() {
+  document.getElementById("content").innerHTML = `
+    <h2>Historique</h2>
+    <p>À venir (comparaison dans le temps)</p>
+  `;
 }
 
 load();
