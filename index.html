@@ -9,7 +9,7 @@
 
 <h1>🚀 Marketplace Tracker</h1>
 
-<!-- FILTRE MARKETPLACE -->
+<!-- FILTRE -->
 <div style="margin-bottom: 15px;">
   <button onclick="setMarket('all')">Tous</button>
   <button onclick="setMarket('cdiscount')">Cdiscount</button>
@@ -20,7 +20,6 @@
   <button onclick="showTab('synthese')">Synthèse</button>
   <button onclick="showTab('produits')">Produits</button>
   <button onclick="showTab('positions')">Positions</button>
-  <button onclick="showTab('historique')">Historique</button>
 </div>
 
 <div id="content"></div>
@@ -29,7 +28,6 @@
 const API_PRODUCTS = "https://pmxsthzdxubqbemdgtbr.supabase.co/rest/v1/product_snapshots";
 const API_POSITIONS = "https://pmxsthzdxubqbemdgtbr.supabase.co/rest/v1/positions";
 
-// 🔑 TA CLE ICI
 const KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBteHN0aHpkeHVicWJlbWRndGJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk4NDQsImV4cCI6MjA5MDAyNTg0NH0.GpfAw91eJ8D7RIeZLFIejCt9DTwGpXvOGcxYlhZS78I";
 
 let latestArr = [];
@@ -41,7 +39,7 @@ let currentMarket = "all";
 // =====================
 async function loadProducts() {
   const res = await fetch(
-    API_PRODUCTS + "?select=product_id,price,delivery_days,date,url,marketplace&order=product_id.asc,date.desc",
+    API_PRODUCTS + "?select=product_id,marketplace",
     {
       headers: {
         apikey: KEY,
@@ -52,20 +50,7 @@ async function loadProducts() {
 
   const data = await res.json();
 
-  const latest = {};
-  previous = {};
-
-  data.forEach(d => {
-    if (currentMarket !== "all" && d.marketplace !== currentMarket) return;
-
-    if (!latest[d.product_id]) {
-      latest[d.product_id] = d;
-    } else if (!previous[d.product_id]) {
-      previous[d.product_id] = d;
-    }
-  });
-
-  latestArr = Object.values(latest);
+  return data.map(d => d.product_id);
 }
 
 // =====================
@@ -75,103 +60,42 @@ function showTab(tab) {
   if (tab === "synthese") renderSynthese();
   if (tab === "produits") renderProduits();
   if (tab === "positions") renderPositions();
-  if (tab === "historique") renderHistorique();
 }
 
 function setMarket(market) {
   currentMarket = market;
-  init();
-}
-
-async function init() {
-  await loadProducts();
-  showTab("synthese");
+  showTab("positions");
 }
 
 // =====================
-// SYNTHÈSE
-// =====================
+// SYNTHÈSE (simple)
 function renderSynthese() {
-  const total = latestArr.length;
-
-  const avgPrice = total
-    ? Math.round(latestArr.reduce((s, d) => s + (d.price || 0), 0) / total)
-    : 0;
-
-  const avgDelay = total
-    ? Math.round(latestArr.reduce((s, d) => s + (d.delivery_days || 0), 0) / total)
-    : 0;
-
   document.getElementById("content").innerHTML = `
-    <h2>Synthèse (${currentMarket})</h2>
-    <div><strong>Produits :</strong> ${total}</div>
-    <div><strong>Prix moyen :</strong> ${avgPrice} €</div>
-    <div><strong>Délai moyen :</strong> ${avgDelay} jours</div>
+    <h2>Synthèse</h2>
+    <p>Utilise l’onglet Positions</p>
   `;
 }
 
 // =====================
-// PRODUITS
-// =====================
+// PRODUITS (optionnel)
 function renderProduits() {
   document.getElementById("content").innerHTML = `
-    <h2>Produits (${currentMarket})</h2>
-
-    <table border="1" cellpadding="8" style="border-collapse: collapse; width: 100%;">
-      <thead>
-        <tr>
-          <th>Produit</th>
-          <th>Prix</th>
-          <th>Δ Prix</th>
-          <th>Délai</th>
-          <th>Δ Délai</th>
-          <th>Status</th>
-        </tr>
-      </thead>
-
-      <tbody>
-        ${latestArr.map(d => {
-          const p = previous[d.product_id];
-
-          let priceDiff = "";
-          let delayDiff = "";
-          let status = "";
-
-          if (p) {
-            const pDiff = ((d.price - p.price) / p.price) * 100;
-            const dDiff = d.delivery_days - p.delivery_days;
-
-            priceDiff = isNaN(pDiff) ? "" : pDiff.toFixed(1) + "%";
-            delayDiff = dDiff !== 0 ? (dDiff > 0 ? "+" : "") + dDiff + "j" : "0";
-
-            if (dDiff > 5) status = "🔴 délai ↑";
-            else if (dDiff < -5) status = "🟢 délai ↓";
-            else if (pDiff > 10) status = "🟠 prix ↑";
-          }
-
-          return `
-            <tr>
-              <td>${d.product_id}</td>
-              <td>${d.price}€</td>
-              <td>${priceDiff}</td>
-              <td>${d.delivery_days}j</td>
-              <td>${delayDiff}</td>
-              <td>${status}</td>
-            </tr>
-          `;
-        }).join("")}
-      </tbody>
-    </table>
+    <h2>Produits</h2>
+    <p>Voir Positions pour analyse</p>
   `;
 }
 
 // =====================
-// POSITIONS (CORRIGÉ)
+// POSITIONS (VERSION BUSINESS)
 // =====================
 async function renderPositions() {
 
+  // 1. mes produits
+  const myProducts = await loadProducts();
+
+  // 2. positions
   const res = await fetch(
-    API_POSITIONS + "?select=keyword,position,seller,marketplace&order=date.desc&limit=1000",
+    API_POSITIONS + "?select=keyword,product_id,position,seller,marketplace&limit=2000",
     {
       headers: {
         apikey: KEY,
@@ -182,13 +106,7 @@ async function renderPositions() {
 
   const data = await res.json();
 
-  console.log("📊 positions data", data);
-
-  if (!data || data.length === 0) {
-    document.getElementById("content").innerHTML = "<p>Aucune donnée</p>";
-    return;
-  }
-
+  // 3. groupement
   const grouped = {};
 
   data.forEach(d => {
@@ -203,25 +121,40 @@ async function renderPositions() {
   Object.keys(grouped).forEach(keyword => {
     const items = grouped[keyword];
 
-    const avgPos = Math.round(
-      items.reduce((s, i) => s + i.position, 0) / items.length
-    );
+    // marché
+    const total = items.length;
 
+    // mes produits
+    const myItems = items.filter(i => myProducts.includes(i.product_id));
+    const myCount = myItems.length;
+
+    // visibilité
+    const visibility = total ? Math.round((myCount / total) * 100) : 0;
+
+    // TOP VENDEURS
     const sellers = {};
-
     items.forEach(i => {
       sellers[i.seller] = (sellers[i.seller] || 0) + 1;
     });
 
-    const topSeller = Object.entries(sellers)
-      .sort((a,b) => b[1]-a[1])[0];
+    const top3 = Object.entries(sellers)
+      .sort((a,b) => b[1] - a[1])
+      .slice(0,3);
 
     html += `
-      <div style="margin-bottom:15px;">
-        <strong>${keyword}</strong><br>
-        Produits trouvés : ${items.length}<br>
-        Position moyenne : ${avgPos}<br>
-        Top vendeur : ${topSeller ? topSeller[0] : "N/A"}
+      <div style="margin-bottom:25px; padding:15px; border:1px solid #ddd;">
+        
+        <strong style="font-size:16px;">${keyword}</strong><br><br>
+
+        📦 Produits page 1 : ${total}<br>
+        🟢 Mes produits : ${myCount}<br>
+        👁️ Visibilité : ${visibility}%<br><br>
+
+        🏆 Top vendeurs :
+        <ul>
+          ${top3.map(v => `<li>${v[0]} (${v[1]})</li>`).join("")}
+        </ul>
+
       </div>
     `;
   });
@@ -230,19 +163,10 @@ async function renderPositions() {
 }
 
 // =====================
-// HISTORIQUE
-// =====================
-function renderHistorique() {
-  document.getElementById("content").innerHTML = `
-    <h2>Historique</h2>
-    <p>À venir</p>
-  `;
-}
-
-// =====================
 // INIT
 // =====================
-init();
+showTab("positions");
+
 </script>
 
 </body>
