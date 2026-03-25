@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Marketplace Tracker</title>
+  </head>
+  <body>
+    <h1>🚀 Marketplace Tracker</h1>
+    <div id="app">Chargement...</div>
+
+    <script>
+      async function loadData() {
+        const res = await fetch(
+          "https://pmxsthzdxubqbemdgtbr.supabase.co/rest/v1/product_snapshots",
+          {
+            headers: {
+              apikey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBteHN0aHpkeHVicWJlbWRndGJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk4NDQsImV4cCI6MjA5MDAyNTg0NH0.GpfAw91eJ8D7RIeZLFIejCt9DTwGpXvOGcxYlhZS78I",
+              Authorization: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBteHN0aHpkeHVicWJlbWRndGJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk4NDQsImV4cCI6MjA5MDAyNTg0NH0.GpfAw91eJ8D7RIeZLFIejCt9DTwGpXvOGcxYlhZS78I"
+            }
+          }
+        );
+
+        const data = await res.json();
+
+        const container = document.getElementById("app");
+
+        container.innerHTML = data
+          .map(
+            (d) =>
+              `<div>
+                <strong>${d.product_id}</strong> — ${d.price}€ — ${d.delivery_days} jours
+              </div>`
+          )
+          .join("");
+      }
+
+      loadData();
+    </script>
+  </body>
+</html>
