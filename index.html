@@ -166,12 +166,12 @@ function renderProduits() {
 }
 
 // =====================
-// POSITIONS
+// POSITIONS (CORRIGÉ)
 // =====================
 async function renderPositions() {
 
   const res = await fetch(
-    API_POSITIONS + "?select=*",
+    API_POSITIONS + "?select=keyword,position,seller,marketplace&order=date.desc&limit=1000",
     {
       headers: {
         apikey: KEY,
@@ -181,6 +181,13 @@ async function renderPositions() {
   );
 
   const data = await res.json();
+
+  console.log("📊 positions data", data);
+
+  if (!data || data.length === 0) {
+    document.getElementById("content").innerHTML = "<p>Aucune donnée</p>";
+    return;
+  }
 
   const grouped = {};
 
