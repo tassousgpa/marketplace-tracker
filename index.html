@@ -4,32 +4,47 @@
     <meta charset="UTF-8" />
     <title>Marketplace Tracker</title>
   </head>
+
   <body>
     <h1>🚀 Marketplace Tracker</h1>
+
     <div id="app">Chargement...</div>
 
     <script>
       async function loadData() {
         const res = await fetch(
-          "https://pmxsthzdxubqbemdgtbr.supabase.co/rest/v1/product_snapshots",
+          "https://pmxsthzdxubqbemdgtbr.supabase.co/rest/v1/product_snapshots?order=date.desc",
           {
             headers: {
               apikey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBteHN0aHpkeHVicWJlbWRndGJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk4NDQsImV4cCI6MjA5MDAyNTg0NH0.GpfAw91eJ8D7RIeZLFIejCt9DTwGpXvOGcxYlhZS78I",
-              Authorization: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBteHN0aHpkeHVicWJlbWRndGJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk4NDQsImV4cCI6MjA5MDAyNTg0NH0.GpfAw91eJ8D7RIeZLFIejCt9DTwGpXvOGcxYlhZS78I"
+              Authorization:
+                "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBteHN0aHpkeHVicWJlbWRndGJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk4NDQsImV4cCI6MjA5MDAyNTg0NH0.GpfAw91eJ8D7RIeZLFIejCt9DTwGpXvOGcxYlhZS78I"
             }
           }
         );
 
         const data = await res.json();
 
+        // 🔥 garder seulement la dernière donnée par produit
+        const latestByProduct = {};
+
+        data.forEach((d) => {
+          if (!latestByProduct[d.product_id]) {
+            latestByProduct[d.product_id] = d;
+          }
+        });
+
+        const finalData = Object.values(latestByProduct);
+
         const container = document.getElementById("app");
 
-        container.innerHTML = data
+        container.innerHTML = finalData
           .map(
-            (d) =>
-              `<div>
-                <strong>${d.product_id}</strong> — ${d.price}€ — ${d.delivery_days} jours
-              </div>`
+            (d) => `
+          <div style="margin-bottom: 10px;">
+            <strong>${d.product_id}</strong> — ${d.price}€ — ${d.delivery_days} jours
+          </div>
+        `
           )
           .join("");
       }
