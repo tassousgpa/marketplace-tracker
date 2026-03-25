@@ -8,34 +8,59 @@
   <body>
     <h1>🚀 Marketplace Tracker</h1>
 
+    <!-- KPI -->
+    <div id="kpi" style="margin-bottom: 20px;">
+      Chargement des KPI...
+    </div>
+
+    <!-- LISTE PRODUITS -->
     <div id="app">Chargement...</div>
 
     <script>
       async function loadData() {
         const res = await fetch(
-          "https://pmxsthzdxubqbemdgtbr.supabase.co/rest/v1/product_snapshots?order=date.desc",
+          "https://pmxsthzdxubqbemdgtbr.supabase.co/rest/v1/product_snapshots?select=product_id,price,delivery_days,date,url&order=product_id.asc,date.desc",
           {
             headers: {
               apikey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBteHN0aHpkeHVicWJlbWRndGJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk4NDQsImV4cCI6MjA5MDAyNTg0NH0.GpfAw91eJ8D7RIeZLFIejCt9DTwGpXvOGcxYlhZS78I",
-              Authorization:
-                "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBteHN0aHpkeHVicWJlbWRndGJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk4NDQsImV4cCI6MjA5MDAyNTg0NH0.GpfAw91eJ8D7RIeZLFIejCt9DTwGpXvOGcxYlhZS78I"
+              Authorization: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBteHN0aHpkeHVicWJlbWRndGJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk4NDQsImV4cCI6MjA5MDAyNTg0NH0.GpfAw91eJ8D7RIeZLFIejCt9DTwGpXvOGcxYlhZS78I"
             }
           }
         );
 
         const data = await res.json();
 
-        // 🔥 garder seulement la dernière donnée par produit
-        const latestByProduct = {};
+        // 🔥 garder uniquement le dernier snapshot par produit
+        const seen = new Set();
+        const finalData = [];
 
-        data.forEach((d) => {
-          if (!latestByProduct[d.product_id]) {
-            latestByProduct[d.product_id] = d;
+        for (const d of data) {
+          if (!seen.has(d.product_id)) {
+            seen.add(d.product_id);
+            finalData.push(d);
           }
-        });
+        }
 
-        const finalData = Object.values(latestByProduct);
+        // =====================
+        // KPI
+        // =====================
+        const total = finalData.length;
 
+        const avgPrice =
+          finalData.reduce((sum, d) => sum + (d.price || 0), 0) / total;
+
+        const avgDelay =
+          finalData.reduce((sum, d) => sum + (d.delivery_days || 0), 0) / total;
+
+        document.getElementById("kpi").innerHTML = `
+          <div><strong>Produits suivis :</strong> ${total}</div>
+          <div><strong>Prix moyen :</strong> ${Math.round(avgPrice)} €</div>
+          <div><strong>Délai moyen :</strong> ${Math.round(avgDelay)} jours</div>
+        `;
+
+        // =====================
+        // LISTE PRODUITS
+        // =====================
         const container = document.getElementById("app");
 
         container.innerHTML = finalData
