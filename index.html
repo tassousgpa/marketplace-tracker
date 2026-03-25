@@ -21,18 +21,23 @@
 
 <script>
 const API = "https://pmxsthzdxubqbemdgtbr.supabase.co/rest/v1/product_snapshots";
+
+// 🔑 👉 METS TA CLE ICI (UNE SEULE FOIS)
 const KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBteHN0aHpkeHVicWJlbWRndGJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk4NDQsImV4cCI6MjA5MDAyNTg0NH0.GpfAw91eJ8D7RIeZLFIejCt9DTwGpXvOGcxYlhZS78I";
 
 let latestArr = [];
 let previous = {};
 
 async function load() {
-  const res = await fetch(`${API}?select=product_id,price,delivery_days,date,url&order=product_id.asc,date.desc`, {
-    headers: {
-      apikey: KEY,
-      Authorization: `Bearer ${KEY}`
+  const res = await fetch(
+    API + "?select=product_id,price,delivery_days,date,url&order=product_id.asc,date.desc",
+    {
+      headers: {
+        apikey: KEY,
+        Authorization: "Bearer " + KEY
+      }
     }
-  });
+  );
 
   const data = await res.json();
 
@@ -80,29 +85,59 @@ function renderSynthese() {
 function renderProduits() {
   document.getElementById("content").innerHTML = `
     <h2>Produits</h2>
-    ${latestArr.map(d => {
-      const p = previous[d.product_id];
 
-      let variation = "";
-      if (p) {
-        const diff = d.delivery_days - p.delivery_days;
-        if (diff > 5) variation = "🔴 + délai";
-        if (diff < -5) variation = "🟢 - délai";
-      }
+    <table border="1" cellpadding="8" style="border-collapse: collapse; width: 100%;">
+      <thead>
+        <tr>
+          <th>Produit</th>
+          <th>Prix</th>
+          <th>Δ Prix</th>
+          <th>Délai</th>
+          <th>Δ Délai</th>
+          <th>Status</th>
+        </tr>
+      </thead>
 
-      return `
-        <div style="margin-bottom:8px;">
-          <strong>${d.product_id}</strong> — ${d.price}€ — ${d.delivery_days}j ${variation}
-        </div>
-      `;
-    }).join("")}
+      <tbody>
+        ${latestArr.map(d => {
+          const p = previous[d.product_id];
+
+          let priceDiff = "";
+          let delayDiff = "";
+          let status = "";
+
+          if (p) {
+            const pDiff = ((d.price - p.price) / p.price) * 100;
+            const dDiff = d.delivery_days - p.delivery_days;
+
+            priceDiff = isNaN(pDiff) ? "" : pDiff.toFixed(1) + "%";
+            delayDiff = dDiff !== 0 ? (dDiff > 0 ? "+" : "") + dDiff + "j" : "0";
+
+            if (dDiff > 5) status = "🔴 délai ↑";
+            else if (dDiff < -5) status = "🟢 délai ↓";
+            else if (pDiff > 10) status = "🟠 prix ↑";
+          }
+
+          return `
+            <tr>
+              <td>${d.product_id}</td>
+              <td>${d.price}€</td>
+              <td>${priceDiff}</td>
+              <td>${d.delivery_days}j</td>
+              <td>${delayDiff}</td>
+              <td>${status}</td>
+            </tr>
+          `;
+        }).join("")}
+      </tbody>
+    </table>
   `;
 }
 
 function renderHistorique() {
   document.getElementById("content").innerHTML = `
     <h2>Historique</h2>
-    <p>À venir (comparaison dans le temps)</p>
+    <p>À venir</p>
   `;
 }
 
