@@ -9,6 +9,13 @@
 
 <h1>🚀 Marketplace Tracker</h1>
 
+<!-- FILTRE MARKETPLACE -->
+<div style="margin-bottom: 15px;">
+  <button onclick="setMarket('all')">Tous</button>
+  <button onclick="setMarket('cdiscount')">Cdiscount</button>
+  <button onclick="setMarket('amazon')">Amazon</button>
+</div>
+
 <!-- ONGLETS -->
 <div style="margin-bottom: 20px;">
   <button onclick="showTab('synthese')">Synthèse</button>
@@ -16,21 +23,19 @@
   <button onclick="showTab('historique')">Historique</button>
 </div>
 
-<!-- CONTENU -->
 <div id="content"></div>
 
 <script>
 const API = "https://pmxsthzdxubqbemdgtbr.supabase.co/rest/v1/product_snapshots";
-
-// 🔑 👉 METS TA CLE ICI (UNE SEULE FOIS)
 const KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBteHN0aHpkeHVicWJlbWRndGJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk4NDQsImV4cCI6MjA5MDAyNTg0NH0.GpfAw91eJ8D7RIeZLFIejCt9DTwGpXvOGcxYlhZS78I";
 
 let latestArr = [];
 let previous = {};
+let currentMarket = "all";
 
 async function load() {
   const res = await fetch(
-    API + "?select=product_id,price,delivery_days,date,url&order=product_id.asc,date.desc",
+    API + "?select=product_id,price,delivery_days,date,url,marketplace&order=product_id.asc,date.desc",
     {
       headers: {
         apikey: KEY,
@@ -41,10 +46,17 @@ async function load() {
 
   const data = await res.json();
 
+  buildData(data);
+  showTab("synthese");
+}
+
+function buildData(data) {
   const latest = {};
   previous = {};
 
   data.forEach(d => {
+    if (currentMarket !== "all" && d.marketplace !== currentMarket) return;
+
     if (!latest[d.product_id]) {
       latest[d.product_id] = d;
     } else if (!previous[d.product_id]) {
@@ -53,8 +65,11 @@ async function load() {
   });
 
   latestArr = Object.values(latest);
+}
 
-  showTab("synthese");
+function setMarket(market) {
+  currentMarket = market;
+  load();
 }
 
 function showTab(tab) {
@@ -66,16 +81,16 @@ function showTab(tab) {
 function renderSynthese() {
   const total = latestArr.length;
 
-  const avgPrice = Math.round(
-    latestArr.reduce((s, d) => s + (d.price || 0), 0) / total
-  );
+  const avgPrice = total
+    ? Math.round(latestArr.reduce((s, d) => s + (d.price || 0), 0) / total)
+    : 0;
 
-  const avgDelay = Math.round(
-    latestArr.reduce((s, d) => s + (d.delivery_days || 0), 0) / total
-  );
+  const avgDelay = total
+    ? Math.round(latestArr.reduce((s, d) => s + (d.delivery_days || 0), 0) / total)
+    : 0;
 
   document.getElementById("content").innerHTML = `
-    <h2>Synthèse</h2>
+    <h2>Synthèse (${currentMarket})</h2>
     <div><strong>Produits :</strong> ${total}</div>
     <div><strong>Prix moyen :</strong> ${avgPrice} €</div>
     <div><strong>Délai moyen :</strong> ${avgDelay} jours</div>
@@ -84,7 +99,7 @@ function renderSynthese() {
 
 function renderProduits() {
   document.getElementById("content").innerHTML = `
-    <h2>Produits</h2>
+    <h2>Produits (${currentMarket})</h2>
 
     <table border="1" cellpadding="8" style="border-collapse: collapse; width: 100%;">
       <thead>
