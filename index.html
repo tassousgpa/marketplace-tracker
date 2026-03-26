@@ -131,19 +131,45 @@ async function sb(table, params = "") {
   return r.json();
 }
 
+async function sbInsert(table, data) {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
+    method: "POST", headers: { "Content-Type": "application/json", apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, Prefer: "return=representation" },
+    body: JSON.stringify(data)
+  });
+  if (!r.ok) { const t = await r.text(); throw new Error(`Insert error ${r.status}: ${t}`); }
+  return r.json();
+}
+
+async function sbUpdate(table, filter, data) {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?${filter}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json", apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, Prefer: "return=representation" },
+    body: JSON.stringify(data)
+  });
+  if (!r.ok) { const t = await r.text(); throw new Error(`Update error ${r.status}: ${t}`); }
+  return r.json();
+}
+
+async function sbDelete(table, filter) {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?${filter}`, {
+    method: "DELETE", headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` }
+  });
+  if (!r.ok) throw new Error(`Delete error: ${r.status}`);
+}
+
 // =============================================
 // STATE
 // =============================================
 let STATE = { products: [], snapshots: [], positions: [], dates: [], tab: 0 };
-const TAB_NAMES = ["Synthèse", "Produits", "Historique", "Positions", "Concurrents", "Anomalies"];
+const TAB_NAMES = ["Synthèse", "Produits", "Historique", "Positions", "Concurrents", "Anomalies", "Gestion"];
 
 // =============================================
 // LOAD DATA
 // =============================================
 async function loadData() {
   try {
-    const [products, snapshots, positions] = await Promise.all([
+    const [products, allProducts, snapshots, positions] = await Promise.all([
       sb("products", `marketplace=eq.${MARKETPLACE}&active=eq.true&select=*&order=product_id`),
+      sb("products", `marketplace=eq.${MARKETPLACE}&select=*&order=product_id`),
       sb("product_snapshots", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=5000`),
       sb("positions", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=5000`),
     ]);
@@ -258,7 +284,7 @@ async function loadData() {
     });
 
     STATE = {
-      products, snapshots, positions: latestPositions, dates, latestDate, prevDate,
+      products, allProducts, snapshots, positions: latestPositions, dates, latestDate, prevDate,
       history, keywordData, vendorsSorted, bmByKeyword, productsInPage1,
       prodByScraper, latestPosDate, tab: 0,
     };
@@ -307,6 +333,7 @@ function renderContent() {
     case 3: el.innerHTML = renderPositions(); break;
     case 4: el.innerHTML = renderConcurrents(); break;
     case 5: el.innerHTML = renderAnomalies(); break;
+    case 6: el.innerHTML = renderGestion(); break;
   }
 }
 
@@ -737,6 +764,177 @@ function renderAnomalies() {
       ${brokenUrls.map(p => productRowHTML(p)).join("")}
     </div>` : ''}
     ${total === 0 ? '<div class="card" style="background:var(--gnBg);text-align:center;padding:30px"><div style="font-size:16px;font-weight:600;color:var(--gn)">Aucune anomalie détectée</div></div>' : ''}`;
+}
+
+// =============================================
+// TAB 6: GESTION
+// =============================================
+let gestionSearch = "";
+let gestionFilter = "active"; // active, inactive, all
+
+function renderGestion() {
+  let list = STATE.allProducts || STATE.products;
+  // For gestion, we also load inactive products - but they may not be in STATE yet
+  // We'll show what we have and provide actions
+
+  if (gestionSearch) {
+    const s = gestionSearch.toLowerCase();
+    list = list.filter(p => p.name.toLowerCase().includes(s) || p.product_id.includes(s) || (p.sku || "").toLowerCase().includes(s));
+  }
+
+  return `
+    <div class="metrics">
+      ${metric("Produits actifs", (STATE.allProducts || []).filter(p => p.active !== false).length, "", "var(--ac)")}
+      ${metric("Produits inactifs", (STATE.allProducts || []).filter(p => p.active === false).length, "tracking suspendu", "var(--txT)")}
+      ${metric("Total", (STATE.allProducts || []).length)}
+    </div>
+
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div class="card-title" style="margin-bottom:0">Ajouter un produit</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr auto;gap:8px;align-items:end">
+        <div>
+          <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">ID produit *</label>
+          <input id="add-id" placeholder="ex: 1261_7190" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">SKU</label>
+          <input id="add-sku" placeholder="ex: 1261BEI" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">SKU Marketplace</label>
+          <input id="add-skump" placeholder="ex: BES168..." style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Type</label>
+          <select id="add-type" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">
+            <option value="Nouveautés Q4+Q1">Nouveautés Q4+Q1</option>
+            <option value="Classe A">Classe A</option>
+            <option value="Deals exclus">Deals exclus</option>
+          </select>
+        </div>
+        <div></div>
+        <div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:2fr 3fr auto;gap:8px;margin-top:8px;align-items:end">
+        <div>
+          <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Nom du produit *</label>
+          <input id="add-name" placeholder="Nom complet du produit" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">URL Cdiscount *</label>
+          <input id="add-url" placeholder="https://www.cdiscount.com/..." style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">
+        </div>
+        <button onclick="addProduct()" style="padding:8px 20px;background:var(--ac);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;white-space:nowrap">+ Ajouter</button>
+      </div>
+      <div id="add-status" style="margin-top:8px;font-size:12px"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Gérer les produits</div>
+      <div class="filters">
+        <input placeholder="Rechercher..." value="${esc(gestionSearch)}" oninput="gestionSearch=this.value;renderContent()"/>
+      </div>
+      <div style="font-size:12px;color:var(--txS);margin-bottom:8px">${list.length} produit${list.length > 1 ? 's' : ''}</div>
+      <div class="scroll-table">
+        <table style="min-width:900px">
+          <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)">
+            <th style="width:30%">Produit</th><th>Réfs</th><th>Type</th><th>Statut</th><th>URL</th><th style="text-align:center">Actions</th>
+          </tr></thead>
+          <tbody>
+            ${list.slice(0, 100).map((p, i) => `<tr class="${i % 2 ? 'stripe' : ''}" id="row-${p.id}">
+              <td style="font-weight:500;font-size:12px"><div style="line-height:1.3">${esc(p.name)}</div></td>
+              <td style="font-size:11px;color:var(--txS);white-space:nowrap"><div>${esc(p.product_id)}</div><div>${esc(p.sku)}</div><div style="color:var(--txT)">${esc(p.sku_marketplace)}</div></td>
+              <td>
+                <select onchange="updateType(${p.id}, this.value)" style="font-size:11px;padding:3px 6px;border-radius:4px;border:1px solid var(--border);font-family:inherit">
+                  <option value="Classe A" ${p.type === 'Classe A' ? 'selected' : ''}>Classe A</option>
+                  <option value="Nouveautés Q4+Q1" ${p.type === 'Nouveautés Q4+Q1' ? 'selected' : ''}>Nouveautés</option>
+                  <option value="Deals exclus" ${p.type === 'Deals exclus' ? 'selected' : ''}>Deals exclus</option>
+                </select>
+              </td>
+              <td>${p.active !== false ? pill("Actif", "green") : pill("Inactif", "default")}</td>
+              <td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.url ? `<a href="${esc(p.url)}" target="_blank" class="link" title="${esc(p.url)}">${esc(p.url).slice(0, 45)}…</a>` : '—'}</td>
+              <td style="text-align:center;white-space:nowrap">
+                ${p.active !== false
+                  ? `<button onclick="toggleActive(${p.id}, false)" style="padding:3px 8px;border-radius:6px;border:.5px solid var(--am);background:var(--amBg);color:var(--am);font-size:11px;cursor:pointer;font-family:inherit;margin-right:4px" title="Désactiver le tracking">Désactiver</button>`
+                  : `<button onclick="toggleActive(${p.id}, true)" style="padding:3px 8px;border-radius:6px;border:.5px solid var(--gn);background:var(--gnBg);color:var(--gn);font-size:11px;cursor:pointer;font-family:inherit;margin-right:4px" title="Réactiver le tracking">Activer</button>`
+                }
+                <button onclick="deleteProduct(${p.id}, '${esc(p.name).slice(0,30)}')" style="padding:3px 8px;border-radius:6px;border:.5px solid var(--rd);background:var(--rdBg);color:var(--rd);font-size:11px;cursor:pointer;font-family:inherit" title="Supprimer définitivement">Suppr.</button>
+              </td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+      ${list.length > 100 ? `<div style="padding:12px;text-align:center;font-size:12px;color:var(--txS)">100 premiers sur ${list.length}</div>` : ''}
+    </div>`;
+}
+
+// --- GESTION ACTIONS ---
+
+async function addProduct() {
+  const statusEl = document.getElementById("add-status");
+  const id = document.getElementById("add-id").value.trim();
+  const name = document.getElementById("add-name").value.trim();
+  const url = document.getElementById("add-url").value.trim();
+  const sku = document.getElementById("add-sku").value.trim();
+  const skuMp = document.getElementById("add-skump").value.trim();
+  const type = document.getElementById("add-type").value;
+
+  if (!id || !name || !url) {
+    statusEl.innerHTML = '<span style="color:var(--rd)">ID, nom et URL sont obligatoires.</span>';
+    return;
+  }
+
+  // Extract product_id_scraper from URL
+  const match = url.match(/-([a-zA-Z0-9]+)\.html/);
+  const scraperId = match ? match[1].toLowerCase() : "";
+
+  statusEl.innerHTML = '<span style="color:var(--txS)">Ajout en cours...</span>';
+
+  try {
+    await sbInsert("products", {
+      product_id: id, name, sku, sku_marketplace: skuMp, url,
+      product_id_scraper: scraperId, type, marketplace: MARKETPLACE, active: true
+    });
+    statusEl.innerHTML = '<span style="color:var(--gn)">✓ Produit ajouté. Le scraping le prendra en compte au prochain lancement.</span>';
+    // Clear form
+    ["add-id", "add-name", "add-url", "add-sku", "add-skump"].forEach(id => document.getElementById(id).value = "");
+    // Reload data
+    await loadData();
+  } catch (e) {
+    statusEl.innerHTML = `<span style="color:var(--rd)">Erreur : ${e.message}</span>`;
+  }
+}
+
+async function updateType(dbId, newType) {
+  try {
+    await sbUpdate("products", `id=eq.${dbId}`, { type: newType });
+    // Update local state
+    const p = STATE.products.find(p => p.id === dbId);
+    if (p) p.type = newType;
+  } catch (e) {
+    alert("Erreur : " + e.message);
+  }
+}
+
+async function toggleActive(dbId, active) {
+  try {
+    await sbUpdate("products", `id=eq.${dbId}`, { active });
+    await loadData(); // Reload to update counts
+  } catch (e) {
+    alert("Erreur : " + e.message);
+  }
+}
+
+async function deleteProduct(dbId, name) {
+  if (!confirm(`Supprimer définitivement "${name}..." ?\n\nCette action est irréversible. Les données de scraping historiques seront conservées.`)) return;
+  try {
+    await sbDelete("products", `id=eq.${dbId}`);
+    await loadData();
+  } catch (e) {
+    alert("Erreur : " + e.message);
+  }
 }
 
 // =============================================
