@@ -220,7 +220,7 @@ async function loadData() {
     const productsInPage1 = new Set();
     latestPositions.forEach(p => { if(bmScraperIds.has((p.product_id||"").toLowerCase())) productsInPage1.add(p.product_id?.toLowerCase()); });
 
-    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, vendorsSorted, bmByKeyword, productsInPage1, prodByScraper, latestPosDate, sellerStats, tab:STATE.tab||0 };
+    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, vendorsSorted, bmByKeyword, productsInPage1, prodByScraper, latestPosDate: latestPosSession, sellerStats, tab:STATE.tab||0 };
 
     const sessionDisplay = latestDate ? new Date(latestDate + ":00:00Z").toLocaleString("fr-FR",{day:"numeric",month:"long",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "N/A";
     document.getElementById("header-subtitle").textContent = `${products.length} produits · Relevé du ${sessionDisplay}`;
