@@ -154,16 +154,21 @@ async function loadData() {
     products.forEach(p => { if (p.product_id_scraper) prodByScraper[p.product_id_scraper.toLowerCase()] = p; });
     snapshots.forEach(s => { s._product = prodByScraper[(s.product_id||"").toLowerCase()] || null; });
 
-    const dateSet = new Set();
-    snapshots.forEach(s => { if (s.date) dateSet.add(s.date.slice(0,10)); });
-    const dates = [...dateSet].sort();
+    // Grouper par SESSION de scraping (arrondi à l'heure)
+    // Deux scrapes le même jour à 23h08 et 23h30 = même session "2026-03-26T23"
+    // Deux scrapes mardi et vendredi = deux sessions distinctes
+    function sessionKey(ts) { return new Date(ts).toISOString().slice(0, 13); }
+
+    const sessionSet = new Set();
+    snapshots.forEach(s => { if (s.date) sessionSet.add(sessionKey(s.date)); });
+    const dates = [...sessionSet].sort(); // clés de session triées, utilisées pour l'historique
 
     const history = {};
     snapshots.forEach(s => {
       const key = (s.product_id||"").toLowerCase();
       if (!history[key]) history[key] = {};
-      const d = s.date?.slice(0,10);
-      if (d && (!history[key][d] || s.id > history[key][d].id)) history[key][d] = s;
+      const sess = sessionKey(s.date);
+      if (sess && (!history[key][sess] || s.id > history[key][sess].id)) history[key][sess] = s;
     });
 
     const latestDate = dates[dates.length-1] || "";
@@ -184,10 +189,12 @@ async function loadData() {
       }
     });
 
-    const posDates = new Set(); positions.forEach(p => { if(p.date) posDates.add(p.date.slice(0,10)); });
-    const posDatesSorted = [...posDates].sort();
-    const latestPosDate = posDatesSorted[posDatesSorted.length-1] || "";
-    const latestPositions = positions.filter(p => p.date?.slice(0,10) === latestPosDate);
+    // Même logique session pour les positions
+    const posSessionSet = new Set();
+    positions.forEach(p => { if (p.date) posSessionSet.add(sessionKey(p.date)); });
+    const posSessionsSorted = [...posSessionSet].sort();
+    const latestPosSession = posSessionsSorted[posSessionsSorted.length-1] || "";
+    const latestPositions = positions.filter(p => p.date && sessionKey(p.date) === latestPosSession);
 
     const keywordData = {};
     latestPositions.forEach(p => {
@@ -215,7 +222,8 @@ async function loadData() {
 
     STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, vendorsSorted, bmByKeyword, productsInPage1, prodByScraper, latestPosDate, sellerStats, tab:STATE.tab||0 };
 
-    document.getElementById("header-subtitle").textContent = `${products.length} produits · Relevé du ${latestDate ? new Date(latestDate).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}) : "N/A"}`;
+    const sessionDisplay = latestDate ? new Date(latestDate + ":00:00Z").toLocaleString("fr-FR",{day:"numeric",month:"long",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "N/A";
+    document.getElementById("header-subtitle").textContent = `${products.length} produits · Relevé du ${sessionDisplay}`;
     renderTabs(); renderContent();
   } catch(e) {
     document.getElementById("content").innerHTML = `<div class="loading" style="color:var(--rd)"><div style="font-size:16px;font-weight:600;margin-bottom:8px">Erreur de chargement</div><div style="font-size:13px">${e.message}</div></div>`;
