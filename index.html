@@ -1,173 +1,748 @@
 <!DOCTYPE html>
-<html>
+<html lang="fr">
 <head>
-  <meta charset="UTF-8" />
-  <title>Marketplace Tracker</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Marketplace Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#fafaf8;--card:#fff;--border:#e8e6e1;--borderL:#f0eee9;--tx:#1a1a18;--txS:#6b6a65;--txT:#9c9a92;--ac:#2c5ea0;--acBg:#e8f0fa;--gn:#1a7a4c;--gnBg:#e6f5ee;--rd:#b5312c;--rdBg:#fce8e8;--am:#8a6d1b;--amBg:#faf0d4;--pu:#5b47b0;--puBg:#eeecfe}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(--tx);min-height:100vh}
+.header{padding:20px 28px 0;border-bottom:1px solid var(--border);background:var(--card)}
+.header-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.title{font-size:20px;font-weight:700;letter-spacing:-0.02em}
+.subtitle{font-size:12px;color:var(--txS);margin-top:2px}
+.mp-btns{display:flex;gap:6px}
+.mp-btn{padding:5px 12px;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;border:.5px solid var(--border);background:transparent;color:var(--txS);font-family:inherit}
+.mp-btn.active{border-color:var(--ac);background:var(--acBg);color:var(--ac)}
+.tabs{display:flex;gap:0}
+.tab{padding:9px 18px;font-size:13px;font-weight:500;cursor:pointer;background:transparent;border:none;color:var(--txS);border-bottom:2px solid transparent;transition:all .15s;font-family:inherit}
+.tab.active{color:var(--ac);border-bottom-color:var(--ac)}
+.content{padding:20px 28px}
+.metrics{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px}
+.metric{background:var(--card);border:.5px solid var(--border);border-radius:10px;padding:14px 18px;flex:1;min-width:120px}
+.metric-label{font-size:11px;color:var(--txS);margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em}
+.metric-value{font-size:26px;font-weight:600;line-height:1.1}
+.metric-sub{font-size:11px;color:var(--txT);margin-top:3px}
+.card{background:var(--card);border:.5px solid var(--border);border-radius:10px;padding:16px 20px;margin-bottom:14px}
+.card-title{font-size:14px;font-weight:600;margin-bottom:12px}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.pill{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:500;white-space:nowrap}
+.pill-green{background:var(--gnBg);color:var(--gn)}.pill-red{background:var(--rdBg);color:var(--rd)}
+.pill-accent{background:var(--acBg);color:var(--ac)}.pill-amber{background:var(--amBg);color:var(--am)}
+.pill-purple{background:var(--puBg);color:var(--pu)}.pill-default{background:var(--borderL);color:var(--txS)}
+.bar-row{margin-bottom:7px}
+.bar-header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px}
+.bar-label{font-size:13px;color:var(--tx);font-weight:500}
+.bar-sub{font-size:12px;color:var(--txS)}
+.bar-track{height:5px;background:var(--borderL);border-radius:3px;overflow:hidden}
+.bar-fill{height:100%;border-radius:3px;transition:width .3s}
+.kpi-row{display:flex;justify-content:space-between;align-items:center;padding:8px 14px;border-bottom:1px solid var(--borderL)}
+.kpi-label{font-size:13px;color:var(--txS)}
+.kpi-value{font-size:14px;font-weight:600}
+.btn-see{background:var(--acBg);color:var(--ac);border:none;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;font-weight:500;font-family:inherit;margin-left:8px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{padding:8px 10px;font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;letter-spacing:.03em;white-space:nowrap;text-align:left}
+td{padding:8px 10px}
+tr.stripe{background:var(--bg)}
+.filters{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+.filters input,.filters select{padding:7px 12px;border:.5px solid var(--border);border-radius:8px;font-size:12px;background:var(--card);font-family:inherit}
+.filters input{flex:1;min-width:180px}
+.btn-add{padding:7px 14px;border:.5px solid var(--ac);border-radius:8px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit}
+.link{color:var(--ac);text-decoration:none;font-size:11px}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:999;display:flex;align-items:center;justify-content:center;padding:20px}
+.modal{background:var(--card);border-radius:12px;padding:20px 24px;max-width:700px;width:100%;max-height:80vh;overflow:auto;border:.5px solid var(--border)}
+.modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.modal-title{font-size:15px;font-weight:600}
+.modal-close{background:none;border:none;font-size:20px;cursor:pointer;color:var(--txS);line-height:1}
+.product-row{padding:8px 0;border-bottom:1px solid var(--borderL);font-size:12px}
+.product-row-name{font-weight:500;font-size:13px;margin-bottom:2px}
+.product-row-refs{display:flex;gap:12px;color:var(--txS);flex-wrap:wrap;align-items:center}
+.cat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.cat-card{padding:10px 12px;border-radius:8px;cursor:pointer;transition:all .15s;border:.5px solid var(--border)}
+.cat-card:hover{border-color:var(--ac)}
+.cat-card.selected{border-color:var(--ac);background:var(--acBg)}
+.cat-card-header{display:flex;justify-content:space-between;align-items:center}
+.cat-card-name{font-size:13px;font-weight:500}
+.cat-card-count{font-size:18px;font-weight:700;color:var(--ac)}
+.cat-card-zero .cat-card-name{color:var(--txT)}.cat-card-zero .cat-card-count{color:var(--txT)}
+.vendor-row{cursor:pointer;padding:7px 0;border-bottom:1px solid var(--borderL)}
+.vendor-rank{font-size:11px;font-weight:600;color:var(--txT);width:18px;display:inline-block}
+.toggle-group{display:flex;gap:0;border:.5px solid var(--border);border-radius:8px;overflow:hidden}
+.toggle-btn{padding:7px 14px;font-size:12px;font-weight:500;cursor:pointer;border:none;background:transparent;color:var(--txS);font-family:inherit}
+.toggle-btn.active{background:var(--acBg);color:var(--ac)}
+.anomaly-section{margin-bottom:16px}
+.anomaly-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:8px}
+.loading{text-align:center;padding:60px 20px;color:var(--txS)}
+.loading-spinner{display:inline-block;width:32px;height:32px;border:3px solid var(--borderL);border-top-color:var(--ac);border-radius:50%;animation:spin .8s linear infinite;margin-bottom:12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.hidden{display:none}
+.type-select{font-size:11px;padding:2px 4px;border-radius:4px;border:1px solid var(--ac);font-family:inherit}
+.tag{display:inline-block;margin:1px 2px}
+.scroll-table{overflow-x:auto}
+</style>
 </head>
+<body>
 
-<body style="font-family: Arial; padding: 20px;">
-
-<h1>🚀 Marketplace Tracker</h1>
-
-<!-- FILTRE -->
-<div style="margin-bottom: 15px;">
-  <button onclick="setMarket('all')">Tous</button>
-  <button onclick="setMarket('cdiscount')">Cdiscount</button>
+<div class="header">
+  <div class="header-top">
+    <div>
+      <div class="title">Marketplace tracker</div>
+      <div class="subtitle" id="header-subtitle">Chargement...</div>
+    </div>
+    <div class="mp-btns">
+      <button class="mp-btn active">Cdiscount</button>
+      <button class="mp-btn">Amazon</button>
+      <button class="mp-btn">La Redoute</button>
+      <button class="mp-btn">Conforama</button>
+    </div>
+  </div>
+  <div class="tabs" id="tabs"></div>
+</div>
+<div class="content" id="content">
+  <div class="loading"><div class="loading-spinner"></div><div>Chargement des données depuis Supabase...</div></div>
 </div>
 
-<!-- ONGLETS -->
-<div style="margin-bottom: 20px;">
-  <button onclick="showTab('synthese')">Synthèse</button>
-  <button onclick="showTab('produits')">Produits</button>
-  <button onclick="showTab('positions')">Positions</button>
+<!-- MODAL -->
+<div class="modal-overlay hidden" id="modal-overlay" onclick="closeModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-title"></div>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div id="modal-body"></div>
+  </div>
 </div>
-
-<div id="content"></div>
 
 <script>
-const API_PRODUCTS = "https://pmxsthzdxubqbemdgtbr.supabase.co/rest/v1/product_snapshots";
-const API_POSITIONS = "https://pmxsthzdxubqbemdgtbr.supabase.co/rest/v1/positions";
+// =============================================
+// SUPABASE CONFIG
+// =============================================
+const SB_URL = "https://pmxsthzdxubqbemdgtbr.supabase.co";
+const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBteHN0aHpkeHVicWJlbWRndGJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk4NDQsImV4cCI6MjA5MDAyNTg0NH0.GpfAw91eJ8D7RIeZLFIejCt9DTwGpXvOGcxYlhZS78I";
+const MARKETPLACE = "cdiscount";
 
-const KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBteHN0aHpkeHVicWJlbWRndGJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk4NDQsImV4cCI6MjA5MDAyNTg0NH0.GpfAw91eJ8D7RIeZLFIejCt9DTwGpXvOGcxYlhZS78I";
-
-let latestArr = [];
-let previous = {};
-let currentMarket = "all";
-
-// =====================
-// LOAD PRODUITS
-// =====================
-async function loadProducts() {
-  const res = await fetch(
-    API_PRODUCTS + "?select=product_id,marketplace",
-    {
-      headers: {
-        apikey: KEY,
-        Authorization: "Bearer " + KEY
-      }
-    }
-  );
-
-  const data = await res.json();
-
-  return data.map(d => d.product_id);
-}
-
-// =====================
-// NAVIGATION
-// =====================
-function showTab(tab) {
-  if (tab === "synthese") renderSynthese();
-  if (tab === "produits") renderProduits();
-  if (tab === "positions") renderPositions();
-}
-
-function setMarket(market) {
-  currentMarket = market;
-  showTab("positions");
-}
-
-// =====================
-// SYNTHÈSE (simple)
-function renderSynthese() {
-  document.getElementById("content").innerHTML = `
-    <h2>Synthèse</h2>
-    <p>Utilise l’onglet Positions</p>
-  `;
-}
-
-// =====================
-// PRODUITS (optionnel)
-function renderProduits() {
-  document.getElementById("content").innerHTML = `
-    <h2>Produits</h2>
-    <p>Voir Positions pour analyse</p>
-  `;
-}
-
-// =====================
-// POSITIONS (VERSION BUSINESS)
-// =====================
-async function renderPositions() {
-
-  // 1. mes produits
-  const myProducts = await loadProducts();
-
-  // 2. positions
-  const res = await fetch(
-    API_POSITIONS + "?select=keyword,product_id,position,seller,marketplace&limit=2000",
-    {
-      headers: {
-        apikey: KEY,
-        Authorization: "Bearer " + KEY
-      }
-    }
-  );
-
-  const data = await res.json();
-
-  // 3. groupement
-  const grouped = {};
-
-  data.forEach(d => {
-    if (currentMarket !== "all" && d.marketplace !== currentMarket) return;
-
-    if (!grouped[d.keyword]) grouped[d.keyword] = [];
-    grouped[d.keyword].push(d);
+async function sb(table, params = "") {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, {
+    headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` }
   });
+  if (!r.ok) throw new Error(`Supabase error: ${r.status}`);
+  return r.json();
+}
 
-  let html = `<h2>Positions (${currentMarket})</h2>`;
+// =============================================
+// STATE
+// =============================================
+let STATE = { products: [], snapshots: [], positions: [], dates: [], tab: 0 };
+const TAB_NAMES = ["Synthèse", "Produits", "Historique", "Positions", "Concurrents", "Anomalies"];
 
-  Object.keys(grouped).forEach(keyword => {
-    const items = grouped[keyword];
+// =============================================
+// LOAD DATA
+// =============================================
+async function loadData() {
+  try {
+    const [products, snapshots, positions] = await Promise.all([
+      sb("products", `marketplace=eq.${MARKETPLACE}&active=eq.true&select=*&order=product_id`),
+      sb("product_snapshots", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=5000`),
+      sb("positions", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=5000`),
+    ]);
 
-    // marché
-    const total = items.length;
+    // Build lookup: product_id_scraper -> product
+    const prodByScraper = {};
+    products.forEach(p => { if (p.product_id_scraper) prodByScraper[p.product_id_scraper.toLowerCase()] = p; });
 
-    // mes produits
-    const myItems = items.filter(i => myProducts.includes(i.product_id));
-    const myCount = myItems.length;
-
-    // visibilité
-    const visibility = total ? Math.round((myCount / total) * 100) : 0;
-
-    // TOP VENDEURS
-    const sellers = {};
-    items.forEach(i => {
-      sellers[i.seller] = (sellers[i.seller] || 0) + 1;
+    // Enrich snapshots with product info
+    snapshots.forEach(s => {
+      const key = (s.product_id || "").toLowerCase();
+      s._product = prodByScraper[key] || null;
     });
 
-    const top3 = Object.entries(sellers)
-      .sort((a,b) => b[1] - a[1])
-      .slice(0,3);
+    // Get unique dates from snapshots
+    const dateSet = new Set();
+    snapshots.forEach(s => { if (s.date) dateSet.add(s.date.slice(0, 10)); });
+    const dates = [...dateSet].sort();
 
-    html += `
-      <div style="margin-bottom:25px; padding:15px; border:1px solid #ddd;">
-        
-        <strong style="font-size:16px;">${keyword}</strong><br><br>
+    // Build history per product: { scraper_id: { date: snapshot } }
+    const history = {};
+    snapshots.forEach(s => {
+      const key = (s.product_id || "").toLowerCase();
+      if (!history[key]) history[key] = {};
+      const d = s.date?.slice(0, 10);
+      if (d && (!history[key][d] || s.id > history[key][d].id)) {
+        history[key][d] = s;
+      }
+    });
 
-        📦 Produits page 1 : ${total}<br>
-        🟢 Mes produits : ${myCount}<br>
-        👁️ Visibilité : ${visibility}%<br><br>
+    // Latest date
+    const latestDate = dates[dates.length - 1] || "";
+    const prevDate = dates.length >= 2 ? dates[dates.length - 2] : "";
 
-        🏆 Top vendeurs :
-        <ul>
-          ${top3.map(v => `<li>${v[0]} (${v[1]})</li>`).join("")}
-        </ul>
+    // Enrich products with latest snapshot + history + variations
+    products.forEach(p => {
+      const key = (p.product_id_scraper || "").toLowerCase();
+      const h = history[key] || {};
+      const latest = h[latestDate];
+      const prev = h[prevDate];
 
-      </div>
-    `;
-  });
+      p._latest = latest || null;
+      p._history = h;
+      p._price = latest?.price ?? null;
+      p._available = latest?.available ?? null;
+      p._rating = latest?.rating ?? null;
+      p._delivery = latest?.delivery_days ?? null;
 
-  document.getElementById("content").innerHTML = html;
+      // Variation tags
+      p._tags = [];
+      if (latest && prev) {
+        if (latest.price != null && prev.price != null && prev.price > 0) {
+          const pct = (latest.price - prev.price) / prev.price;
+          if (pct > 0.10) p._tags.push("prix_up");
+          else if (pct < -0.15) p._tags.push("prix_down");
+        }
+        if (latest.delivery_days != null && prev.delivery_days != null) {
+          const diff = latest.delivery_days - prev.delivery_days;
+          if (diff > 5) p._tags.push("delai_up");
+          else if (diff < -5) p._tags.push("delai_down");
+        }
+        if (latest.rating != null && prev.rating != null) {
+          const diff = latest.rating - prev.rating;
+          if (diff >= 0.2) p._tags.push("note_up");
+          else if (diff <= -0.2) p._tags.push("note_down");
+        }
+      }
+    });
+
+    // Positions: get latest date's positions
+    const posDates = new Set();
+    positions.forEach(p => { if (p.date) posDates.add(p.date.slice(0, 10)); });
+    const posDatesSorted = [...posDates].sort();
+    const latestPosDate = posDatesSorted[posDatesSorted.length - 1] || "";
+
+    const latestPositions = positions.filter(p => p.date?.slice(0, 10) === latestPosDate);
+
+    // Build keyword -> products positions
+    const keywordData = {};
+    latestPositions.forEach(p => {
+      if (!keywordData[p.keyword]) keywordData[p.keyword] = [];
+      const prod = prodByScraper[(p.product_id || "").toLowerCase()];
+      keywordData[p.keyword].push({ ...p, _product: prod });
+    });
+
+    // Vendor aggregation from positions
+    const vendorCounts = {};
+    latestPositions.forEach(p => {
+      if (p.seller) {
+        if (!vendorCounts[p.seller]) vendorCounts[p.seller] = { total: 0, keywords: {} };
+        vendorCounts[p.seller].total++;
+        vendorCounts[p.seller].keywords[p.keyword] = (vendorCounts[p.seller].keywords[p.keyword] || 0) + 1;
+      }
+    });
+    const vendorsSorted = Object.entries(vendorCounts)
+      .map(([name, data]) => ({ name, ...data }))
+      .sort((a, b) => b.total - a.total);
+
+    // BM products in page 1 per keyword (match by product_id_scraper)
+    const bmByKeyword = {};
+    const bmScraperIds = new Set(products.map(p => (p.product_id_scraper || "").toLowerCase()));
+    Object.entries(keywordData).forEach(([kw, items]) => {
+      bmByKeyword[kw] = items.filter(i => bmScraperIds.has((i.product_id || "").toLowerCase())).length;
+    });
+
+    // Products in page 1 count
+    const productsInPage1 = new Set();
+    latestPositions.forEach(p => {
+      if (bmScraperIds.has((p.product_id || "").toLowerCase())) {
+        productsInPage1.add(p.product_id?.toLowerCase());
+      }
+    });
+
+    STATE = {
+      products, snapshots, positions: latestPositions, dates, latestDate, prevDate,
+      history, keywordData, vendorsSorted, bmByKeyword, productsInPage1,
+      prodByScraper, latestPosDate, tab: 0,
+    };
+
+    // Update header
+    document.getElementById("header-subtitle").textContent =
+      `${products.length} produits · Relevé du ${latestDate ? new Date(latestDate).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }) : "N/A"}`;
+
+    renderTabs();
+    renderContent();
+  } catch (e) {
+    document.getElementById("content").innerHTML =
+      `<div class="loading" style="color:var(--rd)">
+        <div style="font-size:16px;font-weight:600;margin-bottom:8px">Erreur de chargement</div>
+        <div style="font-size:13px">${e.message}</div>
+        <div style="font-size:12px;margin-top:12px;color:var(--txS)">Vérifiez que les tables existent et que les RLS policies sont configurées.</div>
+      </div>`;
+    console.error(e);
+  }
 }
 
-// =====================
+// =============================================
+// TABS
+// =============================================
+function renderTabs() {
+  document.getElementById("tabs").innerHTML = TAB_NAMES.map((t, i) =>
+    `<button class="tab ${i === STATE.tab ? 'active' : ''}" onclick="switchTab(${i})">${t}</button>`
+  ).join("");
+}
+
+function switchTab(i) {
+  STATE.tab = i;
+  renderTabs();
+  renderContent();
+}
+
+// =============================================
+// RENDER CONTENT
+// =============================================
+function renderContent() {
+  const el = document.getElementById("content");
+  switch (STATE.tab) {
+    case 0: el.innerHTML = renderSynthese(); break;
+    case 1: el.innerHTML = renderProduits(); break;
+    case 2: el.innerHTML = renderHistorique(); break;
+    case 3: el.innerHTML = renderPositions(); break;
+    case 4: el.innerHTML = renderConcurrents(); break;
+    case 5: el.innerHTML = renderAnomalies(); break;
+  }
+}
+
+// =============================================
+// HELPERS
+// =============================================
+function metric(label, value, sub, color) {
+  return `<div class="metric"><div class="metric-label">${label}</div><div class="metric-value" style="color:${color || 'var(--tx)'}">${value}</div>${sub ? `<div class="metric-sub">${sub}</div>` : ''}</div>`;
+}
+
+function pill(text, color = "default") {
+  return `<span class="pill pill-${color}">${text}</span>`;
+}
+
+function bar(label, value, max, color = "var(--ac)", sub) {
+  const pct = max > 0 ? Math.min(Math.round(value / max * 100), 100) : 0;
+  return `<div class="bar-row"><div class="bar-header"><span class="bar-label">${label}</span><span class="bar-sub">${sub || value}</span></div><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div></div>`;
+}
+
+function productRowHTML(p) {
+  return `<div class="product-row"><div class="product-row-name">${esc(p.name)}</div><div class="product-row-refs"><span>ID: ${esc(p.product_id)}</span><span>SKU: ${esc(p.sku)}</span><span>SKU MP: ${esc(p.sku_marketplace)}</span>${p.url ? `<a href="${esc(p.url)}" target="_blank" class="link">Voir sur Cdiscount ↗</a>` : '<span style="color:var(--rd)">Pas d\'URL</span>'}</div></div>`;
+}
+
+function esc(s) { return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
+
+function openModal(title, html) {
+  document.getElementById("modal-title").textContent = title;
+  document.getElementById("modal-body").innerHTML = html;
+  document.getElementById("modal-overlay").classList.remove("hidden");
+}
+function closeModal() { document.getElementById("modal-overlay").classList.add("hidden"); }
+
+const tagLabel = t => ({ prix_up: "Prix ↑", prix_down: "Prix ↓", delai_up: "Délai ↑", delai_down: "Délai ↓", note_up: "Note ↑", note_down: "Note ↓" }[t] || t);
+const tagColor = t => (t.includes("up") && t !== "note_up") ? "red" : (t.includes("down") && t !== "note_down") ? "green" : t === "note_up" ? "green" : "red";
+
+// =============================================
+// TAB 0: SYNTHESE
+// =============================================
+function renderSynthese() {
+  const P = STATE.products;
+  const avail = P.filter(p => p._available === true).length;
+  const unavail = P.filter(p => p._available === false).length;
+  const page1 = STATE.productsInPage1.size;
+  const prices = P.filter(p => p._price != null).map(p => p._price);
+  const ratings = P.filter(p => p._rating != null).map(p => p._rating);
+  const deliveries = P.filter(p => p._delivery != null).map(p => p._delivery);
+  const avgPrice = prices.length ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) : "—";
+  const avgRating = ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) : "—";
+  const avgDelivery = deliveries.length ? Math.round(deliveries.reduce((a, b) => a + b, 0) / deliveries.length) : "—";
+
+  const du = P.filter(p => p._tags.includes("delai_up"));
+  const dd = P.filter(p => p._tags.includes("delai_down"));
+  const pu = P.filter(p => p._tags.includes("prix_up"));
+  const totalWithPrev = P.filter(p => p._latest && STATE.prevDate && p._history[STATE.prevDate]).length;
+  const pctDU = totalWithPrev > 0 ? Math.round(du.length / totalWithPrev * 100) : 0;
+  const pctPU = totalWithPrev > 0 ? Math.round(pu.length / totalWithPrev * 100) : 0;
+  const pctDD = totalWithPrev > 0 ? Math.round(dd.length / totalWithPrev * 100) : 0;
+
+  // BM by keyword top 10
+  const bmCats = Object.entries(STATE.bmByKeyword).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const maxBM = bmCats.length ? bmCats[0][1] : 1;
+
+  // Top 10 vendors
+  const topV = STATE.vendorsSorted.slice(0, 10);
+  const maxV = topV.length ? topV[0].total : 1;
+
+  return `
+    <div class="metrics">
+      ${metric("Produits suivis", P.length)}
+      ${metric("En page 1", page1, `${P.length > 0 ? Math.round(page1 / P.length * 100) : 0}% du catalogue`, "var(--ac)")}
+      ${metric("Indisponibles", unavail, "liens cassés ou HS", "var(--rd)")}
+      ${metric("Délai moyen", avgDelivery + "j", "", "var(--am)")}
+      ${metric("Note moyenne", avgRating, "sur produits notés", "var(--am)")}
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">BestMobilier en page 1 — top 10</div>
+        ${bmCats.map(([kw, c]) => bar(kw, c, maxBM + 2, "var(--ac)", `${c} produits`)).join("")}
+        ${bmCats.length === 0 ? '<div style="color:var(--txT);font-size:12px">Aucune donnée de position disponible</div>' : ''}
+      </div>
+      <div class="card">
+        <div class="card-title">Top 10 vendeurs (apparitions page 1)</div>
+        ${topV.map((v, i) => bar(`${i + 1}. ${v.name}`, v.total, maxV + 2,
+          v.name === "BestMobilier" ? "var(--ac)" : v.name === "Cdiscount" ? "var(--pu)" : "var(--txT)",
+          `${v.total} app.`)).join("")}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Indicateurs clés</div>
+      <div class="grid-2">
+        ${[
+          { l: "Prix moyen", v: avgPrice + " €" },
+          { l: "Délai moyen", v: avgDelivery + " jours" },
+          { l: "Note moyenne", v: avgRating + " / 5" },
+          { l: "Taux dispo", v: (P.length > 0 ? Math.round(avail / P.length * 100) : 0) + "%" },
+          { l: "Taux page 1", v: (P.length > 0 ? Math.round(page1 / P.length * 100) : 0) + "%" },
+          { l: "Prix en hausse (>10%)", v: `${pctPU}% (${pu.length})`, click: pu.length > 0 ? "showVariation('prix_up')" : null, color: pu.length > 0 ? "var(--rd)" : "" },
+          { l: "Délai en hausse (>5j)", v: `${pctDU}% (${du.length})`, click: du.length > 0 ? "showVariation('delai_up')" : null, color: du.length > 0 ? "var(--rd)" : "" },
+          { l: "Délai en baisse (>5j)", v: `${pctDD}% (${dd.length})`, click: dd.length > 0 ? "showVariation('delai_down')" : null, color: dd.length > 0 ? "var(--gn)" : "" },
+        ].map(k => `<div class="kpi-row"><span class="kpi-label">${k.l}</span><div><span class="kpi-value" ${k.color ? `style="color:${k.color}"` : ''}>${k.v}</span>${k.click ? `<button class="btn-see" onclick="${k.click}">voir</button>` : ''}</div></div>`).join("")}
+      </div>
+    </div>`;
+}
+
+function showVariation(tag) {
+  const prods = STATE.products.filter(p => p._tags.includes(tag));
+  const titles = { prix_up: "Prix en hausse >10%", prix_down: "Prix en baisse >15%", delai_up: "Délai en hausse >5j", delai_down: "Délai en baisse >5j", note_up: "Note en hausse", note_down: "Note en baisse" };
+  openModal(titles[tag] || tag, prods.length > 0 ? prods.map(p => {
+    const curr = p._history[STATE.latestDate];
+    const prev = p._history[STATE.prevDate];
+    let delta = "";
+    if (tag.startsWith("prix") && curr?.price != null && prev?.price != null) delta = `${prev.price}€ → ${curr.price}€`;
+    else if (tag.startsWith("delai") && curr?.delivery_days != null && prev?.delivery_days != null) delta = `${prev.delivery_days}j → ${curr.delivery_days}j`;
+    else if (tag.startsWith("note") && curr?.rating != null && prev?.rating != null) delta = `${prev.rating} → ${curr.rating}`;
+    return `<div class="product-row"><div class="product-row-name">${esc(p.name)}</div><div class="product-row-refs"><span>ID: ${esc(p.product_id)}</span><span>SKU: ${esc(p.sku)}</span><span>SKU MP: ${esc(p.sku_marketplace)}</span><span style="color:${tag.includes('down') ? 'var(--gn)' : 'var(--rd)'};font-weight:500">${delta}</span>${p.url ? `<a href="${esc(p.url)}" target="_blank" class="link">Voir ↗</a>` : ''}</div></div>`;
+  }).join("") : '<div style="padding:20px;text-align:center;color:var(--txT)">Aucun produit concerné</div>');
+}
+
+// =============================================
+// TAB 1: PRODUITS
+// =============================================
+let prodFilters = { search: "", type: "all", avail: "all", page1: "all", tag: "all", sort: "name", dir: "asc" };
+
+function renderProduits() {
+  const f = prodFilters;
+  let list = [...STATE.products];
+  if (f.search) { const s = f.search.toLowerCase(); list = list.filter(p => p.name.toLowerCase().includes(s) || p.product_id.includes(s) || (p.sku || "").toLowerCase().includes(s)); }
+  if (f.type !== "all") list = list.filter(p => p.type === f.type);
+  if (f.avail === "dispo") list = list.filter(p => p._available === true);
+  if (f.avail === "indispo") list = list.filter(p => p._available === false);
+  if (f.page1 === "yes") list = list.filter(p => STATE.productsInPage1.has((p.product_id_scraper || "").toLowerCase()));
+  if (f.page1 === "no") list = list.filter(p => !STATE.productsInPage1.has((p.product_id_scraper || "").toLowerCase()));
+  if (f.tag !== "all") list = list.filter(p => p._tags.includes(f.tag));
+
+  list.sort((a, b) => {
+    let va, vb;
+    switch (f.sort) {
+      case "price": va = a._price || 0; vb = b._price || 0; break;
+      case "rating": va = a._rating || 0; vb = b._rating || 0; break;
+      case "delivery": va = a._delivery || 999; vb = b._delivery || 999; break;
+      default: va = a.name; vb = b.name;
+    }
+    return f.dir === "asc" ? (va < vb ? -1 : 1) : (va > vb ? -1 : 1);
+  });
+
+  const si = col => f.sort === col ? (f.dir === "asc" ? " ↑" : " ↓") : "";
+
+  return `
+    <div class="filters">
+      <input placeholder="Rechercher (nom, ID, SKU)..." value="${esc(f.search)}" oninput="prodFilters.search=this.value;renderContent()"/>
+      <select onchange="prodFilters.type=this.value;renderContent()">
+        <option value="all">Tous types</option>
+        <option value="Classe A" ${f.type === 'Classe A' ? 'selected' : ''}>Classe A</option>
+        <option value="Nouveautés Q4+Q1" ${f.type === 'Nouveautés Q4+Q1' ? 'selected' : ''}>Nouveautés</option>
+        <option value="Deals exclus" ${f.type === 'Deals exclus' ? 'selected' : ''}>Deals exclus</option>
+      </select>
+      <select onchange="prodFilters.avail=this.value;renderContent()">
+        <option value="all">Dispo + Indispo</option>
+        <option value="dispo" ${f.avail === 'dispo' ? 'selected' : ''}>Disponible</option>
+        <option value="indispo" ${f.avail === 'indispo' ? 'selected' : ''}>Indisponible</option>
+      </select>
+      <select onchange="prodFilters.page1=this.value;renderContent()">
+        <option value="all">Toutes positions</option>
+        <option value="yes" ${f.page1 === 'yes' ? 'selected' : ''}>En page 1</option>
+        <option value="no" ${f.page1 === 'no' ? 'selected' : ''}>Pas en page 1</option>
+      </select>
+      <select onchange="prodFilters.tag=this.value;renderContent()">
+        <option value="all">Toutes variations</option>
+        <option value="prix_up">Prix ↑</option><option value="prix_down">Prix ↓</option>
+        <option value="delai_up">Délai ↑</option><option value="delai_down">Délai ↓</option>
+        <option value="note_up">Note ↑</option><option value="note_down">Note ↓</option>
+      </select>
+    </div>
+    <div style="font-size:12px;color:var(--txS);margin-bottom:8px">${list.length} produit${list.length > 1 ? 's' : ''}</div>
+    <div class="card" style="padding:0;overflow:hidden">
+    <div class="scroll-table">
+      <table style="min-width:1000px">
+        <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)">
+          <th style="cursor:pointer" onclick="toggleProdSort('name')">Produit${si('name')}</th>
+          <th>Réfs</th><th>Type</th>
+          <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('price')">Prix${si('price')}</th>
+          <th>Dispo</th>
+          <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('rating')">Note${si('rating')}</th>
+          <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('delivery')">Délai${si('delivery')}</th>
+          <th>Variations</th><th>Lien</th>
+        </tr></thead>
+        <tbody>
+          ${list.slice(0, 80).map((p, i) => `<tr class="${i % 2 ? 'stripe' : ''}">
+            <td style="font-weight:500;max-width:240px"><div style="line-height:1.3">${esc(p.name)}</div></td>
+            <td style="font-size:11px;color:var(--txS);white-space:nowrap"><div>${esc(p.product_id)}</div><div>${esc(p.sku)}</div><div style="color:var(--txT)">${esc(p.sku_marketplace)}</div></td>
+            <td style="text-align:center">${pill(p.type === "Nouveautés Q4+Q1" ? "Nvtés" : p.type === "Deals exclus" ? "Deals" : p.type, p.type === "Classe A" ? "green" : p.type === "Deals exclus" ? "amber" : "accent")}</td>
+            <td style="text-align:right;font-weight:500">${p._price != null ? Math.round(p._price) + '€' : '—'}</td>
+            <td style="text-align:center">${p._available != null ? pill(p._available ? 'Dispo' : 'Indispo', p._available ? 'green' : 'red') : '—'}</td>
+            <td style="text-align:right">${p._rating != null ? p._rating : '—'}</td>
+            <td style="text-align:right">${p._delivery != null ? p._delivery + 'j' : '—'}</td>
+            <td>${p._tags.map(t => `<span class="tag">${pill(tagLabel(t), tagColor(t))}</span>`).join('')}</td>
+            <td>${p.url ? `<a href="${esc(p.url)}" target="_blank" class="link">Voir ↗</a>` : '—'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    ${list.length > 80 ? `<div style="padding:12px;text-align:center;font-size:12px;color:var(--txS);border-top:1px solid var(--borderL)">80 premiers sur ${list.length}</div>` : ''}
+    </div>`;
+}
+
+function toggleProdSort(col) {
+  if (prodFilters.sort === col) prodFilters.dir = prodFilters.dir === "asc" ? "desc" : "asc";
+  else { prodFilters.sort = col; prodFilters.dir = "asc"; }
+  renderContent();
+}
+
+// =============================================
+// TAB 2: HISTORIQUE
+// =============================================
+let histMetric = "price";
+
+function renderHistorique() {
+  const dates = STATE.dates.slice(-5);
+  const prods = STATE.products.filter(p => Object.keys(p._history).length > 0);
+
+  const getVal = (p, d) => {
+    const e = p._history[d];
+    if (!e) return null;
+    if (histMetric === "price") return e.price;
+    if (histMetric === "rating") return e.rating;
+    if (histMetric === "delivery") return e.delivery_days;
+    if (histMetric === "dispo") return e.available;
+    return null;
+  };
+
+  const fmtVal = v => {
+    if (v == null) return "—";
+    if (histMetric === "price") return Math.round(v) + "€";
+    if (histMetric === "rating") return v;
+    if (histMetric === "delivery") return v + "j";
+    if (histMetric === "dispo") return v ? "✓" : "✗";
+    return v;
+  };
+
+  const hasVar = (p, d, di) => {
+    if (di === 0) return null;
+    const prev = getVal(p, dates[di - 1]), curr = getVal(p, d);
+    if (prev == null || curr == null) return null;
+    if (histMetric === "price" && prev > 0) { const pct = (curr - prev) / prev; if (pct > 0.10) return "up"; if (pct < -0.15) return "down"; }
+    if (histMetric === "delivery") { const diff = curr - prev; if (diff > 5) return "up"; if (diff < -5) return "down"; }
+    if (histMetric === "rating") { const diff = curr - prev; if (diff >= 0.2) return "good"; if (diff <= -0.2) return "bad"; }
+    if (histMetric === "dispo" && prev !== curr) return curr ? "good" : "bad";
+    return null;
+  };
+
+  const varBg = v => ({ up: "var(--rdBg)", down: "var(--gnBg)", good: "var(--gnBg)", bad: "var(--rdBg)" }[v] || "");
+
+  return `
+    <div class="filters">
+      <div class="toggle-group">
+        ${["price", "rating", "delivery", "dispo"].map(m => `<button class="toggle-btn ${histMetric === m ? 'active' : ''}" onclick="histMetric='${m}';renderContent()">${{ price: "Prix", rating: "Note", delivery: "Délai", dispo: "Dispo" }[m]}</button>`).join("")}
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--txS);margin-bottom:8px">${prods.length} produits avec historique · ${dates.length} dates · Couleur = variation notable</div>
+    <div class="card" style="padding:0;overflow:hidden"><div class="scroll-table">
+      <table style="min-width:700px">
+        <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)">
+          <th style="min-width:200px">Produit</th><th>Réfs</th>
+          ${dates.map(d => `<th style="text-align:center;white-space:nowrap">${d.slice(5)}</th>`).join("")}
+        </tr></thead>
+        <tbody>
+          ${prods.slice(0, 100).map((p, i) => `<tr class="${i % 2 ? 'stripe' : ''}">
+            <td style="font-weight:500;font-size:12px;max-width:200px"><div style="line-height:1.3">${esc(p.name)}</div></td>
+            <td style="font-size:10px;color:var(--txT);white-space:nowrap">${esc(p.product_id)}<br>${esc(p.sku)}</td>
+            ${dates.map((d, di) => {
+              const v = getVal(p, d);
+              const vr = hasVar(p, d, di);
+              return `<td style="text-align:center;${vr ? `background:${varBg(vr)};font-weight:600` : ''}">${fmtVal(v)}</td>`;
+            }).join("")}
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+    ${prods.length > 100 ? `<div style="padding:12px;text-align:center;font-size:12px;color:var(--txS)">100 premiers sur ${prods.length}</div>` : ''}
+    </div>`;
+}
+
+// =============================================
+// TAB 3: POSITIONS
+// =============================================
+function renderPositions() {
+  const keywords = Object.keys(STATE.bmByKeyword).sort((a, b) => (STATE.bmByKeyword[b] || 0) - (STATE.bmByKeyword[a] || 0));
+  const maxBM = keywords.length ? Math.max(...Object.values(STATE.bmByKeyword)) : 0;
+  const totalBM = Object.values(STATE.bmByKeyword).reduce((s, v) => s + v, 0);
+  const withPresence = keywords.filter(k => STATE.bmByKeyword[k] > 0).length;
+
+  return `
+    <div class="metrics">
+      ${metric("Catégories avec présence", withPresence, `sur ${keywords.length}`, "var(--ac)")}
+      ${metric("Total apparitions P1", totalBM, "toutes catégories", "var(--gn)")}
+    </div>
+    <div class="card">
+      <div class="card-title">Présence BestMobilier par catégorie de recherche</div>
+      <div class="cat-grid">
+        ${keywords.map(kw => {
+          const c = STATE.bmByKeyword[kw] || 0;
+          return `<div class="cat-card ${c === 0 ? 'cat-card-zero' : ''}" onclick="showPositionDetail('${esc(kw)}')">
+            <div class="cat-card-header"><span class="cat-card-name">${esc(kw)}</span><span class="cat-card-count">${c}</span></div>
+            ${c > 0 ? `<div style="margin-top:5px;height:4px;background:var(--borderL);border-radius:2px;overflow:hidden"><div style="height:100%;width:${Math.min(c / (maxBM + 1) * 100, 100)}%;background:var(--ac);border-radius:2px"></div></div>` : ''}
+          </div>`;
+        }).join("")}
+      </div>
+      ${keywords.length === 0 ? '<div style="color:var(--txT);font-size:12px;padding:20px;text-align:center">Aucune donnée de position disponible. Lancez l\'extension de scraping des pages de recherche.</div>' : ''}
+    </div>
+    <div class="card">
+      <div class="card-title">Leader par catégorie</div>
+      <div class="grid-2">
+        ${keywords.map(kw => {
+          const items = STATE.keywordData[kw] || [];
+          const sellers = {};
+          items.forEach(i => { sellers[i.seller] = (sellers[i.seller] || 0) + 1; });
+          const sorted = Object.entries(sellers).sort((a, b) => b[1] - a[1]).slice(0, 2);
+          const bmC = STATE.bmByKeyword[kw] || 0;
+          return `<div style="padding:8px 12px;border-bottom:1px solid var(--borderL)">
+            <div style="font-size:13px;font-weight:500;margin-bottom:4px">${esc(kw)}</div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap">
+              ${sorted.map((s, i) => pill(`${i === 0 ? '🥇' : '🥈'} ${s[0]} (${s[1]})`, s[0] === "BestMobilier" ? "accent" : s[0] === "Cdiscount" ? "purple" : "default")).join("")}
+              ${bmC > 0 && !sorted.find(s => s[0] === "BestMobilier") ? pill(`BM: ${bmC}`, "accent") : ''}
+            </div>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>`;
+}
+
+function showPositionDetail(kw) {
+  const items = (STATE.keywordData[kw] || []).filter(i => i._product);
+  const bmItems = items.filter(i => {
+    const key = (i.product_id || "").toLowerCase();
+    return STATE.products.some(p => (p.product_id_scraper || "").toLowerCase() === key);
+  });
+  if (bmItems.length === 0) { openModal(`Positions — ${kw}`, '<div style="padding:20px;text-align:center;color:var(--txT)">Aucun produit BestMobilier en page 1 pour cette recherche</div>'); return; }
+  openModal(`Produits BM en page 1 — ${kw} (${bmItems.length})`, bmItems.map(i => i._product ? productRowHTML(i._product) : `<div class="product-row"><div class="product-row-name">${esc(i.product_id)}</div></div>`).join(""));
+}
+
+// =============================================
+// TAB 4: CONCURRENTS
+// =============================================
+function renderConcurrents() {
+  const vendors = STATE.vendorsSorted;
+  const maxT = vendors.length ? vendors[0].total : 1;
+  const bmIdx = vendors.findIndex(v => v.name === "BestMobilier");
+
+  return `
+    <div class="metrics">
+      ${metric("Vendeurs identifiés", vendors.length)}
+      ${metric("Leader global", vendors[0]?.name || "—", `${vendors[0]?.total || 0} apparitions`, "var(--pu)")}
+      ${metric("Position BM", bmIdx >= 0 ? `#${bmIdx + 1}` : "—", `${vendors[bmIdx]?.total || 0} app.`, "var(--ac)")}
+    </div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Classement — apparitions page 1</div>
+        ${vendors.slice(0, 12).map((v, i) => {
+          const isBM = v.name === "BestMobilier", isCD = v.name === "Cdiscount";
+          const color = isBM ? "var(--ac)" : isCD ? "var(--pu)" : "var(--txT)";
+          return `<div class="vendor-row" onclick="showVendorDetail('${esc(v.name)}')">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
+              <div style="display:flex;align-items:center;gap:6px">
+                <span class="vendor-rank">#${i + 1}</span>
+                <span style="font-size:13px;font-weight:${isBM ? 700 : 500};color:${isBM ? 'var(--ac)' : 'var(--tx)'}">${esc(v.name)}</span>
+                ${isBM ? pill("Vous", "accent") : ''}${isCD ? pill("VD", "purple") : ''}
+              </div>
+              <span style="font-size:13px;font-weight:600;color:${color}">${v.total}</span>
+            </div>
+            <div style="height:4px;background:var(--borderL);border-radius:2px;margin-left:24px;overflow:hidden"><div style="height:100%;width:${(v.total / maxT) * 100}%;background:${color};border-radius:2px"></div></div>
+          </div>`;
+        }).join("")}
+      </div>
+      <div>
+        <div class="card" id="vendor-detail">
+          <div style="padding:20px;text-align:center;color:var(--txT);font-size:13px">Cliquez sur un vendeur pour voir le détail</div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function showVendorDetail(name) {
+  const v = STATE.vendorsSorted.find(v => v.name === name);
+  if (!v) return;
+  const sorted = Object.entries(v.keywords).sort((a, b) => b[1] - a[1]);
+  const max = sorted.length ? sorted[0][1] : 1;
+  const color = name === "BestMobilier" ? "var(--ac)" : "var(--pu)";
+  document.getElementById("vendor-detail").innerHTML = `
+    <div style="font-size:15px;font-weight:600;margin-bottom:4px">${esc(name)}</div>
+    <div style="font-size:12px;color:var(--txS);margin-bottom:14px">${v.total} apparitions en page 1</div>
+    ${sorted.map(([kw, c]) => bar(kw, c, max + 1, color, c)).join("")}`;
+}
+
+// =============================================
+// TAB 5: ANOMALIES
+// =============================================
+function renderAnomalies() {
+  const P = STATE.products;
+  const notScraped = P.filter(p => !p._latest);
+  const urlMap = {};
+  P.forEach(p => { if (p.url && p.url.startsWith("http")) { (urlMap[p.url] = urlMap[p.url] || []).push(p); } });
+  const dupeUrls = Object.entries(urlMap).filter(([, ps]) => ps.length > 1);
+  const brokenUrls = P.filter(p => !p.url || !p.url.startsWith("http"));
+  const total = notScraped.length + dupeUrls.length + brokenUrls.length;
+
+  return `
+    <div class="metrics">
+      ${metric("Non scrapés", notScraped.length, `au ${STATE.latestDate}`, notScraped.length > 0 ? "var(--rd)" : "var(--gn)")}
+      ${metric("URLs en doublon", dupeUrls.length, `${dupeUrls.reduce((s, d) => s + d[1].length, 0)} produits`, dupeUrls.length > 0 ? "var(--am)" : "var(--gn)")}
+      ${metric("URLs cassées", brokenUrls.length, "liens vides ou invalides", brokenUrls.length > 0 ? "var(--rd)" : "var(--gn)")}
+      ${metric("Total anomalies", total, "", total > 0 ? "var(--rd)" : "var(--gn)")}
+    </div>
+    ${notScraped.length > 0 ? `<div class="card anomaly-section">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="anomaly-dot" style="background:var(--rd)"></span><span style="font-size:14px;font-weight:600">Produits non scrapés le ${STATE.latestDate} (${notScraped.length})</span></div>
+      <div style="font-size:12px;color:var(--txS);margin-bottom:10px">Pas de snapshot à la dernière date. Cause possible : URL manquante dans urls.txt, timeout, ou page inaccessible.</div>
+      ${notScraped.map(p => productRowHTML(p)).join("")}
+    </div>` : ''}
+    ${dupeUrls.length > 0 ? `<div class="card anomaly-section">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="anomaly-dot" style="background:var(--am)"></span><span style="font-size:14px;font-weight:600">URLs en doublon (${dupeUrls.length})</span></div>
+      <div style="font-size:12px;color:var(--txS);margin-bottom:10px">Plusieurs produits (IDs différents) pointent vers la même URL.</div>
+      ${dupeUrls.map(([url, prods]) => `<div style="padding:10px 0;border-bottom:1px solid var(--borderL)">
+        <div style="font-size:12px;color:var(--ac);margin-bottom:6px;word-break:break-all"><a href="${esc(url)}" target="_blank" class="link">${esc(url)} ↗</a></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">${prods.map(p => `<div style="background:var(--amBg);border-radius:8px;padding:6px 10px;font-size:11px"><span style="font-weight:600">${esc(p.product_id)}</span> · ${esc(p.sku)} · ${esc(p.name).slice(0, 40)}…</div>`).join("")}</div>
+      </div>`).join("")}
+    </div>` : ''}
+    ${brokenUrls.length > 0 ? `<div class="card anomaly-section">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="anomaly-dot" style="background:var(--rd)"></span><span style="font-size:14px;font-weight:600">URLs cassées (${brokenUrls.length})</span></div>
+      ${brokenUrls.map(p => productRowHTML(p)).join("")}
+    </div>` : ''}
+    ${total === 0 ? '<div class="card" style="background:var(--gnBg);text-align:center;padding:30px"><div style="font-size:16px;font-weight:600;color:var(--gn)">Aucune anomalie détectée</div></div>' : ''}`;
+}
+
+// =============================================
 // INIT
-// =====================
-showTab("positions");
-
+// =============================================
+loadData();
 </script>
-
 </body>
 </html>
