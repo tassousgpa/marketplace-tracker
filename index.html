@@ -78,8 +78,6 @@ tr.stripe{background:var(--bg)}
 .loading-spinner{display:inline-block;width:32px;height:32px;border:3px solid var(--borderL);border-top-color:var(--ac);border-radius:50%;animation:spin .8s linear infinite;margin-bottom:12px}
 @keyframes spin{to{transform:rotate(360deg)}}
 .hidden{display:none}
-.type-select{font-size:11px;padding:2px 4px;border-radius:4px;border:1px solid var(--ac);font-family:inherit}
-.tag{display:inline-block;margin:1px 2px}
 .scroll-table{overflow-x:auto}
 </style>
 </head>
@@ -104,7 +102,6 @@ tr.stripe{background:var(--bg)}
   <div class="loading"><div class="loading-spinner"></div><div>Chargement des données depuis Supabase...</div></div>
 </div>
 
-<!-- MODAL -->
 <div class="modal-overlay hidden" id="modal-overlay" onclick="closeModal()">
   <div class="modal" onclick="event.stopPropagation()">
     <div class="modal-header">
@@ -116,830 +113,549 @@ tr.stripe{background:var(--bg)}
 </div>
 
 <script>
-// =============================================
-// SUPABASE CONFIG
-// =============================================
 const SB_URL = "https://pmxsthzdxubqbemdgtbr.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBteHN0aHpkeHVicWJlbWRndGJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk4NDQsImV4cCI6MjA5MDAyNTg0NH0.GpfAw91eJ8D7RIeZLFIejCt9DTwGpXvOGcxYlhZS78I";
 const MARKETPLACE = "cdiscount";
 
-async function sb(table, params = "") {
-  const r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, {
-    headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` }
-  });
+async function sb(table, params="") {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } });
   if (!r.ok) throw new Error(`Supabase error: ${r.status}`);
   return r.json();
 }
-
 async function sbInsert(table, data) {
-  const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
-    method: "POST", headers: { "Content-Type": "application/json", apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, Prefer: "return=representation" },
-    body: JSON.stringify(data)
-  });
-  if (!r.ok) { const t = await r.text(); throw new Error(`Insert error ${r.status}: ${t}`); }
+  const r = await fetch(`${SB_URL}/rest/v1/${table}`, { method:"POST", headers:{"Content-Type":"application/json",apikey:SB_KEY,Authorization:`Bearer ${SB_KEY}`,Prefer:"return=representation"}, body:JSON.stringify(data) });
+  if (!r.ok) { const t=await r.text(); throw new Error(`Insert error ${r.status}: ${t}`); }
   return r.json();
 }
-
 async function sbUpdate(table, filter, data) {
-  const r = await fetch(`${SB_URL}/rest/v1/${table}?${filter}`, {
-    method: "PATCH", headers: { "Content-Type": "application/json", apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, Prefer: "return=representation" },
-    body: JSON.stringify(data)
-  });
-  if (!r.ok) { const t = await r.text(); throw new Error(`Update error ${r.status}: ${t}`); }
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?${filter}`, { method:"PATCH", headers:{"Content-Type":"application/json",apikey:SB_KEY,Authorization:`Bearer ${SB_KEY}`,Prefer:"return=representation"}, body:JSON.stringify(data) });
+  if (!r.ok) { const t=await r.text(); throw new Error(`Update error ${r.status}: ${t}`); }
   return r.json();
 }
-
 async function sbDelete(table, filter) {
-  const r = await fetch(`${SB_URL}/rest/v1/${table}?${filter}`, {
-    method: "DELETE", headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` }
-  });
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?${filter}`, { method:"DELETE", headers:{apikey:SB_KEY,Authorization:`Bearer ${SB_KEY}`} });
   if (!r.ok) throw new Error(`Delete error: ${r.status}`);
 }
 
-// =============================================
-// STATE
-// =============================================
-let STATE = { products: [], snapshots: [], positions: [], dates: [], tab: 0 };
-const TAB_NAMES = ["Synthèse", "Produits", "Historique", "Positions", "Concurrents", "Anomalies", "Gestion"];
+let STATE = { products:[], snapshots:[], positions:[], dates:[], sellerStats:[], tab:0 };
+const TAB_NAMES = ["Synthèse","Produits","Historique","Positions","Concurrents","Anomalies","Gestion"];
 
-// =============================================
-// LOAD DATA
-// =============================================
 async function loadData() {
   try {
-    const [products, allProducts, snapshots, positions] = await Promise.all([
+    const [products, allProducts, snapshots, positions, sellerStats] = await Promise.all([
       sb("products", `marketplace=eq.${MARKETPLACE}&active=eq.true&select=*&order=product_id`),
       sb("products", `marketplace=eq.${MARKETPLACE}&select=*&order=product_id`),
       sb("product_snapshots", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=5000`),
       sb("positions", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=5000`),
+      sb("seller_stats", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=2000`),
     ]);
 
-    // Build lookup: product_id_scraper -> product
     const prodByScraper = {};
     products.forEach(p => { if (p.product_id_scraper) prodByScraper[p.product_id_scraper.toLowerCase()] = p; });
+    snapshots.forEach(s => { s._product = prodByScraper[(s.product_id||"").toLowerCase()] || null; });
 
-    // Enrich snapshots with product info
-    snapshots.forEach(s => {
-      const key = (s.product_id || "").toLowerCase();
-      s._product = prodByScraper[key] || null;
-    });
-
-    // Get unique dates from snapshots
     const dateSet = new Set();
-    snapshots.forEach(s => { if (s.date) dateSet.add(s.date.slice(0, 10)); });
+    snapshots.forEach(s => { if (s.date) dateSet.add(s.date.slice(0,10)); });
     const dates = [...dateSet].sort();
 
-    // Build history per product: { scraper_id: { date: snapshot } }
     const history = {};
     snapshots.forEach(s => {
-      const key = (s.product_id || "").toLowerCase();
+      const key = (s.product_id||"").toLowerCase();
       if (!history[key]) history[key] = {};
-      const d = s.date?.slice(0, 10);
-      if (d && (!history[key][d] || s.id > history[key][d].id)) {
-        history[key][d] = s;
-      }
+      const d = s.date?.slice(0,10);
+      if (d && (!history[key][d] || s.id > history[key][d].id)) history[key][d] = s;
     });
 
-    // Latest date
-    const latestDate = dates[dates.length - 1] || "";
-    const prevDate = dates.length >= 2 ? dates[dates.length - 2] : "";
+    const latestDate = dates[dates.length-1] || "";
+    const prevDate = dates.length >= 2 ? dates[dates.length-2] : "";
 
-    // Enrich products with latest snapshot + history + variations
     products.forEach(p => {
-      const key = (p.product_id_scraper || "").toLowerCase();
+      const key = (p.product_id_scraper||"").toLowerCase();
       const h = history[key] || {};
-      const latest = h[latestDate];
-      const prev = h[prevDate];
-
-      p._latest = latest || null;
-      p._history = h;
-      p._price = latest?.price ?? null;
-      p._available = latest?.available ?? null;
-      p._rating = latest?.rating ?? null;
-      p._delivery = latest?.delivery_days ?? null;
-
-      // Variation tags
+      const latest = h[latestDate], prev = h[prevDate];
+      p._latest = latest || null; p._history = h;
+      p._price = latest?.price ?? null; p._available = latest?.available ?? null;
+      p._rating = latest?.rating ?? null; p._delivery = latest?.delivery_days ?? null;
       p._tags = [];
       if (latest && prev) {
-        if (latest.price != null && prev.price != null && prev.price > 0) {
-          const pct = (latest.price - prev.price) / prev.price;
-          if (pct > 0.10) p._tags.push("prix_up");
-          else if (pct < -0.15) p._tags.push("prix_down");
-        }
-        if (latest.delivery_days != null && prev.delivery_days != null) {
-          const diff = latest.delivery_days - prev.delivery_days;
-          if (diff > 5) p._tags.push("delai_up");
-          else if (diff < -5) p._tags.push("delai_down");
-        }
-        if (latest.rating != null && prev.rating != null) {
-          const diff = latest.rating - prev.rating;
-          if (diff >= 0.2) p._tags.push("note_up");
-          else if (diff <= -0.2) p._tags.push("note_down");
-        }
+        if (latest.price!=null && prev.price!=null && prev.price>0) { const pct=(latest.price-prev.price)/prev.price; if(pct>.10) p._tags.push("prix_up"); else if(pct<-.15) p._tags.push("prix_down"); }
+        if (latest.delivery_days!=null && prev.delivery_days!=null) { const d=latest.delivery_days-prev.delivery_days; if(d>5) p._tags.push("delai_up"); else if(d<-5) p._tags.push("delai_down"); }
+        if (latest.rating!=null && prev.rating!=null) { const d=latest.rating-prev.rating; if(d>=.2) p._tags.push("note_up"); else if(d<=-.2) p._tags.push("note_down"); }
       }
     });
 
-    // Positions: get latest date's positions
-    const posDates = new Set();
-    positions.forEach(p => { if (p.date) posDates.add(p.date.slice(0, 10)); });
+    const posDates = new Set(); positions.forEach(p => { if(p.date) posDates.add(p.date.slice(0,10)); });
     const posDatesSorted = [...posDates].sort();
-    const latestPosDate = posDatesSorted[posDatesSorted.length - 1] || "";
+    const latestPosDate = posDatesSorted[posDatesSorted.length-1] || "";
+    const latestPositions = positions.filter(p => p.date?.slice(0,10) === latestPosDate);
 
-    const latestPositions = positions.filter(p => p.date?.slice(0, 10) === latestPosDate);
-
-    // Build keyword -> products positions
     const keywordData = {};
     latestPositions.forEach(p => {
       if (!keywordData[p.keyword]) keywordData[p.keyword] = [];
-      const prod = prodByScraper[(p.product_id || "").toLowerCase()];
-      keywordData[p.keyword].push({ ...p, _product: prod });
+      const prod = prodByScraper[(p.product_id||"").toLowerCase()];
+      keywordData[p.keyword].push({...p, _product:prod});
     });
 
-    // Vendor aggregation from positions
     const vendorCounts = {};
     latestPositions.forEach(p => {
       if (p.seller) {
-        if (!vendorCounts[p.seller]) vendorCounts[p.seller] = { total: 0, keywords: {} };
+        if (!vendorCounts[p.seller]) vendorCounts[p.seller] = { total:0, keywords:{} };
         vendorCounts[p.seller].total++;
-        vendorCounts[p.seller].keywords[p.keyword] = (vendorCounts[p.seller].keywords[p.keyword] || 0) + 1;
+        vendorCounts[p.seller].keywords[p.keyword] = (vendorCounts[p.seller].keywords[p.keyword]||0)+1;
       }
     });
-    const vendorsSorted = Object.entries(vendorCounts)
-      .map(([name, data]) => ({ name, ...data }))
-      .sort((a, b) => b.total - a.total);
+    const vendorsSorted = Object.entries(vendorCounts).map(([name,data])=>({name,...data})).sort((a,b)=>b.total-a.total);
 
-    // BM products in page 1 per keyword (match by product_id_scraper)
     const bmByKeyword = {};
-    const bmScraperIds = new Set(products.map(p => (p.product_id_scraper || "").toLowerCase()));
-    Object.entries(keywordData).forEach(([kw, items]) => {
-      bmByKeyword[kw] = items.filter(i => bmScraperIds.has((i.product_id || "").toLowerCase())).length;
-    });
+    const bmScraperIds = new Set(products.map(p=>(p.product_id_scraper||"").toLowerCase()));
+    Object.entries(keywordData).forEach(([kw,items]) => { bmByKeyword[kw] = items.filter(i=>bmScraperIds.has((i.product_id||"").toLowerCase())).length; });
 
-    // Products in page 1 count
     const productsInPage1 = new Set();
-    latestPositions.forEach(p => {
-      if (bmScraperIds.has((p.product_id || "").toLowerCase())) {
-        productsInPage1.add(p.product_id?.toLowerCase());
-      }
-    });
+    latestPositions.forEach(p => { if(bmScraperIds.has((p.product_id||"").toLowerCase())) productsInPage1.add(p.product_id?.toLowerCase()); });
 
-    STATE = {
-      products, allProducts, snapshots, positions: latestPositions, dates, latestDate, prevDate,
-      history, keywordData, vendorsSorted, bmByKeyword, productsInPage1,
-      prodByScraper, latestPosDate, tab: 0,
-    };
+    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, vendorsSorted, bmByKeyword, productsInPage1, prodByScraper, latestPosDate, sellerStats, tab:STATE.tab||0 };
 
-    // Update header
-    document.getElementById("header-subtitle").textContent =
-      `${products.length} produits · Relevé du ${latestDate ? new Date(latestDate).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" }) : "N/A"}`;
-
-    renderTabs();
-    renderContent();
-  } catch (e) {
-    document.getElementById("content").innerHTML =
-      `<div class="loading" style="color:var(--rd)">
-        <div style="font-size:16px;font-weight:600;margin-bottom:8px">Erreur de chargement</div>
-        <div style="font-size:13px">${e.message}</div>
-        <div style="font-size:12px;margin-top:12px;color:var(--txS)">Vérifiez que les tables existent et que les RLS policies sont configurées.</div>
-      </div>`;
+    document.getElementById("header-subtitle").textContent = `${products.length} produits · Relevé du ${latestDate ? new Date(latestDate).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}) : "N/A"}`;
+    renderTabs(); renderContent();
+  } catch(e) {
+    document.getElementById("content").innerHTML = `<div class="loading" style="color:var(--rd)"><div style="font-size:16px;font-weight:600;margin-bottom:8px">Erreur de chargement</div><div style="font-size:13px">${e.message}</div></div>`;
     console.error(e);
   }
 }
 
-// =============================================
-// TABS
-// =============================================
 function renderTabs() {
-  document.getElementById("tabs").innerHTML = TAB_NAMES.map((t, i) =>
-    `<button class="tab ${i === STATE.tab ? 'active' : ''}" onclick="switchTab(${i})">${t}</button>`
-  ).join("");
+  document.getElementById("tabs").innerHTML = TAB_NAMES.map((t,i) => `<button class="tab ${i===STATE.tab?'active':''}" onclick="switchTab(${i})">${t}</button>`).join("");
 }
-
-function switchTab(i) {
-  STATE.tab = i;
-  renderTabs();
-  renderContent();
-}
-
-// =============================================
-// RENDER CONTENT
-// =============================================
+function switchTab(i) { STATE.tab=i; renderTabs(); renderContent(); }
 function renderContent() {
   const el = document.getElementById("content");
-  switch (STATE.tab) {
-    case 0: el.innerHTML = renderSynthese(); break;
-    case 1: el.innerHTML = renderProduits(); break;
-    case 2: el.innerHTML = renderHistorique(); break;
-    case 3: el.innerHTML = renderPositions(); break;
-    case 4: el.innerHTML = renderConcurrents(); break;
-    case 5: el.innerHTML = renderAnomalies(); break;
-    case 6: el.innerHTML = renderGestion(); break;
+  switch(STATE.tab) {
+    case 0: el.innerHTML=renderSynthese(); break;
+    case 1: el.innerHTML=renderProduits(); break;
+    case 2: el.innerHTML=renderHistorique(); break;
+    case 3: el.innerHTML=renderPositions(); break;
+    case 4: el.innerHTML=renderConcurrents(); break;
+    case 5: el.innerHTML=renderAnomalies(); break;
+    case 6: el.innerHTML=renderGestion(); break;
   }
 }
 
-// =============================================
-// HELPERS
-// =============================================
-function metric(label, value, sub, color) {
-  return `<div class="metric"><div class="metric-label">${label}</div><div class="metric-value" style="color:${color || 'var(--tx)'}">${value}</div>${sub ? `<div class="metric-sub">${sub}</div>` : ''}</div>`;
-}
-
-function pill(text, color = "default") {
-  return `<span class="pill pill-${color}">${text}</span>`;
-}
-
-function bar(label, value, max, color = "var(--ac)", sub) {
-  const pct = max > 0 ? Math.min(Math.round(value / max * 100), 100) : 0;
-  return `<div class="bar-row"><div class="bar-header"><span class="bar-label">${label}</span><span class="bar-sub">${sub || value}</span></div><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div></div>`;
-}
-
-function productRowHTML(p) {
-  return `<div class="product-row"><div class="product-row-name">${esc(p.name)}</div><div class="product-row-refs"><span>ID: ${esc(p.product_id)}</span><span>SKU: ${esc(p.sku)}</span><span>SKU MP: ${esc(p.sku_marketplace)}</span>${p.url ? `<a href="${esc(p.url)}" target="_blank" class="link">Voir sur Cdiscount ↗</a>` : '<span style="color:var(--rd)">Pas d\'URL</span>'}</div></div>`;
-}
-
-function esc(s) { return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
-
-function openModal(title, html) {
-  document.getElementById("modal-title").textContent = title;
-  document.getElementById("modal-body").innerHTML = html;
-  document.getElementById("modal-overlay").classList.remove("hidden");
-}
-function closeModal() { document.getElementById("modal-overlay").classList.add("hidden"); }
-
-const tagLabel = t => ({ prix_up: "Prix ↑", prix_down: "Prix ↓", delai_up: "Délai ↑", delai_down: "Délai ↓", note_up: "Note ↑", note_down: "Note ↓" }[t] || t);
-const tagColor = t => (t.includes("up") && t !== "note_up") ? "red" : (t.includes("down") && t !== "note_down") ? "green" : t === "note_up" ? "green" : "red";
+function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
+function pill(text,color="default"){return `<span class="pill pill-${color}">${text}</span>`}
+function bar(label,value,max,color="var(--ac)",sub){const pct=max>0?Math.min(Math.round(value/max*100),100):0;return `<div class="bar-row"><div class="bar-header"><span class="bar-label">${label}</span><span class="bar-sub">${sub||value}</span></div><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div></div>`}
+function productRowHTML(p){return `<div class="product-row"><div class="product-row-name">${esc(p.name)}</div><div class="product-row-refs"><span>ID: ${esc(p.product_id)}</span><span>SKU: ${esc(p.sku)}</span><span>SKU MP: ${esc(p.sku_marketplace)}</span>${p.url?`<a href="${esc(p.url)}" target="_blank" class="link">Voir ↗</a>`:'<span style="color:var(--rd)">Pas d\'URL</span>'}</div></div>`}
+function openModal(title,html){document.getElementById("modal-title").textContent=title;document.getElementById("modal-body").innerHTML=html;document.getElementById("modal-overlay").classList.remove("hidden")}
+function closeModal(){document.getElementById("modal-overlay").classList.add("hidden")}
+const tagLabel=t=>({prix_up:"Prix ↑",prix_down:"Prix ↓",delai_up:"Délai ↑",delai_down:"Délai ↓",note_up:"Note ↑",note_down:"Note ↓"}[t]||t);
+const tagColor=t=>(t.includes("up")&&t!=="note_up")?"red":(t.includes("down")&&t!=="note_down")?"green":t==="note_up"?"green":"red";
 
 // =============================================
 // TAB 0: SYNTHESE
 // =============================================
 function renderSynthese() {
-  const P = STATE.products;
-  const avail = P.filter(p => p._available === true).length;
-  const unavail = P.filter(p => p._available === false).length;
-  const page1 = STATE.productsInPage1.size;
-  const prices = P.filter(p => p._price != null).map(p => p._price);
-  const ratings = P.filter(p => p._rating != null).map(p => p._rating);
-  const deliveries = P.filter(p => p._delivery != null).map(p => p._delivery);
-  const avgPrice = prices.length ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) : "—";
-  const avgRating = ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) : "—";
-  const avgDelivery = deliveries.length ? Math.round(deliveries.reduce((a, b) => a + b, 0) / deliveries.length) : "—";
-
-  const du = P.filter(p => p._tags.includes("delai_up"));
-  const dd = P.filter(p => p._tags.includes("delai_down"));
-  const pu = P.filter(p => p._tags.includes("prix_up"));
-  const totalWithPrev = P.filter(p => p._latest && STATE.prevDate && p._history[STATE.prevDate]).length;
-  const pctDU = totalWithPrev > 0 ? Math.round(du.length / totalWithPrev * 100) : 0;
-  const pctPU = totalWithPrev > 0 ? Math.round(pu.length / totalWithPrev * 100) : 0;
-  const pctDD = totalWithPrev > 0 ? Math.round(dd.length / totalWithPrev * 100) : 0;
-
-  // BM by keyword top 10
-  const bmCats = Object.entries(STATE.bmByKeyword).sort((a, b) => b[1] - a[1]).slice(0, 10);
-  const maxBM = bmCats.length ? bmCats[0][1] : 1;
-
-  // Top 10 vendors
-  const topV = STATE.vendorsSorted.slice(0, 10);
-  const maxV = topV.length ? topV[0].total : 1;
-
+  const P=STATE.products;
+  const avail=P.filter(p=>p._available===true).length, unavail=P.filter(p=>p._available===false).length;
+  const page1=STATE.productsInPage1.size;
+  const prices=P.filter(p=>p._price!=null).map(p=>p._price);
+  const ratings=P.filter(p=>p._rating!=null).map(p=>p._rating);
+  const deliveries=P.filter(p=>p._delivery!=null).map(p=>p._delivery);
+  const avgPrice=prices.length?Math.round(prices.reduce((a,b)=>a+b,0)/prices.length):"—";
+  const avgRating=ratings.length?(ratings.reduce((a,b)=>a+b,0)/ratings.length).toFixed(1):"—";
+  const avgDelivery=deliveries.length?Math.round(deliveries.reduce((a,b)=>a+b,0)/deliveries.length):"—";
+  const du=P.filter(p=>p._tags.includes("delai_up")),dd=P.filter(p=>p._tags.includes("delai_down")),pu=P.filter(p=>p._tags.includes("prix_up"));
+  const totalWithPrev=P.filter(p=>p._latest&&STATE.prevDate&&p._history[STATE.prevDate]).length;
+  const pctDU=totalWithPrev>0?Math.round(du.length/totalWithPrev*100):0;
+  const pctPU=totalWithPrev>0?Math.round(pu.length/totalWithPrev*100):0;
+  const pctDD=totalWithPrev>0?Math.round(dd.length/totalWithPrev*100):0;
+  const bmCats=Object.entries(STATE.bmByKeyword).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const maxBM=bmCats.length?bmCats[0][1]:1;
+  const topV=STATE.vendorsSorted.slice(0,10),maxV=topV.length?topV[0].total:1;
   return `
     <div class="metrics">
-      ${metric("Produits suivis", P.length)}
-      ${metric("En page 1", page1, `${P.length > 0 ? Math.round(page1 / P.length * 100) : 0}% du catalogue`, "var(--ac)")}
-      ${metric("Indisponibles", unavail, "liens cassés ou HS", "var(--rd)")}
-      ${metric("Délai moyen", avgDelivery + "j", "", "var(--am)")}
-      ${metric("Note moyenne", avgRating, "sur produits notés", "var(--am)")}
+      <div class="metric"><div class="metric-label">Produits suivis</div><div class="metric-value">${P.length}</div></div>
+      <div class="metric"><div class="metric-label">En page 1</div><div class="metric-value" style="color:var(--ac)">${page1}</div><div class="metric-sub">${P.length>0?Math.round(page1/P.length*100):0}% du catalogue</div></div>
+      <div class="metric"><div class="metric-label">Indisponibles</div><div class="metric-value" style="color:var(--rd)">${unavail}</div></div>
+      <div class="metric"><div class="metric-label">Délai moyen</div><div class="metric-value" style="color:var(--am)">${avgDelivery}j</div></div>
+      <div class="metric"><div class="metric-label">Note moyenne</div><div class="metric-value" style="color:var(--am)">${avgRating}</div></div>
     </div>
     <div class="grid-2">
-      <div class="card">
-        <div class="card-title">BestMobilier en page 1 — top 10</div>
-        ${bmCats.map(([kw, c]) => bar(kw, c, maxBM + 2, "var(--ac)", `${c} produits`)).join("")}
-        ${bmCats.length === 0 ? '<div style="color:var(--txT);font-size:12px">Aucune donnée de position disponible</div>' : ''}
-      </div>
-      <div class="card">
-        <div class="card-title">Top 10 vendeurs (apparitions page 1)</div>
-        ${topV.map((v, i) => bar(`${i + 1}. ${v.name}`, v.total, maxV + 2,
-          v.name === "BestMobilier" ? "var(--ac)" : v.name === "Cdiscount" ? "var(--pu)" : "var(--txT)",
-          `${v.total} app.`)).join("")}
-      </div>
+      <div class="card"><div class="card-title">BestMobilier en page 1 — top 10</div>${bmCats.map(([kw,c])=>bar(kw,c,maxBM+2,"var(--ac)",`${c} produits`)).join("")}${!bmCats.length?'<div style="color:var(--txT);font-size:12px">Aucune donnée de position</div>':''}</div>
+      <div class="card"><div class="card-title">Top 10 vendeurs (apparitions page 1)</div>${topV.map((v,i)=>bar(`${i+1}. ${v.name}`,v.total,maxV+2,v.name==="BestMobilier"?"var(--ac)":v.name==="Cdiscount"?"var(--pu)":"var(--txT)",`${v.total} app.`)).join("")}</div>
     </div>
-    <div class="card">
-      <div class="card-title">Indicateurs clés</div>
-      <div class="grid-2">
-        ${[
-          { l: "Prix moyen", v: avgPrice + " €" },
-          { l: "Délai moyen", v: avgDelivery + " jours" },
-          { l: "Note moyenne", v: avgRating + " / 5" },
-          { l: "Taux dispo", v: (P.length > 0 ? Math.round(avail / P.length * 100) : 0) + "%" },
-          { l: "Taux page 1", v: (P.length > 0 ? Math.round(page1 / P.length * 100) : 0) + "%" },
-          { l: "Prix en hausse (>10%)", v: `${pctPU}% (${pu.length})`, click: pu.length > 0 ? "showVariation('prix_up')" : null, color: pu.length > 0 ? "var(--rd)" : "" },
-          { l: "Délai en hausse (>5j)", v: `${pctDU}% (${du.length})`, click: du.length > 0 ? "showVariation('delai_up')" : null, color: du.length > 0 ? "var(--rd)" : "" },
-          { l: "Délai en baisse (>5j)", v: `${pctDD}% (${dd.length})`, click: dd.length > 0 ? "showVariation('delai_down')" : null, color: dd.length > 0 ? "var(--gn)" : "" },
-        ].map(k => `<div class="kpi-row"><span class="kpi-label">${k.l}</span><div><span class="kpi-value" ${k.color ? `style="color:${k.color}"` : ''}>${k.v}</span>${k.click ? `<button class="btn-see" onclick="${k.click}">voir</button>` : ''}</div></div>`).join("")}
-      </div>
-    </div>`;
+    <div class="card"><div class="card-title">Indicateurs clés</div><div class="grid-2">${[
+      {l:"Prix moyen",v:avgPrice+"€"},{l:"Délai moyen",v:avgDelivery+" jours"},{l:"Note moyenne",v:avgRating+" / 5"},
+      {l:"Taux dispo",v:(P.length>0?Math.round(avail/P.length*100):0)+"%"},{l:"Taux page 1",v:(P.length>0?Math.round(page1/P.length*100):0)+"%"},
+      {l:"Prix en hausse (>10%)",v:`${pctPU}% (${pu.length})`,click:pu.length>0?"showVariation('prix_up')":null,color:pu.length>0?"var(--rd)":""},
+      {l:"Délai en hausse (>5j)",v:`${pctDU}% (${du.length})`,click:du.length>0?"showVariation('delai_up')":null,color:du.length>0?"var(--rd)":""},
+      {l:"Délai en baisse (>5j)",v:`${pctDD}% (${dd.length})`,click:dd.length>0?"showVariation('delai_down')":null,color:dd.length>0?"var(--gn)":""},
+    ].map(k=>`<div class="kpi-row"><span class="kpi-label">${k.l}</span><div><span class="kpi-value" ${k.color?`style="color:${k.color}"`:''}>${k.v}</span>${k.click?`<button class="btn-see" onclick="${k.click}">voir</button>`:''}</div></div>`).join("")}</div></div>`;
 }
 
 function showVariation(tag) {
-  const prods = STATE.products.filter(p => p._tags.includes(tag));
-  const titles = { prix_up: "Prix en hausse >10%", prix_down: "Prix en baisse >15%", delai_up: "Délai en hausse >5j", delai_down: "Délai en baisse >5j", note_up: "Note en hausse", note_down: "Note en baisse" };
-  openModal(titles[tag] || tag, prods.length > 0 ? prods.map(p => {
-    const curr = p._history[STATE.latestDate];
-    const prev = p._history[STATE.prevDate];
-    let delta = "";
-    if (tag.startsWith("prix") && curr?.price != null && prev?.price != null) delta = `${prev.price}€ → ${curr.price}€`;
-    else if (tag.startsWith("delai") && curr?.delivery_days != null && prev?.delivery_days != null) delta = `${prev.delivery_days}j → ${curr.delivery_days}j`;
-    else if (tag.startsWith("note") && curr?.rating != null && prev?.rating != null) delta = `${prev.rating} → ${curr.rating}`;
-    return `<div class="product-row"><div class="product-row-name">${esc(p.name)}</div><div class="product-row-refs"><span>ID: ${esc(p.product_id)}</span><span>SKU: ${esc(p.sku)}</span><span>SKU MP: ${esc(p.sku_marketplace)}</span><span style="color:${tag.includes('down') ? 'var(--gn)' : 'var(--rd)'};font-weight:500">${delta}</span>${p.url ? `<a href="${esc(p.url)}" target="_blank" class="link">Voir ↗</a>` : ''}</div></div>`;
-  }).join("") : '<div style="padding:20px;text-align:center;color:var(--txT)">Aucun produit concerné</div>');
+  const prods=STATE.products.filter(p=>p._tags.includes(tag));
+  const titles={prix_up:"Prix en hausse >10%",prix_down:"Prix en baisse >15%",delai_up:"Délai en hausse >5j",delai_down:"Délai en baisse >5j",note_up:"Note en hausse",note_down:"Note en baisse"};
+  openModal(titles[tag]||tag,prods.length>0?prods.map(p=>{const curr=p._history[STATE.latestDate],prev=p._history[STATE.prevDate];let delta="";if(tag.startsWith("prix")&&curr?.price!=null&&prev?.price!=null)delta=`${prev.price}€ → ${curr.price}€`;else if(tag.startsWith("delai")&&curr?.delivery_days!=null&&prev?.delivery_days!=null)delta=`${prev.delivery_days}j → ${curr.delivery_days}j`;else if(tag.startsWith("note")&&curr?.rating!=null&&prev?.rating!=null)delta=`${prev.rating} → ${curr.rating}`;return `<div class="product-row"><div class="product-row-name">${esc(p.name)}</div><div class="product-row-refs"><span>ID: ${esc(p.product_id)}</span><span style="color:${tag.includes('down')?'var(--gn)':'var(--rd)'};font-weight:500">${delta}</span>${p.url?`<a href="${esc(p.url)}" target="_blank" class="link">Voir ↗</a>`:''}</div></div>`;}).join(""):'<div style="padding:20px;text-align:center;color:var(--txT)">Aucun produit concerné</div>');
 }
 
 // =============================================
 // TAB 1: PRODUITS
 // =============================================
-let prodFilters = { search: "", type: "all", avail: "all", page1: "all", tag: "all", sort: "name", dir: "asc" };
-
+let prodFilters={search:"",type:"all",avail:"all",page1:"all",tag:"all",sort:"name",dir:"asc"};
 function renderProduits() {
-  const f = prodFilters;
-  let list = [...STATE.products];
-  if (f.search) { const s = f.search.toLowerCase(); list = list.filter(p => p.name.toLowerCase().includes(s) || p.product_id.includes(s) || (p.sku || "").toLowerCase().includes(s)); }
-  if (f.type !== "all") list = list.filter(p => p.type === f.type);
-  if (f.avail === "dispo") list = list.filter(p => p._available === true);
-  if (f.avail === "indispo") list = list.filter(p => p._available === false);
-  if (f.page1 === "yes") list = list.filter(p => STATE.productsInPage1.has((p.product_id_scraper || "").toLowerCase()));
-  if (f.page1 === "no") list = list.filter(p => !STATE.productsInPage1.has((p.product_id_scraper || "").toLowerCase()));
-  if (f.tag !== "all") list = list.filter(p => p._tags.includes(f.tag));
-
-  list.sort((a, b) => {
-    let va, vb;
-    switch (f.sort) {
-      case "price": va = a._price || 0; vb = b._price || 0; break;
-      case "rating": va = a._rating || 0; vb = b._rating || 0; break;
-      case "delivery": va = a._delivery || 999; vb = b._delivery || 999; break;
-      default: va = a.name; vb = b.name;
-    }
-    return f.dir === "asc" ? (va < vb ? -1 : 1) : (va > vb ? -1 : 1);
-  });
-
-  const si = col => f.sort === col ? (f.dir === "asc" ? " ↑" : " ↓") : "";
-
+  const f=prodFilters; let list=[...STATE.products];
+  if(f.search){const s=f.search.toLowerCase();list=list.filter(p=>p.name.toLowerCase().includes(s)||p.product_id.includes(s)||(p.sku||"").toLowerCase().includes(s));}
+  if(f.type!=="all")list=list.filter(p=>p.type===f.type);
+  if(f.avail==="dispo")list=list.filter(p=>p._available===true);
+  if(f.avail==="indispo")list=list.filter(p=>p._available===false);
+  if(f.page1==="yes")list=list.filter(p=>STATE.productsInPage1.has((p.product_id_scraper||"").toLowerCase()));
+  if(f.page1==="no")list=list.filter(p=>!STATE.productsInPage1.has((p.product_id_scraper||"").toLowerCase()));
+  if(f.tag!=="all")list=list.filter(p=>p._tags.includes(f.tag));
+  list.sort((a,b)=>{let va,vb;switch(f.sort){case"price":va=a._price||0;vb=b._price||0;break;case"rating":va=a._rating||0;vb=b._rating||0;break;case"delivery":va=a._delivery||999;vb=b._delivery||999;break;default:va=a.name;vb=b.name;}return f.dir==="asc"?(va<vb?-1:1):(va>vb?-1:1);});
+  const si=col=>f.sort===col?(f.dir==="asc"?" ↑":" ↓"):"";
   return `
     <div class="filters">
-      <input placeholder="Rechercher (nom, ID, SKU)..." value="${esc(f.search)}" oninput="prodFilters.search=this.value;renderContent()"/>
-      <select onchange="prodFilters.type=this.value;renderContent()">
-        <option value="all">Tous types</option>
-        <option value="Classe A" ${f.type === 'Classe A' ? 'selected' : ''}>Classe A</option>
-        <option value="Nouveautés Q4+Q1" ${f.type === 'Nouveautés Q4+Q1' ? 'selected' : ''}>Nouveautés</option>
-        <option value="Deals exclus" ${f.type === 'Deals exclus' ? 'selected' : ''}>Deals exclus</option>
-      </select>
-      <select onchange="prodFilters.avail=this.value;renderContent()">
-        <option value="all">Dispo + Indispo</option>
-        <option value="dispo" ${f.avail === 'dispo' ? 'selected' : ''}>Disponible</option>
-        <option value="indispo" ${f.avail === 'indispo' ? 'selected' : ''}>Indisponible</option>
-      </select>
-      <select onchange="prodFilters.page1=this.value;renderContent()">
-        <option value="all">Toutes positions</option>
-        <option value="yes" ${f.page1 === 'yes' ? 'selected' : ''}>En page 1</option>
-        <option value="no" ${f.page1 === 'no' ? 'selected' : ''}>Pas en page 1</option>
-      </select>
-      <select onchange="prodFilters.tag=this.value;renderContent()">
-        <option value="all">Toutes variations</option>
-        <option value="prix_up">Prix ↑</option><option value="prix_down">Prix ↓</option>
-        <option value="delai_up">Délai ↑</option><option value="delai_down">Délai ↓</option>
-        <option value="note_up">Note ↑</option><option value="note_down">Note ↓</option>
-      </select>
+      <input placeholder="Rechercher..." value="${esc(f.search)}" oninput="prodFilters.search=this.value;renderContent()"/>
+      <select onchange="prodFilters.type=this.value;renderContent()"><option value="all">Tous types</option><option value="Classe A" ${f.type==='Classe A'?'selected':''}>Classe A</option><option value="Nouveautés Q4+Q1" ${f.type==='Nouveautés Q4+Q1'?'selected':''}>Nouveautés</option><option value="Deals exclus" ${f.type==='Deals exclus'?'selected':''}>Deals exclus</option></select>
+      <select onchange="prodFilters.avail=this.value;renderContent()"><option value="all">Dispo + Indispo</option><option value="dispo" ${f.avail==='dispo'?'selected':''}>Disponible</option><option value="indispo" ${f.avail==='indispo'?'selected':''}>Indisponible</option></select>
+      <select onchange="prodFilters.page1=this.value;renderContent()"><option value="all">Toutes positions</option><option value="yes" ${f.page1==='yes'?'selected':''}>En page 1</option><option value="no" ${f.page1==='no'?'selected':''}>Pas en page 1</option></select>
+      <select onchange="prodFilters.tag=this.value;renderContent()"><option value="all">Toutes variations</option><option value="prix_up">Prix ↑</option><option value="prix_down">Prix ↓</option><option value="delai_up">Délai ↑</option><option value="delai_down">Délai ↓</option><option value="note_up">Note ↑</option><option value="note_down">Note ↓</option></select>
     </div>
-    <div style="font-size:12px;color:var(--txS);margin-bottom:8px">${list.length} produit${list.length > 1 ? 's' : ''}</div>
-    <div class="card" style="padding:0;overflow:hidden">
-    <div class="scroll-table">
-      <table style="min-width:1000px">
-        <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)">
-          <th style="cursor:pointer" onclick="toggleProdSort('name')">Produit${si('name')}</th>
-          <th>Réfs</th><th>Type</th>
-          <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('price')">Prix${si('price')}</th>
-          <th>Dispo</th>
-          <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('rating')">Note${si('rating')}</th>
-          <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('delivery')">Délai${si('delivery')}</th>
-          <th>Variations</th><th>Lien</th>
-        </tr></thead>
-        <tbody>
-          ${list.map((p, i) => `<tr class="${i % 2 ? 'stripe' : ''}">
-            <td style="font-weight:500;max-width:240px"><div style="line-height:1.3">${esc(p.name)}</div></td>
-            <td style="font-size:11px;color:var(--txS);white-space:nowrap"><div>${esc(p.product_id)}</div><div>${esc(p.sku)}</div><div style="color:var(--txT)">${esc(p.sku_marketplace)}</div></td>
-            <td style="text-align:center">${pill(p.type === "Nouveautés Q4+Q1" ? "Nvtés" : p.type === "Deals exclus" ? "Deals" : p.type, p.type === "Classe A" ? "green" : p.type === "Deals exclus" ? "amber" : "accent")}</td>
-            <td style="text-align:right;font-weight:500">${p._price != null ? Math.round(p._price) + '€' : '—'}</td>
-            <td style="text-align:center">${p._available != null ? pill(p._available ? 'Dispo' : 'Indispo', p._available ? 'green' : 'red') : '—'}</td>
-            <td style="text-align:right">${p._rating != null ? p._rating : '—'}</td>
-            <td style="text-align:right">${p._delivery != null ? p._delivery + 'j' : '—'}</td>
-            <td>${p._tags.map(t => `<span class="tag">${pill(tagLabel(t), tagColor(t))}</span>`).join('')}</td>
-            <td>${p.url ? `<a href="${esc(p.url)}" target="_blank" class="link">Voir ↗</a>` : '—'}</td>
-          </tr>`).join('')}
-        </tbody>
-      </table>
-    </div>
-    ${''}
-    </div>`;
+    <div style="font-size:12px;color:var(--txS);margin-bottom:8px">${list.length} produit${list.length>1?'s':''}</div>
+    <div class="card" style="padding:0;overflow:hidden"><div class="scroll-table"><table style="min-width:1000px">
+      <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)">
+        <th style="cursor:pointer" onclick="toggleProdSort('name')">Produit${si('name')}</th><th>Réfs</th><th>Type</th>
+        <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('price')">Prix${si('price')}</th>
+        <th>Dispo</th><th style="cursor:pointer;text-align:right" onclick="toggleProdSort('rating')">Note${si('rating')}</th>
+        <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('delivery')">Délai${si('delivery')}</th>
+        <th>Variations</th><th>Lien</th>
+      </tr></thead><tbody>
+      ${list.map((p,i)=>`<tr class="${i%2?'stripe':''}">
+        <td style="font-weight:500;max-width:240px"><div style="line-height:1.3">${esc(p.name)}</div></td>
+        <td style="font-size:11px;color:var(--txS);white-space:nowrap"><div>${esc(p.product_id)}</div><div>${esc(p.sku)}</div><div style="color:var(--txT)">${esc(p.sku_marketplace)}</div></td>
+        <td style="text-align:center">${pill(p.type==="Nouveautés Q4+Q1"?"Nvtés":p.type==="Deals exclus"?"Deals":p.type,p.type==="Classe A"?"green":p.type==="Deals exclus"?"amber":"accent")}</td>
+        <td style="text-align:right;font-weight:500">${p._price!=null?Math.round(p._price)+'€':'—'}</td>
+        <td style="text-align:center">${p._available!=null?pill(p._available?'Dispo':'Indispo',p._available?'green':'red'):'—'}</td>
+        <td style="text-align:right">${p._rating!=null?p._rating:'—'}</td>
+        <td style="text-align:right">${p._delivery!=null?p._delivery+'j':'—'}</td>
+        <td>${p._tags.map(t=>`<span style="margin:1px 2px;display:inline-block">${pill(tagLabel(t),tagColor(t))}</span>`).join('')}</td>
+        <td>${p.url?`<a href="${esc(p.url)}" target="_blank" class="link">Voir ↗</a>`:'—'}</td>
+      </tr>`).join('')}
+      </tbody></table></div></div>`;
 }
-
-function toggleProdSort(col) {
-  if (prodFilters.sort === col) prodFilters.dir = prodFilters.dir === "asc" ? "desc" : "asc";
-  else { prodFilters.sort = col; prodFilters.dir = "asc"; }
-  renderContent();
-}
+function toggleProdSort(col){if(prodFilters.sort===col)prodFilters.dir=prodFilters.dir==="asc"?"desc":"asc";else{prodFilters.sort=col;prodFilters.dir="asc";}renderContent();}
 
 // =============================================
 // TAB 2: HISTORIQUE
 // =============================================
-let histMetric = "price";
-
+let histMetric="price";
 function renderHistorique() {
-  const dates = STATE.dates.slice(-5);
-  const prods = STATE.products.filter(p => Object.keys(p._history).length > 0);
-
-  const getVal = (p, d) => {
-    const e = p._history[d];
-    if (!e) return null;
-    if (histMetric === "price") return e.price;
-    if (histMetric === "rating") return e.rating;
-    if (histMetric === "delivery") return e.delivery_days;
-    if (histMetric === "dispo") return e.available;
-    return null;
-  };
-
-  const fmtVal = v => {
-    if (v == null) return "—";
-    if (histMetric === "price") return Math.round(v) + "€";
-    if (histMetric === "rating") return v;
-    if (histMetric === "delivery") return v + "j";
-    if (histMetric === "dispo") return v ? "✓" : "✗";
-    return v;
-  };
-
-  const hasVar = (p, d, di) => {
-    if (di === 0) return null;
-    const prev = getVal(p, dates[di - 1]), curr = getVal(p, d);
-    if (prev == null || curr == null) return null;
-    if (histMetric === "price" && prev > 0) { const pct = (curr - prev) / prev; if (pct > 0.10) return "up"; if (pct < -0.15) return "down"; }
-    if (histMetric === "delivery") { const diff = curr - prev; if (diff > 5) return "up"; if (diff < -5) return "down"; }
-    if (histMetric === "rating") { const diff = curr - prev; if (diff >= 0.2) return "good"; if (diff <= -0.2) return "bad"; }
-    if (histMetric === "dispo" && prev !== curr) return curr ? "good" : "bad";
-    return null;
-  };
-
-  const varBg = v => ({ up: "var(--rdBg)", down: "var(--gnBg)", good: "var(--gnBg)", bad: "var(--rdBg)" }[v] || "");
-
+  const dates=STATE.dates.slice(-5);
+  const prods=STATE.products.filter(p=>Object.keys(p._history).length>0);
+  const getVal=(p,d)=>{const e=p._history[d];if(!e)return null;if(histMetric==="price")return e.price;if(histMetric==="rating")return e.rating;if(histMetric==="delivery")return e.delivery_days;if(histMetric==="dispo")return e.available;return null;};
+  const fmtVal=v=>{if(v==null)return"—";if(histMetric==="price")return Math.round(v)+"€";if(histMetric==="rating")return v;if(histMetric==="delivery")return v+"j";if(histMetric==="dispo")return v?"✓":"✗";return v;};
+  const hasVar=(p,d,di)=>{if(di===0)return null;const prev=getVal(p,dates[di-1]),curr=getVal(p,d);if(prev==null||curr==null)return null;if(histMetric==="price"&&prev>0){const pct=(curr-prev)/prev;if(pct>.10)return"up";if(pct<-.15)return"down";}if(histMetric==="delivery"){const diff=curr-prev;if(diff>5)return"up";if(diff<-5)return"down";}if(histMetric==="rating"){const diff=curr-prev;if(diff>=.2)return"good";if(diff<=-.2)return"bad";}if(histMetric==="dispo"&&prev!==curr)return curr?"good":"bad";return null;};
+  const varBg=v=>({up:"var(--rdBg)",down:"var(--gnBg)",good:"var(--gnBg)",bad:"var(--rdBg)"}[v]||"");
   return `
-    <div class="filters">
-      <div class="toggle-group">
-        ${["price", "rating", "delivery", "dispo"].map(m => `<button class="toggle-btn ${histMetric === m ? 'active' : ''}" onclick="histMetric='${m}';renderContent()">${{ price: "Prix", rating: "Note", delivery: "Délai", dispo: "Dispo" }[m]}</button>`).join("")}
-      </div>
-    </div>
-    <div style="font-size:12px;color:var(--txS);margin-bottom:8px">${prods.length} produits avec historique · ${dates.length} dates · Couleur = variation notable</div>
-    <div class="card" style="padding:0;overflow:hidden"><div class="scroll-table">
-      <table style="min-width:700px">
-        <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)">
-          <th style="min-width:200px">Produit</th><th>Réfs</th>
-          ${dates.map(d => `<th style="text-align:center;white-space:nowrap">${d.slice(5)}</th>`).join("")}
-        </tr></thead>
-        <tbody>
-          ${prods.map((p, i) => `<tr class="${i % 2 ? 'stripe' : ''}">
-            <td style="font-weight:500;font-size:12px;max-width:200px"><div style="line-height:1.3">${esc(p.name)}</div></td>
-            <td style="font-size:10px;color:var(--txT);white-space:nowrap">${esc(p.product_id)}<br>${esc(p.sku)}</td>
-            ${dates.map((d, di) => {
-              const v = getVal(p, d);
-              const vr = hasVar(p, d, di);
-              return `<td style="text-align:center;${vr ? `background:${varBg(vr)};font-weight:600` : ''}">${fmtVal(v)}</td>`;
-            }).join("")}
-          </tr>`).join("")}
-        </tbody>
-      </table>
-    </div>
-    ${''}
-    </div>`;
+    <div class="filters"><div class="toggle-group">${["price","rating","delivery","dispo"].map(m=>`<button class="toggle-btn ${histMetric===m?'active':''}" onclick="histMetric='${m}';renderContent()">${{price:"Prix",rating:"Note",delivery:"Délai",dispo:"Dispo"}[m]}</button>`).join("")}</div></div>
+    <div style="font-size:12px;color:var(--txS);margin-bottom:8px">${prods.length} produits · ${dates.length} dates</div>
+    <div class="card" style="padding:0;overflow:hidden"><div class="scroll-table"><table style="min-width:700px">
+      <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)"><th style="min-width:200px">Produit</th><th>Réfs</th>${dates.map(d=>`<th style="text-align:center;white-space:nowrap">${d.slice(5)}</th>`).join("")}</tr></thead>
+      <tbody>${prods.map((p,i)=>`<tr class="${i%2?'stripe':''}"><td style="font-weight:500;font-size:12px;max-width:200px">${esc(p.name)}</td><td style="font-size:10px;color:var(--txT);white-space:nowrap">${esc(p.product_id)}<br>${esc(p.sku)}</td>${dates.map((d,di)=>{const v=getVal(p,d),vr=hasVar(p,d,di);return`<td style="text-align:center;${vr?`background:${varBg(vr)};font-weight:600`:''}">${fmtVal(v)}</td>`;}).join("")}</tr>`).join("")}</tbody>
+    </table></div></div>`;
 }
 
 // =============================================
 // TAB 3: POSITIONS
 // =============================================
 function renderPositions() {
-  const keywords = Object.keys(STATE.bmByKeyword).sort((a, b) => (STATE.bmByKeyword[b] || 0) - (STATE.bmByKeyword[a] || 0));
-  const maxBM = keywords.length ? Math.max(...Object.values(STATE.bmByKeyword)) : 0;
-  const totalBM = Object.values(STATE.bmByKeyword).reduce((s, v) => s + v, 0);
-  const withPresence = keywords.filter(k => STATE.bmByKeyword[k] > 0).length;
-
+  const keywords=Object.keys(STATE.bmByKeyword).sort((a,b)=>(STATE.bmByKeyword[b]||0)-(STATE.bmByKeyword[a]||0));
+  const maxBM=keywords.length?Math.max(...Object.values(STATE.bmByKeyword)):0;
+  const totalBM=Object.values(STATE.bmByKeyword).reduce((s,v)=>s+v,0);
+  const withPresence=keywords.filter(k=>STATE.bmByKeyword[k]>0).length;
   return `
     <div class="metrics">
-      ${metric("Catégories avec présence", withPresence, `sur ${keywords.length}`, "var(--ac)")}
-      ${metric("Total apparitions P1", totalBM, "toutes catégories", "var(--gn)")}
+      <div class="metric"><div class="metric-label">Catégories avec présence</div><div class="metric-value" style="color:var(--ac)">${withPresence}</div><div class="metric-sub">sur ${keywords.length}</div></div>
+      <div class="metric"><div class="metric-label">Total apparitions P1</div><div class="metric-value" style="color:var(--gn)">${totalBM}</div></div>
     </div>
-    <div class="card">
-      <div class="card-title">Présence BestMobilier par catégorie de recherche</div>
-      <div class="cat-grid">
-        ${keywords.map(kw => {
-          const c = STATE.bmByKeyword[kw] || 0;
-          return `<div class="cat-card ${c === 0 ? 'cat-card-zero' : ''}" onclick="showPositionDetail('${esc(kw)}')">
-            <div class="cat-card-header"><span class="cat-card-name">${esc(kw)}</span><span class="cat-card-count">${c}</span></div>
-            ${c > 0 ? `<div style="margin-top:5px;height:4px;background:var(--borderL);border-radius:2px;overflow:hidden"><div style="height:100%;width:${Math.min(c / (maxBM + 1) * 100, 100)}%;background:var(--ac);border-radius:2px"></div></div>` : ''}
-          </div>`;
-        }).join("")}
-      </div>
-      ${keywords.length === 0 ? '<div style="color:var(--txT);font-size:12px;padding:20px;text-align:center">Aucune donnée de position disponible. Lancez l\'extension de scraping des pages de recherche.</div>' : ''}
+    <div class="card"><div class="card-title">Présence BestMobilier par catégorie</div>
+      <div class="cat-grid">${keywords.map(kw=>{const c=STATE.bmByKeyword[kw]||0;return`<div class="cat-card ${c===0?'cat-card-zero':''}" onclick="showPositionDetail('${esc(kw)}')"><div class="cat-card-header"><span class="cat-card-name">${esc(kw)}</span><span class="cat-card-count">${c}</span></div>${c>0?`<div style="margin-top:5px;height:4px;background:var(--borderL);border-radius:2px;overflow:hidden"><div style="height:100%;width:${Math.min(c/(maxBM+1)*100,100)}%;background:var(--ac);border-radius:2px"></div></div>`:''}</div>`;}).join("")}</div>
+      ${!keywords.length?'<div style="color:var(--txT);font-size:12px;padding:20px;text-align:center">Aucune donnée de position disponible.</div>':''}
     </div>
-    <div class="card">
-      <div class="card-title">Leader par catégorie</div>
-      <div class="grid-2">
-        ${keywords.map(kw => {
-          const items = STATE.keywordData[kw] || [];
-          const sellers = {};
-          items.forEach(i => { sellers[i.seller] = (sellers[i.seller] || 0) + 1; });
-          const sorted = Object.entries(sellers).sort((a, b) => b[1] - a[1]).slice(0, 2);
-          const bmC = STATE.bmByKeyword[kw] || 0;
-          return `<div style="padding:8px 12px;border-bottom:1px solid var(--borderL)">
-            <div style="font-size:13px;font-weight:500;margin-bottom:4px">${esc(kw)}</div>
-            <div style="display:flex;gap:4px;flex-wrap:wrap">
-              ${sorted.map((s, i) => pill(`${i === 0 ? '🥇' : '🥈'} ${s[0]} (${s[1]})`, s[0] === "BestMobilier" ? "accent" : s[0] === "Cdiscount" ? "purple" : "default")).join("")}
-              ${bmC > 0 && !sorted.find(s => s[0] === "BestMobilier") ? pill(`BM: ${bmC}`, "accent") : ''}
-            </div>
-          </div>`;
-        }).join("")}
-      </div>
-    </div>`;
+    <div class="card"><div class="card-title">Leader par catégorie</div><div class="grid-2">${keywords.map(kw=>{const items=STATE.keywordData[kw]||[];const sellers={};items.forEach(i=>{sellers[i.seller]=(sellers[i.seller]||0)+1;});const sorted=Object.entries(sellers).sort((a,b)=>b[1]-a[1]).slice(0,2);const bmC=STATE.bmByKeyword[kw]||0;return`<div style="padding:8px 12px;border-bottom:1px solid var(--borderL)"><div style="font-size:13px;font-weight:500;margin-bottom:4px">${esc(kw)}</div><div style="display:flex;gap:4px;flex-wrap:wrap">${sorted.map((s,i)=>pill(`${i===0?'🥇':'🥈'} ${s[0]} (${s[1]})`,s[0]==="BestMobilier"?"accent":s[0]==="Cdiscount"?"purple":"default")).join("")}${bmC>0&&!sorted.find(s=>s[0]==="BestMobilier")?pill(`BM: ${bmC}`,"accent"):''}</div></div>`;}).join("")}</div></div>`;
 }
-
 function showPositionDetail(kw) {
-  const items = (STATE.keywordData[kw] || []).filter(i => i._product);
-  const bmItems = items.filter(i => {
-    const key = (i.product_id || "").toLowerCase();
-    return STATE.products.some(p => (p.product_id_scraper || "").toLowerCase() === key);
-  });
-  if (bmItems.length === 0) { openModal(`Positions — ${kw}`, '<div style="padding:20px;text-align:center;color:var(--txT)">Aucun produit BestMobilier en page 1 pour cette recherche</div>'); return; }
-  openModal(`Produits BM en page 1 — ${kw} (${bmItems.length})`, bmItems.map(i => i._product ? productRowHTML(i._product) : `<div class="product-row"><div class="product-row-name">${esc(i.product_id)}</div></div>`).join(""));
+  const items=(STATE.keywordData[kw]||[]).filter(i=>i._product);
+  const bmItems=items.filter(i=>STATE.products.some(p=>(p.product_id_scraper||"").toLowerCase()===(i.product_id||"").toLowerCase()));
+  if(!bmItems.length){openModal(`Positions — ${kw}`,'<div style="padding:20px;text-align:center;color:var(--txT)">Aucun produit BestMobilier en page 1</div>');return;}
+  openModal(`Produits BM en page 1 — ${kw} (${bmItems.length})`,bmItems.map(i=>i._product?productRowHTML(i._product):`<div class="product-row"><div class="product-row-name">${esc(i.product_id)}</div></div>`).join(""));
 }
 
 // =============================================
-// TAB 4: CONCURRENTS
+// TAB 4: CONCURRENTS — enrichi avec seller_stats
 // =============================================
+function buildSellerStatsMap() {
+  const byName = {};
+  (STATE.sellerStats || []).forEach(s => {
+    if (!byName[s.seller]) byName[s.seller] = [];
+    byName[s.seller].push(s);
+  });
+  const result = {};
+  Object.entries(byName).forEach(([seller, rows]) => {
+    const sorted = rows.sort((a, b) => new Date(b.date) - new Date(a.date));
+    result[seller] = { latest: sorted[0] || null, prev: sorted[1] || null };
+  });
+  return result;
+}
+
 function renderConcurrents() {
   const vendors = STATE.vendorsSorted;
+  const statsMap = buildSellerStatsMap();
   const maxT = vendors.length ? vendors[0].total : 1;
-  const bmIdx = vendors.findIndex(v => v.name === "BestMobilier");
+  const maxSales = Math.max(...Object.values(statsMap).map(s => s.latest?.seller_sales || 0), 1);
+
+  const scored = vendors.map(v => {
+    const stats = statsMap[v.name] || {};
+    const sales = stats.latest?.seller_sales || 0;
+    const prev_sales = stats.prev?.seller_sales || null;
+    const salesDelta = (prev_sales !== null && prev_sales > 0) ? Math.round(((sales - prev_sales) / prev_sales) * 100) : null;
+    const scoreP1 = maxT > 0 ? (v.total / maxT) * 100 : 0;
+    const scoreSales = maxSales > 0 ? (sales / maxSales) * 100 : 0;
+    const score = Math.round(scoreP1 * 0.4 + scoreSales * 0.6);
+    return { ...v, sales, prev_sales, salesDelta, score, rating: stats.latest?.seller_rating, ratingsCount: stats.latest?.seller_ratings_count, sourceUrl: stats.latest?.source_url };
+  }).sort((a, b) => b.score - a.score);
+
+  const bmIdx = scored.findIndex(v => v.name === "BestMobilier");
+  const topSales = [...scored].sort((a, b) => b.sales - a.sales)[0];
+  const topP1 = [...scored].sort((a, b) => b.total - a.total)[0];
+  const rankColor = i => ["#E5A91A","#888780","#9E6030","#3266AD"][Math.min(i,3)];
 
   return `
-    <div class="metrics">
-      ${metric("Vendeurs identifiés", vendors.length)}
-      ${metric("Leader global", vendors[0]?.name || "—", `${vendors[0]?.total || 0} apparitions`, "var(--pu)")}
-      ${metric("Position BM", bmIdx >= 0 ? `#${bmIdx + 1}` : "—", `${vendors[bmIdx]?.total || 0} app.`, "var(--ac)")}
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px">
+      <div class="metric"><div class="metric-label">Vendeurs identifiés</div><div class="metric-value">${scored.length}</div></div>
+      <div class="metric"><div class="metric-label">Position BM</div><div class="metric-value" style="color:${bmIdx===0?'var(--gn)':bmIdx<=2?'var(--am)':'var(--tx)'}">${bmIdx>=0?'#'+(bmIdx+1):'—'}</div><div class="metric-sub">score ${scored[bmIdx]?.score||0}/100</div></div>
+      <div class="metric"><div class="metric-label">Leader ventes 12m</div><div class="metric-value" style="font-size:16px">${esc(topSales?.name||'—')}</div><div class="metric-sub">${topSales?.sales?topSales.sales.toLocaleString("fr-FR")+' ventes':''}</div></div>
+      <div class="metric"><div class="metric-label">Leader page 1</div><div class="metric-value" style="font-size:16px">${esc(topP1?.name||'—')}</div><div class="metric-sub">${topP1?.total||0} apparitions</div></div>
     </div>
-    <div class="grid-2">
-      <div class="card">
-        <div class="card-title">Classement — apparitions page 1</div>
-        ${vendors.slice(0, 12).map((v, i) => {
-          const isBM = v.name === "BestMobilier", isCD = v.name === "Cdiscount";
-          const color = isBM ? "var(--ac)" : isCD ? "var(--pu)" : "var(--txT)";
-          return `<div class="vendor-row" onclick="showVendorDetail('${esc(v.name)}')">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
-              <div style="display:flex;align-items:center;gap:6px">
-                <span class="vendor-rank">#${i + 1}</span>
-                <span style="font-size:13px;font-weight:${isBM ? 700 : 500};color:${isBM ? 'var(--ac)' : 'var(--tx)'}">${esc(v.name)}</span>
-                ${isBM ? pill("Vous", "accent") : ''}${isCD ? pill("VD", "purple") : ''}
+
+    <div class="grid-2" style="margin-bottom:14px">
+      <!-- SCOREBOARD -->
+      <div class="card" style="padding:0;overflow:hidden">
+        <div style="padding:14px 18px 10px;border-bottom:1px solid var(--border)">
+          <div class="card-title" style="margin:0">Classement global</div>
+          <div style="font-size:11px;color:var(--txS);margin-top:2px">Score = 40% apparitions page 1 · 60% ventes 12 mois</div>
+        </div>
+        ${scored.slice(0,12).map((v,i) => {
+          const isBM = v.name === "BestMobilier";
+          const barW = Math.round((v.score/100)*100);
+          const deltaHtml = v.salesDelta !== null
+            ? `<span style="font-size:11px;font-weight:600;color:${v.salesDelta>0?'var(--gn)':v.salesDelta<0?'var(--rd)':'var(--txT)'};margin-left:6px">${v.salesDelta>0?'+':''}${v.salesDelta}%</span>`
+            : '';
+          return `
+            <div onclick="showSellerDetail('${esc(v.name)}')" style="padding:9px 18px;border-bottom:1px solid var(--borderL);cursor:pointer;background:${isBM?'var(--acBg)':'transparent'}" onmouseover="this.style.background='var(--borderL)'" onmouseout="this.style.background='${isBM?'var(--acBg)':'transparent'}'">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+                <div style="display:flex;align-items:center;gap:7px">
+                  <span style="font-size:11px;font-weight:700;color:${rankColor(i)};min-width:20px">#${i+1}</span>
+                  <span style="font-size:13px;font-weight:${isBM?700:500};color:${isBM?'var(--ac)':'var(--tx)'}">${esc(v.name)}</span>
+                  ${isBM?pill("Vous","accent"):''}
+                </div>
+                <div style="display:flex;align-items:center">
+                  <span style="font-size:13px;font-weight:600">${v.score}</span>
+                  <span style="font-size:11px;color:var(--txT)">/100</span>
+                  ${deltaHtml}
+                </div>
               </div>
-              <span style="font-size:13px;font-weight:600;color:${color}">${v.total}</span>
-            </div>
-            <div style="height:4px;background:var(--borderL);border-radius:2px;margin-left:24px;overflow:hidden"><div style="height:100%;width:${(v.total / maxT) * 100}%;background:${color};border-radius:2px"></div></div>
-          </div>`;
+              <div style="height:4px;background:var(--borderL);border-radius:2px;overflow:hidden">
+                <div style="height:100%;width:${barW}%;background:${isBM?'var(--ac)':rankColor(i)};border-radius:2px;transition:width .4s"></div>
+              </div>
+              <div style="display:flex;gap:12px;margin-top:4px;font-size:11px;color:var(--txS)">
+                <span>📍 ${v.total} app. P1</span>
+                ${v.sales?`<span>💰 ${v.sales.toLocaleString("fr-FR")} ventes/12m</span>`:''}
+                ${v.rating?`<span>⭐ ${v.rating}/5</span>`:''}
+              </div>
+            </div>`;
         }).join("")}
       </div>
-      <div>
-        <div class="card" id="vendor-detail">
-          <div style="padding:20px;text-align:center;color:var(--txT);font-size:13px">Cliquez sur un vendeur pour voir le détail</div>
-        </div>
+
+      <!-- DETAIL VENDEUR -->
+      <div id="seller-detail-panel">
+        ${scored.length > 0 ? renderSellerDetailHTML(scored[0]) : `<div class="card" style="text-align:center;padding:40px;color:var(--txT)">Cliquez sur un vendeur</div>`}
+      </div>
+    </div>
+
+    <!-- PROGRESSION VENTES -->
+    <div class="card">
+      <div class="card-title">Progression ventes 12 mois — semaine vs semaine</div>
+      <div style="font-size:11px;color:var(--txS);margin-bottom:12px">
+        Les ventes Cdiscount affichées sont glissantes sur 12 mois — la progression reflète l'activité récente du vendeur.
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px">
+        ${scored.filter(v => v.salesDelta !== null).map(v => {
+          const up = v.salesDelta > 0, down = v.salesDelta < 0;
+          const bg = up ? 'var(--gnBg)' : down ? 'var(--rdBg)' : 'var(--bg)';
+          const col = up ? 'var(--gn)' : down ? 'var(--rd)' : 'var(--txT)';
+          const arrow = up ? '↑' : down ? '↓' : '→';
+          return `<div style="padding:10px 14px;background:${bg};border-radius:8px;border:.5px solid var(--border)">
+            <div style="font-size:12px;font-weight:500;margin-bottom:3px">${esc(v.name)}</div>
+            <div style="display:flex;justify-content:space-between;align-items:baseline">
+              <span style="font-size:11px;color:var(--txS)">${v.sales?v.sales.toLocaleString("fr-FR")+" ventes":"—"}</span>
+              <span style="font-size:15px;font-weight:700;color:${col}">${arrow} ${Math.abs(v.salesDelta)}%</span>
+            </div>
+          </div>`;
+        }).join("")}
+        ${!scored.filter(v => v.salesDelta !== null).length ? '<div style="color:var(--txT);font-size:12px;grid-column:1/-1;padding:20px;text-align:center">Pas encore de données de progression — relancez l\'extension la semaine prochaine</div>' : ''}
       </div>
     </div>`;
 }
 
-function showVendorDetail(name) {
+function renderSellerDetailHTML(v) {
+  const kws = Object.entries(v.keywords || {}).sort((a, b) => b[1] - a[1]);
+  const maxKW = kws.length ? kws[0][1] : 1;
+  return `
+    <div class="card" style="height:100%">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
+        <div>
+          <div style="font-size:16px;font-weight:700;color:${v.name==='BestMobilier'?'var(--ac)':'var(--tx)'}">${esc(v.name)}</div>
+          <div style="font-size:12px;color:var(--txS);margin-top:2px">Score global : <b>${v.score}/100</b></div>
+        </div>
+        ${v.sourceUrl?`<a href="${esc(v.sourceUrl)}" target="_blank" style="font-size:11px;color:var(--ac);text-decoration:none;border:.5px solid var(--border);padding:4px 10px;border-radius:6px">Boutique ↗</a>`:''}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px">
+        <div style="background:var(--bg);border-radius:8px;padding:10px 12px;text-align:center">
+          <div style="font-size:11px;color:var(--txS);margin-bottom:3px;text-transform:uppercase;letter-spacing:.03em">Ventes 12m</div>
+          <div style="font-size:20px;font-weight:700">${v.sales?v.sales.toLocaleString("fr-FR"):"—"}</div>
+          ${v.salesDelta!==null?`<div style="font-size:11px;color:${v.salesDelta>0?'var(--gn)':v.salesDelta<0?'var(--rd)':'var(--txT)'};margin-top:2px">${v.salesDelta>0?'+':''}${v.salesDelta}% vs préc.</div>`:'<div style="font-size:11px;color:var(--txT);margin-top:2px">1ère mesure</div>'}
+        </div>
+        <div style="background:var(--bg);border-radius:8px;padding:10px 12px;text-align:center">
+          <div style="font-size:11px;color:var(--txS);margin-bottom:3px;text-transform:uppercase;letter-spacing:.03em">Note vendeur</div>
+          <div style="font-size:20px;font-weight:700">${v.rating?v.rating+'/5':"—"}</div>
+          ${v.ratingsCount?`<div style="font-size:11px;color:var(--txS);margin-top:2px">${v.ratingsCount.toLocaleString("fr-FR")} avis</div>`:''}
+        </div>
+        <div style="background:var(--bg);border-radius:8px;padding:10px 12px;text-align:center">
+          <div style="font-size:11px;color:var(--txS);margin-bottom:3px;text-transform:uppercase;letter-spacing:.03em">Page 1</div>
+          <div style="font-size:20px;font-weight:700;color:var(--ac)">${v.total}</div>
+          <div style="font-size:11px;color:var(--txS);margin-top:2px">apparitions</div>
+        </div>
+      </div>
+      <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--txS)">Présence par catégorie</div>
+      ${kws.slice(0,6).map(([kw,c])=>`
+        <div style="margin-bottom:6px">
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px"><span>${esc(kw)}</span><span style="color:var(--txS)">${c}</span></div>
+          <div style="height:4px;background:var(--borderL);border-radius:2px;overflow:hidden"><div style="height:100%;width:${Math.round((c/maxKW)*100)}%;background:var(--ac);border-radius:2px"></div></div>
+        </div>`).join("")}
+    </div>`;
+}
+
+function showSellerDetail(name) {
   const v = STATE.vendorsSorted.find(v => v.name === name);
   if (!v) return;
-  const sorted = Object.entries(v.keywords).sort((a, b) => b[1] - a[1]);
-  const max = sorted.length ? sorted[0][1] : 1;
-  const color = name === "BestMobilier" ? "var(--ac)" : "var(--pu)";
-  document.getElementById("vendor-detail").innerHTML = `
-    <div style="font-size:15px;font-weight:600;margin-bottom:4px">${esc(name)}</div>
-    <div style="font-size:12px;color:var(--txS);margin-bottom:14px">${v.total} apparitions en page 1</div>
-    ${sorted.map(([kw, c]) => bar(kw, c, max + 1, color, c)).join("")}`;
+  const statsMap = buildSellerStatsMap();
+  const stats = statsMap[name] || {};
+  const sales = stats.latest?.seller_sales || 0;
+  const prev_sales = stats.prev?.seller_sales || null;
+  const salesDelta = (prev_sales !== null && prev_sales > 0) ? Math.round(((sales - prev_sales) / prev_sales) * 100) : null;
+  const maxSales = Math.max(...Object.values(statsMap).map(s => s.latest?.seller_sales || 0), 1);
+  const maxT = STATE.vendorsSorted[0]?.total || 1;
+  const score = Math.round((v.total/maxT)*100*0.4 + (sales/maxSales)*100*0.6);
+  document.getElementById("seller-detail-panel").innerHTML = renderSellerDetailHTML({
+    ...v, sales, salesDelta, score,
+    rating: stats.latest?.seller_rating,
+    ratingsCount: stats.latest?.seller_ratings_count,
+    sourceUrl: stats.latest?.source_url
+  });
 }
 
 // =============================================
 // TAB 5: ANOMALIES
 // =============================================
 function renderAnomalies() {
-  const P = STATE.products;
-  const notScraped = P.filter(p => !p._latest);
-  const urlMap = {};
-  P.forEach(p => { if (p.url && p.url.startsWith("http")) { (urlMap[p.url] = urlMap[p.url] || []).push(p); } });
-  const dupeUrls = Object.entries(urlMap).filter(([, ps]) => ps.length > 1);
-  const brokenUrls = P.filter(p => !p.url || !p.url.startsWith("http"));
-  const total = notScraped.length + dupeUrls.length + brokenUrls.length;
-
+  const P=STATE.products;
+  const notScraped=P.filter(p=>!p._latest);
+  const urlMap={};P.forEach(p=>{if(p.url&&p.url.startsWith("http")){(urlMap[p.url]=urlMap[p.url]||[]).push(p);}});
+  const dupeUrls=Object.entries(urlMap).filter(([,ps])=>ps.length>1);
+  const brokenUrls=P.filter(p=>!p.url||!p.url.startsWith("http"));
+  const total=notScraped.length+dupeUrls.length+brokenUrls.length;
   return `
     <div class="metrics">
-      ${metric("Non scrapés", notScraped.length, `au ${STATE.latestDate}`, notScraped.length > 0 ? "var(--rd)" : "var(--gn)")}
-      ${metric("URLs en doublon", dupeUrls.length, `${dupeUrls.reduce((s, d) => s + d[1].length, 0)} produits`, dupeUrls.length > 0 ? "var(--am)" : "var(--gn)")}
-      ${metric("URLs cassées", brokenUrls.length, "liens vides ou invalides", brokenUrls.length > 0 ? "var(--rd)" : "var(--gn)")}
-      ${metric("Total anomalies", total, "", total > 0 ? "var(--rd)" : "var(--gn)")}
+      <div class="metric"><div class="metric-label">Non scrapés</div><div class="metric-value" style="color:${notScraped.length>0?'var(--rd)':'var(--gn)'}">${notScraped.length}</div><div class="metric-sub">au ${STATE.latestDate}</div></div>
+      <div class="metric"><div class="metric-label">URLs en doublon</div><div class="metric-value" style="color:${dupeUrls.length>0?'var(--am)':'var(--gn)'}">${dupeUrls.length}</div></div>
+      <div class="metric"><div class="metric-label">URLs cassées</div><div class="metric-value" style="color:${brokenUrls.length>0?'var(--rd)':'var(--gn)'}">${brokenUrls.length}</div></div>
+      <div class="metric"><div class="metric-label">Total anomalies</div><div class="metric-value" style="color:${total>0?'var(--rd)':'var(--gn)'}">${total}</div></div>
     </div>
-    ${notScraped.length > 0 ? `<div class="card anomaly-section">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="anomaly-dot" style="background:var(--rd)"></span><span style="font-size:14px;font-weight:600">Produits non scrapés le ${STATE.latestDate} (${notScraped.length})</span></div>
-      <div style="font-size:12px;color:var(--txS);margin-bottom:10px">Pas de snapshot à la dernière date. Cause possible : URL manquante dans urls.txt, timeout, ou page inaccessible.</div>
-      ${notScraped.map(p => productRowHTML(p)).join("")}
-    </div>` : ''}
-    ${dupeUrls.length > 0 ? `<div class="card anomaly-section">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="anomaly-dot" style="background:var(--am)"></span><span style="font-size:14px;font-weight:600">URLs en doublon (${dupeUrls.length})</span></div>
-      <div style="font-size:12px;color:var(--txS);margin-bottom:10px">Plusieurs produits (IDs différents) pointent vers la même URL.</div>
-      ${dupeUrls.map(([url, prods]) => `<div style="padding:10px 0;border-bottom:1px solid var(--borderL)">
-        <div style="font-size:12px;color:var(--ac);margin-bottom:6px;word-break:break-all"><a href="${esc(url)}" target="_blank" class="link">${esc(url)} ↗</a></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">${prods.map(p => `<div style="background:var(--amBg);border-radius:8px;padding:6px 10px;font-size:11px"><span style="font-weight:600">${esc(p.product_id)}</span> · ${esc(p.sku)} · ${esc(p.name).slice(0, 40)}…</div>`).join("")}</div>
-      </div>`).join("")}
-    </div>` : ''}
-    ${brokenUrls.length > 0 ? `<div class="card anomaly-section">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="anomaly-dot" style="background:var(--rd)"></span><span style="font-size:14px;font-weight:600">URLs cassées (${brokenUrls.length})</span></div>
-      ${brokenUrls.map(p => productRowHTML(p)).join("")}
-    </div>` : ''}
-    ${total === 0 ? '<div class="card" style="background:var(--gnBg);text-align:center;padding:30px"><div style="font-size:16px;font-weight:600;color:var(--gn)">Aucune anomalie détectée</div></div>' : ''}`;
+    ${notScraped.length>0?`<div class="card anomaly-section"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="anomaly-dot" style="background:var(--rd)"></span><span style="font-size:14px;font-weight:600">Produits non scrapés le ${STATE.latestDate} (${notScraped.length})</span></div>${notScraped.map(p=>productRowHTML(p)).join("")}</div>`:''}
+    ${dupeUrls.length>0?`<div class="card anomaly-section"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="anomaly-dot" style="background:var(--am)"></span><span style="font-size:14px;font-weight:600">URLs en doublon (${dupeUrls.length})</span></div>${dupeUrls.map(([url,prods])=>`<div style="padding:10px 0;border-bottom:1px solid var(--borderL)"><div style="font-size:12px;color:var(--ac);margin-bottom:6px"><a href="${esc(url)}" target="_blank" class="link">${esc(url)} ↗</a></div><div style="display:flex;gap:8px;flex-wrap:wrap">${prods.map(p=>`<div style="background:var(--amBg);border-radius:8px;padding:6px 10px;font-size:11px"><span style="font-weight:600">${esc(p.product_id)}</span> · ${esc(p.sku)}</div>`).join("")}</div></div>`).join("")}</div>`:''}
+    ${brokenUrls.length>0?`<div class="card anomaly-section"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="anomaly-dot" style="background:var(--rd)"></span><span style="font-size:14px;font-weight:600">URLs cassées (${brokenUrls.length})</span></div>${brokenUrls.map(p=>productRowHTML(p)).join("")}</div>`:''}
+    ${total===0?'<div class="card" style="background:var(--gnBg);text-align:center;padding:30px"><div style="font-size:16px;font-weight:600;color:var(--gn)">Aucune anomalie détectée</div></div>':''}`;
 }
 
 // =============================================
 // TAB 6: GESTION
 // =============================================
-let gestionSearch = "";
-let gestionFilter = "active"; // active, inactive, all
-
+let gestionSearch="";
 function renderGestion() {
-  let list = STATE.allProducts || STATE.products;
-  // For gestion, we also load inactive products - but they may not be in STATE yet
-  // We'll show what we have and provide actions
-
-  if (gestionSearch) {
-    const s = gestionSearch.toLowerCase();
-    list = list.filter(p => p.name.toLowerCase().includes(s) || p.product_id.includes(s) || (p.sku || "").toLowerCase().includes(s));
-  }
-
+  let list=STATE.allProducts||STATE.products;
+  if(gestionSearch){const s=gestionSearch.toLowerCase();list=list.filter(p=>p.name.toLowerCase().includes(s)||p.product_id.includes(s)||(p.sku||"").toLowerCase().includes(s));}
   return `
     <div class="metrics">
-      ${metric("Produits actifs", (STATE.allProducts || []).filter(p => p.active !== false).length, "", "var(--ac)")}
-      ${metric("Produits inactifs", (STATE.allProducts || []).filter(p => p.active === false).length, "tracking suspendu", "var(--txT)")}
-      ${metric("Total", (STATE.allProducts || []).length)}
+      <div class="metric"><div class="metric-label">Produits actifs</div><div class="metric-value" style="color:var(--ac)">${(STATE.allProducts||[]).filter(p=>p.active!==false).length}</div></div>
+      <div class="metric"><div class="metric-label">Produits inactifs</div><div class="metric-value" style="color:var(--txT)">${(STATE.allProducts||[]).filter(p=>p.active===false).length}</div></div>
+      <div class="metric"><div class="metric-label">Total</div><div class="metric-value">${(STATE.allProducts||[]).length}</div></div>
     </div>
-
     <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-        <div class="card-title" style="margin-bottom:0">Ajouter un produit</div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr auto;gap:8px;align-items:end">
-        <div>
-          <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">ID produit *</label>
-          <input id="add-id" placeholder="ex: 1261_7190" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">
-        </div>
-        <div>
-          <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">SKU</label>
-          <input id="add-sku" placeholder="ex: 1261BEI" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">
-        </div>
-        <div>
-          <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">SKU Marketplace</label>
-          <input id="add-skump" placeholder="ex: BES168..." style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">
-        </div>
-        <div>
-          <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Type</label>
-          <select id="add-type" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">
-            <option value="Nouveautés Q4+Q1">Nouveautés Q4+Q1</option>
-            <option value="Classe A">Classe A</option>
-            <option value="Deals exclus">Deals exclus</option>
-          </select>
-        </div>
-        <div></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div class="card-title" style="margin:0">Ajouter un produit</div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:8px;align-items:end;margin-bottom:8px">
+        <div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">ID produit *</label><input id="add-id" placeholder="ex: 1261_7190" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>
+        <div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">SKU</label><input id="add-sku" placeholder="ex: 1261BEI" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>
+        <div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">SKU Marketplace</label><input id="add-skump" placeholder="ex: BES168..." style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>
+        <div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Type</label><select id="add-type" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"><option value="Nouveautés Q4+Q1">Nouveautés Q4+Q1</option><option value="Classe A">Classe A</option><option value="Deals exclus">Deals exclus</option></select></div>
         <div></div>
       </div>
-      <div style="display:grid;grid-template-columns:2fr 3fr auto;gap:8px;margin-top:8px;align-items:end">
-        <div>
-          <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Nom du produit *</label>
-          <input id="add-name" placeholder="Nom complet du produit" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">
-        </div>
-        <div>
-          <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">URL Cdiscount *</label>
-          <input id="add-url" placeholder="https://www.cdiscount.com/..." style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">
-        </div>
+      <div style="display:grid;grid-template-columns:2fr 3fr auto;gap:8px;align-items:end">
+        <div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Nom du produit *</label><input id="add-name" placeholder="Nom complet" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>
+        <div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">URL Cdiscount *</label><input id="add-url" placeholder="https://www.cdiscount.com/..." style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>
         <button onclick="addProduct()" style="padding:8px 20px;background:var(--ac);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;white-space:nowrap">+ Ajouter</button>
       </div>
       <div id="add-status" style="margin-top:8px;font-size:12px"></div>
     </div>
-
     <div class="card">
       <div class="card-title">Gérer les produits</div>
-      <div class="filters">
-        <input placeholder="Rechercher..." value="${esc(gestionSearch)}" oninput="gestionSearch=this.value;renderContent()"/>
-      </div>
-      <div style="font-size:12px;color:var(--txS);margin-bottom:8px">${list.length} produit${list.length > 1 ? 's' : ''}</div>
-      <div class="scroll-table">
-        <table style="min-width:900px">
-          <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)">
-            <th style="width:30%">Produit</th><th>Réfs</th><th>Type</th><th>Statut</th><th>URL</th><th style="text-align:center">Actions</th>
-          </tr></thead>
-          <tbody>
-            ${list.map((p, i) => `<tr class="${i % 2 ? 'stripe' : ''}" id="row-${p.id}">
-              <td style="font-weight:500;font-size:12px"><div style="line-height:1.3">${esc(p.name)}</div></td>
-              <td style="font-size:11px;color:var(--txS);white-space:nowrap"><div>${esc(p.product_id)}</div><div>${esc(p.sku)}</div><div style="color:var(--txT)">${esc(p.sku_marketplace)}</div></td>
-              <td>
-                <select onchange="updateType(${p.id}, this.value)" style="font-size:11px;padding:3px 6px;border-radius:4px;border:1px solid var(--border);font-family:inherit">
-                  <option value="Classe A" ${p.type === 'Classe A' ? 'selected' : ''}>Classe A</option>
-                  <option value="Nouveautés Q4+Q1" ${p.type === 'Nouveautés Q4+Q1' ? 'selected' : ''}>Nouveautés</option>
-                  <option value="Deals exclus" ${p.type === 'Deals exclus' ? 'selected' : ''}>Deals exclus</option>
-                </select>
-              </td>
-              <td>${p.active !== false ? pill("Actif", "green") : pill("Inactif", "default")}</td>
-              <td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.url ? `<a href="${esc(p.url)}" target="_blank" class="link" title="${esc(p.url)}">${esc(p.url).slice(0, 45)}…</a>` : '—'}</td>
-              <td style="text-align:center;white-space:nowrap">
-                ${p.active !== false
-                  ? `<button onclick="toggleActive(${p.id}, false)" style="padding:3px 8px;border-radius:6px;border:.5px solid var(--am);background:var(--amBg);color:var(--am);font-size:11px;cursor:pointer;font-family:inherit;margin-right:4px" title="Désactiver le tracking">Désactiver</button>`
-                  : `<button onclick="toggleActive(${p.id}, true)" style="padding:3px 8px;border-radius:6px;border:.5px solid var(--gn);background:var(--gnBg);color:var(--gn);font-size:11px;cursor:pointer;font-family:inherit;margin-right:4px" title="Réactiver le tracking">Activer</button>`
-                }
-                <button onclick="deleteProduct(${p.id}, '${esc(p.name).slice(0,30)}')" style="padding:3px 8px;border-radius:6px;border:.5px solid var(--rd);background:var(--rdBg);color:var(--rd);font-size:11px;cursor:pointer;font-family:inherit" title="Supprimer définitivement">Suppr.</button>
-              </td>
-            </tr>`).join("")}
-          </tbody>
-        </table>
-      </div>
-      ${''}
+      <div class="filters"><input placeholder="Rechercher..." value="${esc(gestionSearch)}" oninput="gestionSearch=this.value;renderContent()"/></div>
+      <div style="font-size:12px;color:var(--txS);margin-bottom:8px">${list.length} produit${list.length>1?'s':''}</div>
+      <div class="scroll-table"><table style="min-width:900px">
+        <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)"><th style="width:30%">Produit</th><th>Réfs</th><th>Type</th><th>Statut</th><th>URL</th><th style="text-align:center">Actions</th></tr></thead>
+        <tbody>${list.map((p,i)=>`<tr class="${i%2?'stripe':''}" id="row-${p.id}">
+          <td style="font-weight:500;font-size:12px"><div style="line-height:1.3">${esc(p.name)}</div></td>
+          <td style="font-size:11px;color:var(--txS);white-space:nowrap"><div>${esc(p.product_id)}</div><div>${esc(p.sku)}</div><div style="color:var(--txT)">${esc(p.sku_marketplace)}</div></td>
+          <td><select onchange="updateType(${p.id},this.value)" style="font-size:11px;padding:3px 6px;border-radius:4px;border:1px solid var(--border);font-family:inherit"><option value="Classe A" ${p.type==='Classe A'?'selected':''}>Classe A</option><option value="Nouveautés Q4+Q1" ${p.type==='Nouveautés Q4+Q1'?'selected':''}>Nouveautés</option><option value="Deals exclus" ${p.type==='Deals exclus'?'selected':''}>Deals exclus</option></select></td>
+          <td>${p.active!==false?pill("Actif","green"):pill("Inactif","default")}</td>
+          <td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.url?`<a href="${esc(p.url)}" target="_blank" class="link" title="${esc(p.url)}">${esc(p.url).slice(0,45)}…</a>`:'—'}</td>
+          <td style="text-align:center;white-space:nowrap">
+            ${p.active!==false?`<button onclick="toggleActive(${p.id},false)" style="padding:3px 8px;border-radius:6px;border:.5px solid var(--am);background:var(--amBg);color:var(--am);font-size:11px;cursor:pointer;font-family:inherit;margin-right:4px">Désactiver</button>`:`<button onclick="toggleActive(${p.id},true)" style="padding:3px 8px;border-radius:6px;border:.5px solid var(--gn);background:var(--gnBg);color:var(--gn);font-size:11px;cursor:pointer;font-family:inherit;margin-right:4px">Activer</button>`}
+            <button onclick="deleteProduct(${p.id},'${esc(p.name).slice(0,30)}')" style="padding:3px 8px;border-radius:6px;border:.5px solid var(--rd);background:var(--rdBg);color:var(--rd);font-size:11px;cursor:pointer;font-family:inherit">Suppr.</button>
+          </td>
+        </tr>`).join("")}</tbody>
+      </table></div>
     </div>`;
 }
 
-// --- GESTION ACTIONS ---
-
 async function addProduct() {
-  const statusEl = document.getElementById("add-status");
-  const id = document.getElementById("add-id").value.trim();
-  const name = document.getElementById("add-name").value.trim();
-  const url = document.getElementById("add-url").value.trim();
-  const sku = document.getElementById("add-sku").value.trim();
-  const skuMp = document.getElementById("add-skump").value.trim();
-  const type = document.getElementById("add-type").value;
-
-  if (!id || !name || !url) {
-    statusEl.innerHTML = '<span style="color:var(--rd)">ID, nom et URL sont obligatoires.</span>';
-    return;
-  }
-
-  // Extract product_id_scraper from URL
-  const match = url.match(/-([a-zA-Z0-9]+)\.html/);
-  const scraperId = match ? match[1].toLowerCase() : "";
-
-  statusEl.innerHTML = '<span style="color:var(--txS)">Ajout en cours...</span>';
-
+  const statusEl=document.getElementById("add-status");
+  const id=document.getElementById("add-id").value.trim(),name=document.getElementById("add-name").value.trim(),url=document.getElementById("add-url").value.trim();
+  const sku=document.getElementById("add-sku").value.trim(),skuMp=document.getElementById("add-skump").value.trim(),type=document.getElementById("add-type").value;
+  if(!id||!name||!url){statusEl.innerHTML='<span style="color:var(--rd)">ID, nom et URL obligatoires.</span>';return;}
+  const match=url.match(/-([a-zA-Z0-9]+)\.html/);
+  const scraperId=match?match[1].toLowerCase():"";
+  statusEl.innerHTML='<span style="color:var(--txS)">Ajout en cours...</span>';
   try {
-    await sbInsert("products", {
-      product_id: id, name, sku, sku_marketplace: skuMp, url,
-      product_id_scraper: scraperId, type, marketplace: MARKETPLACE, active: true
-    });
-    statusEl.innerHTML = '<span style="color:var(--gn)">✓ Produit ajouté. Le scraping le prendra en compte au prochain lancement.</span>';
-    // Clear form
-    ["add-id", "add-name", "add-url", "add-sku", "add-skump"].forEach(id => document.getElementById(id).value = "");
-    // Reload data
+    await sbInsert("products",{product_id:id,name,sku,sku_marketplace:skuMp,url,product_id_scraper:scraperId,type,marketplace:MARKETPLACE,active:true});
+    statusEl.innerHTML='<span style="color:var(--gn)">✓ Produit ajouté.</span>';
+    ["add-id","add-name","add-url","add-sku","add-skump"].forEach(id=>document.getElementById(id).value="");
     await loadData();
-  } catch (e) {
-    statusEl.innerHTML = `<span style="color:var(--rd)">Erreur : ${e.message}</span>`;
-  }
+  } catch(e){statusEl.innerHTML=`<span style="color:var(--rd)">Erreur : ${e.message}</span>`;}
 }
+async function updateType(dbId,newType){try{await sbUpdate("products",`id=eq.${dbId}`,{type:newType});const p=STATE.products.find(p=>p.id===dbId);if(p)p.type=newType;}catch(e){alert("Erreur : "+e.message);}}
+async function toggleActive(dbId,active){try{await sbUpdate("products",`id=eq.${dbId}`,{active});await loadData();}catch(e){alert("Erreur : "+e.message);}}
+async function deleteProduct(dbId,name){if(!confirm(`Supprimer définitivement "${name}..." ?`))return;try{await sbDelete("products",`id=eq.${dbId}`);await loadData();}catch(e){alert("Erreur : "+e.message);}}
 
-async function updateType(dbId, newType) {
-  try {
-    await sbUpdate("products", `id=eq.${dbId}`, { type: newType });
-    // Update local state
-    const p = STATE.products.find(p => p.id === dbId);
-    if (p) p.type = newType;
-  } catch (e) {
-    alert("Erreur : " + e.message);
-  }
-}
-
-async function toggleActive(dbId, active) {
-  try {
-    await sbUpdate("products", `id=eq.${dbId}`, { active });
-    await loadData(); // Reload to update counts
-  } catch (e) {
-    alert("Erreur : " + e.message);
-  }
-}
-
-async function deleteProduct(dbId, name) {
-  if (!confirm(`Supprimer définitivement "${name}..." ?\n\nCette action est irréversible. Les données de scraping historiques seront conservées.`)) return;
-  try {
-    await sbDelete("products", `id=eq.${dbId}`);
-    await loadData();
-  } catch (e) {
-    alert("Erreur : " + e.message);
-  }
-}
-
-// =============================================
-// INIT
-// =============================================
 loadData();
 </script>
 </body>
