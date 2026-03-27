@@ -340,6 +340,7 @@ function showVariation(tag) {
 // TAB 1: PRODUITS
 // =============================================
 let prodFilters={search:"",type:"all",avail:"all",page1:"all",tag:"all",sort:"name",dir:"asc"};
+let exportSessions = 4; // nombre de sessions à inclure dans l'export CSV
 function renderProduits() {
   const f=prodFilters; let list=[...STATE.products];
   if(f.search){const s=f.search.toLowerCase();list=list.filter(p=>p.name.toLowerCase().includes(s)||p.product_id.includes(s)||(p.sku||"").toLowerCase().includes(s));}
@@ -359,7 +360,20 @@ function renderProduits() {
       <select onchange="prodFilters.page1=this.value;renderContent()"><option value="all">Toutes positions</option><option value="yes" ${f.page1==='yes'?'selected':''}>En page 1</option><option value="no" ${f.page1==='no'?'selected':''}>Pas en page 1</option></select>
       <select onchange="prodFilters.tag=this.value;renderContent()"><option value="all">Toutes variations</option><option value="prix_up">Prix ↑</option><option value="prix_down">Prix ↓</option><option value="delai_up">Délai ↑</option><option value="delai_down">Délai ↓</option><option value="note_up">Note ↑</option><option value="note_down">Note ↓</option></select>
     </div>
-    <div style="font-size:12px;color:var(--txS);margin-bottom:8px">${list.length} produit${list.length>1?'s':''}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div style="font-size:12px;color:var(--txS)">${list.length} produit${list.length>1?'s':''}</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:12px;color:var(--txS)">Historique :</span>
+        <select onchange="exportSessions=+this.value" style="padding:5px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;background:var(--card);font-family:inherit">
+          ${STATE.dates.slice().reverse().map((d,i)=>{
+            const dt=new Date(d+":00:00Z");
+            const label=dt.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit"})+" "+dt.getUTCHours()+"h";
+            return`<option value="${i+1}" ${exportSessions===i+1?'selected':''}>${i+1} session${i>0?'s':''} (jusqu'au ${label})</option>`;
+          }).join("")}
+        </select>
+        <button onclick="exportCSV()" style="padding:6px 14px;border:.5px solid var(--ac);border-radius:6px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">⬇ Export CSV</button>
+      </div>
+    </div>
     <div class="card" style="padding:0;overflow:hidden"><div class="scroll-table"><table style="min-width:1000px">
       <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)">
         <th style="cursor:pointer" onclick="toggleProdSort('name')">Produit${si('name')}</th><th>Réfs</th><th>Type</th>
@@ -382,6 +396,60 @@ function renderProduits() {
       </tbody></table></div></div>`;
 }
 function toggleProdSort(col){if(prodFilters.sort===col)prodFilters.dir=prodFilters.dir==="asc"?"desc":"asc";else{prodFilters.sort=col;prodFilters.dir="asc";}renderContent();}
+
+function exportCSV() {
+  // Sessions sélectionnées (les N dernières, ordre chronologique)
+  const sessions = STATE.dates.slice(-exportSessions);
+
+  // En-tête : Produit, ID, SKU, SKU Marketplace, Lien, puis par session : Dispo, Prix, Note, Délai
+  const fmtSession = sess => {
+    const dt = new Date(sess + ":00:00Z");
+    return dt.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "2-digit" }) + " " + dt.getUTCHours() + "h";
+  };
+
+  const sessionHeaders = sessions.flatMap(s => [
+    `Dispo ${fmtSession(s)}`,
+    `Prix ${fmtSession(s)}`,
+    `Note ${fmtSession(s)}`,
+    `Délai ${fmtSession(s)}`
+  ]);
+
+  const headers = ["Produit", "ID produit", "SKU", "SKU Marketplace", "Lien", ...sessionHeaders];
+
+  const rows = STATE.products.map(p => {
+    const key = (p.product_id_scraper || "").toLowerCase();
+    const h = STATE.history[key] || {};
+
+    const sessionCells = sessions.flatMap(sess => {
+      const snap = h[sess];
+      return [
+        snap?.available != null ? (snap.available ? "Dispo" : "Indispo") : "",
+        snap?.price != null ? snap.price : "",
+        snap?.rating != null ? snap.rating : "",
+        snap?.delivery_days != null ? snap.delivery_days : ""
+      ];
+    });
+
+    return [p.name, p.product_id, p.sku || "", p.sku_marketplace || "", p.url || "", ...sessionCells];
+  });
+
+  // Construire le CSV (séparateur ; pour Excel FR)
+  const csvCell = v => {
+    const s = String(v ?? "");
+    return s.includes(";") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = [headers, ...rows].map(row => row.map(csvCell).join(";")).join("\n");
+
+  // Télécharger
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" }); // BOM pour Excel FR
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const today = new Date().toLocaleDateString("fr-FR").replace(/\//g, "-");
+  a.download = `produits_cdiscount_${today}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 // =============================================
 // TAB 2: HISTORIQUE
