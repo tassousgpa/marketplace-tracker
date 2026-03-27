@@ -203,15 +203,51 @@ async function loadData() {
       keywordData[p.keyword].push({...p, _product:prod});
     });
 
+    // Moyenne des apparitions page 1 sur les 8 dernières sessions
+    const allPosSessions = [...new Set(positions.map(p => p.date ? sessionKey(p.date) : null).filter(Boolean))].sort();
+    const last8Sessions = allPosSessions.slice(-8);
+
+    // Compter les apparitions par vendeur par session
+    const vendorSessionCounts = {}; // { "BestMobilier": { "2026-03-26T23": 5, ... } }
+    positions.forEach(p => {
+      if (!p.seller || !p.date) return;
+      const sess = sessionKey(p.date);
+      if (!last8Sessions.includes(sess)) return;
+      if (!vendorSessionCounts[p.seller]) vendorSessionCounts[p.seller] = {};
+      if (!vendorSessionCounts[p.seller][sess]) vendorSessionCounts[p.seller][sess] = { total: 0, keywords: {} };
+      vendorSessionCounts[p.seller][sess].total++;
+      vendorSessionCounts[p.seller][sess].keywords[p.keyword] = (vendorSessionCounts[p.seller][sess].keywords[p.keyword] || 0) + 1;
+    });
+
+    // Calculer la moyenne par vendeur sur les sessions où il apparaît
     const vendorCounts = {};
-    latestPositions.forEach(p => {
-      if (p.seller) {
-        if (!vendorCounts[p.seller]) vendorCounts[p.seller] = { total:0, keywords:{} };
-        vendorCounts[p.seller].total++;
-        vendorCounts[p.seller].keywords[p.keyword] = (vendorCounts[p.seller].keywords[p.keyword]||0)+1;
-      }
+    Object.entries(vendorSessionCounts).forEach(([seller, sessions]) => {
+      const sessKeys = Object.keys(sessions);
+      const avgTotal = Math.round(sessKeys.reduce((s, k) => s + sessions[k].total, 0) / last8Sessions.length);
+      // Moyenne par keyword aussi
+      const kwTotals = {};
+      sessKeys.forEach(k => {
+        Object.entries(sessions[k].keywords).forEach(([kw, c]) => {
+          kwTotals[kw] = (kwTotals[kw] || 0) + c;
+        });
+      });
+      const kwAvg = {};
+      Object.entries(kwTotals).forEach(([kw, total]) => {
+        kwAvg[kw] = Math.round(total / last8Sessions.length * 10) / 10;
+      });
+      vendorCounts[seller] = { total: avgTotal, totalExact: avgTotal, keywords: kwAvg, sessionsCount: sessKeys.length };
     });
     const vendorsSorted = Object.entries(vendorCounts).map(([name,data])=>({name,...data})).sort((a,b)=>b.total-a.total);
+
+    // Pour les métriques de la dernière session (Synthèse/Positions) on garde latestPositions
+    const vendorCountsLatest = {};
+    latestPositions.forEach(p => {
+      if (p.seller) {
+        if (!vendorCountsLatest[p.seller]) vendorCountsLatest[p.seller] = { total:0, keywords:{} };
+        vendorCountsLatest[p.seller].total++;
+        vendorCountsLatest[p.seller].keywords[p.keyword] = (vendorCountsLatest[p.seller].keywords[p.keyword]||0)+1;
+      }
+    });
 
     const bmByKeyword = {};
     const bmScraperIds = new Set(products.map(p=>(p.product_id_scraper||"").toLowerCase()));
@@ -275,9 +311,7 @@ function renderSynthese() {
   const pctDU=totalWithPrev>0?Math.round(du.length/totalWithPrev*100):0;
   const pctPU=totalWithPrev>0?Math.round(pu.length/totalWithPrev*100):0;
   const pctDD=totalWithPrev>0?Math.round(dd.length/totalWithPrev*100):0;
-  const bmCats=Object.entries(STATE.bmByKeyword).sort((a,b)=>b[1]-a[1]).slice(0,10);
-  const maxBM=bmCats.length?bmCats[0][1]:1;
-  const topV=STATE.vendorsSorted.slice(0,10),maxV=topV.length?topV[0].total:1;
+
   return `
     <div class="metrics">
       <div class="metric"><div class="metric-label">Produits suivis</div><div class="metric-value">${P.length}</div></div>
@@ -286,10 +320,7 @@ function renderSynthese() {
       <div class="metric"><div class="metric-label">Délai moyen</div><div class="metric-value" style="color:var(--am)">${avgDelivery}j</div></div>
       <div class="metric"><div class="metric-label">Note moyenne</div><div class="metric-value" style="color:var(--am)">${avgRating}</div></div>
     </div>
-    <div class="grid-2">
-      <div class="card"><div class="card-title">BestMobilier en page 1 — top 10</div>${bmCats.map(([kw,c])=>bar(kw,c,maxBM+2,"var(--ac)",`${c} produits`)).join("")}${!bmCats.length?'<div style="color:var(--txT);font-size:12px">Aucune donnée de position</div>':''}</div>
-      <div class="card"><div class="card-title">Top 10 vendeurs (apparitions page 1)</div>${topV.map((v,i)=>bar(`${i+1}. ${v.name}`,v.total,maxV+2,v.name==="BestMobilier"?"var(--ac)":v.name==="Cdiscount"?"var(--pu)":"var(--txT)",`${v.total} app.`)).join("")}</div>
-    </div>
+
     <div class="card"><div class="card-title">Indicateurs clés</div><div class="grid-2">${[
       {l:"Prix moyen",v:avgPrice+"€"},{l:"Délai moyen",v:avgDelivery+" jours"},{l:"Note moyenne",v:avgRating+" / 5"},
       {l:"Taux dispo",v:(P.length>0?Math.round(avail/P.length*100):0)+"%"},{l:"Taux page 1",v:(P.length>0?Math.round(page1/P.length*100):0)+"%"},
@@ -442,7 +473,7 @@ function renderConcurrents() {
       <div class="metric"><div class="metric-label">Vendeurs identifiés</div><div class="metric-value">${scored.length}</div></div>
       <div class="metric"><div class="metric-label">Position BM</div><div class="metric-value" style="color:${bmIdx===0?'var(--gn)':bmIdx<=2?'var(--am)':'var(--tx)'}">${bmIdx>=0?'#'+(bmIdx+1):'—'}</div><div class="metric-sub">score ${scored[bmIdx]?.score||0}/100</div></div>
       <div class="metric"><div class="metric-label">Leader ventes 12m</div><div class="metric-value" style="font-size:16px">${esc(topSales?.name||'—')}</div><div class="metric-sub">${topSales?.sales?topSales.sales.toLocaleString("fr-FR")+' ventes':''}</div></div>
-      <div class="metric"><div class="metric-label">Leader page 1</div><div class="metric-value" style="font-size:16px">${esc(topP1?.name||'—')}</div><div class="metric-sub">${topP1?.total||0} apparitions</div></div>
+      <div class="metric"><div class="metric-label">Leader page 1</div><div class="metric-value" style="font-size:16px">${esc(topP1?.name||'—')}</div><div class="metric-sub">${topP1?.total||0} app. moy./session</div></div>
     </div>
 
     <div class="grid-2" style="margin-bottom:14px">
@@ -450,7 +481,7 @@ function renderConcurrents() {
       <div class="card" style="padding:0;overflow:hidden">
         <div style="padding:14px 18px 10px;border-bottom:1px solid var(--border)">
           <div class="card-title" style="margin:0">Classement global</div>
-          <div style="font-size:11px;color:var(--txS);margin-top:2px">Score = 40% apparitions page 1 · 60% ventes 12 mois</div>
+          <div style="font-size:11px;color:var(--txS);margin-top:2px">Score = 40% moy. app. page 1 (8 sessions) · 60% ventes 12 mois</div>
         </div>
         ${scored.slice(0,12).map((v,i) => {
           const isBM = v.name === "BestMobilier";
@@ -476,7 +507,7 @@ function renderConcurrents() {
                 <div style="height:100%;width:${barW}%;background:${isBM?'var(--ac)':rankColor(i)};border-radius:2px;transition:width .4s"></div>
               </div>
               <div style="display:flex;gap:12px;margin-top:4px;font-size:11px;color:var(--txS)">
-                <span>📍 ${v.total} app. P1</span>
+                <span>📍 ${v.total} app. P1 moy.</span>
                 ${v.sales?`<span>💰 ${v.sales.toLocaleString("fr-FR")} ventes/12m</span>`:''}
                 ${v.rating?`<span>⭐ ${v.rating}/5</span>`:''}
               </div>
@@ -541,7 +572,7 @@ function renderSellerDetailHTML(v) {
         <div style="background:var(--bg);border-radius:8px;padding:10px 12px;text-align:center">
           <div style="font-size:11px;color:var(--txS);margin-bottom:3px;text-transform:uppercase;letter-spacing:.03em">Page 1</div>
           <div style="font-size:20px;font-weight:700;color:var(--ac)">${v.total}</div>
-          <div style="font-size:11px;color:var(--txS);margin-top:2px">apparitions</div>
+          <div style="font-size:11px;color:var(--txS);margin-top:2px">moy./session</div>
         </div>
       </div>
       <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--txS)">Présence par catégorie</div>
