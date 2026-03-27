@@ -398,7 +398,7 @@ function renderHistorique() {
     <div class="filters"><div class="toggle-group">${["price","rating","delivery","dispo"].map(m=>`<button class="toggle-btn ${histMetric===m?'active':''}" onclick="histMetric='${m}';renderContent()">${{price:"Prix",rating:"Note",delivery:"Délai",dispo:"Dispo"}[m]}</button>`).join("")}</div></div>
     <div style="font-size:12px;color:var(--txS);margin-bottom:8px">${prods.length} produits · ${dates.length} dates</div>
     <div class="card" style="padding:0;overflow:hidden"><div class="scroll-table"><table style="min-width:700px">
-      <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)"><th style="min-width:200px">Produit</th><th>Réfs</th>${dates.map(d=>`<th style="text-align:center;white-space:nowrap">${d.slice(5)}</th>`).join("")}</tr></thead>
+      <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)"><th style="min-width:200px">Produit</th><th>Réfs</th>${dates.map(d=>{const dt=new Date(d+":00:00Z");return`<th style="text-align:center;white-space:nowrap">${dt.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit"})} ${dt.getUTCHours()}h</th>`;}).join("")}</tr></thead>
       <tbody>${prods.map((p,i)=>`<tr class="${i%2?'stripe':''}"><td style="font-weight:500;font-size:12px;max-width:200px">${esc(p.name)}</td><td style="font-size:10px;color:var(--txT);white-space:nowrap">${esc(p.product_id)}<br>${esc(p.sku)}</td>${dates.map((d,di)=>{const v=getVal(p,d),vr=hasVar(p,d,di);return`<td style="text-align:center;${vr?`background:${varBg(vr)};font-weight:600`:''}">${fmtVal(v)}</td>`;}).join("")}</tr>`).join("")}</tbody>
     </table></div></div>`;
 }
@@ -420,7 +420,7 @@ function renderPositions() {
       <div class="cat-grid">${keywords.map(kw=>{const c=STATE.bmByKeyword[kw]||0;return`<div class="cat-card ${c===0?'cat-card-zero':''}" onclick="showPositionDetail('${esc(kw)}')"><div class="cat-card-header"><span class="cat-card-name">${esc(kw)}</span><span class="cat-card-count">${c}</span></div>${c>0?`<div style="margin-top:5px;height:4px;background:var(--borderL);border-radius:2px;overflow:hidden"><div style="height:100%;width:${Math.min(c/(maxBM+1)*100,100)}%;background:var(--ac);border-radius:2px"></div></div>`:''}</div>`;}).join("")}</div>
       ${!keywords.length?'<div style="color:var(--txT);font-size:12px;padding:20px;text-align:center">Aucune donnée de position disponible.</div>':''}
     </div>
-    <div class="card"><div class="card-title">Leader par catégorie</div><div class="grid-2">${keywords.map(kw=>{const items=STATE.keywordData[kw]||[];const sellers={};items.forEach(i=>{sellers[i.seller]=(sellers[i.seller]||0)+1;});const sorted=Object.entries(sellers).sort((a,b)=>b[1]-a[1]).slice(0,2);const bmC=STATE.bmByKeyword[kw]||0;return`<div style="padding:8px 12px;border-bottom:1px solid var(--borderL)"><div style="font-size:13px;font-weight:500;margin-bottom:4px">${esc(kw)}</div><div style="display:flex;gap:4px;flex-wrap:wrap">${sorted.map((s,i)=>pill(`${i===0?'🥇':'🥈'} ${s[0]} (${s[1]})`,s[0]==="BestMobilier"?"accent":s[0]==="Cdiscount"?"purple":"default")).join("")}${bmC>0&&!sorted.find(s=>s[0]==="BestMobilier")?pill(`BM: ${bmC}`,"accent"):''}</div></div>`;}).join("")}</div></div>`;
+    <div class="card"><div class="card-title">Leader par catégorie</div><div class="grid-2">${keywords.map(kw=>{const items=STATE.keywordData[kw]||[];const sellers={};items.forEach(i=>{sellers[i.seller]=(sellers[i.seller]||0)+1;});const sorted=Object.entries(sellers).sort((a,b)=>b[1]-a[1]).slice(0,3);const bmC=STATE.bmByKeyword[kw]||0;const medals=['🥇','🥈','🥉'];return`<div style="padding:8px 12px;border-bottom:1px solid var(--borderL)"><div style="font-size:13px;font-weight:500;margin-bottom:4px">${esc(kw)}</div><div style="display:flex;gap:4px;flex-wrap:wrap">${sorted.map((s,i)=>pill(`${medals[i]} ${s[0]} (${s[1]})`,s[0]==="BestMobilier"?"accent":s[0]==="Cdiscount"?"purple":"default")).join("")}${bmC>0&&!sorted.find(s=>s[0]==="BestMobilier")?pill(`BM: ${bmC}`,"accent"):''}</div></div>`;}).join("")}</div></div>`;
 }
 function showPositionDetail(kw) {
   const items=(STATE.keywordData[kw]||[]).filter(i=>i._product);
@@ -483,7 +483,7 @@ function renderConcurrents() {
           <div class="card-title" style="margin:0">Classement global</div>
           <div style="font-size:11px;color:var(--txS);margin-top:2px">Score = 40% moy. app. page 1 (8 sessions) · 60% ventes 12 mois</div>
         </div>
-        ${scored.slice(0,12).map((v,i) => {
+        ${scored.slice(0, STATE._concShowAll ? scored.length : 10).map((v,i) => {
           const isBM = v.name === "BestMobilier";
           const barW = Math.round((v.score/100)*100);
           const deltaHtml = v.salesDelta !== null
@@ -515,6 +515,11 @@ function renderConcurrents() {
         }).join("")}
       </div>
 
+        ${scored.length > 10 ? `<div onclick="STATE._concShowAll=!STATE._concShowAll;renderContent()" style="padding:10px 18px;text-align:center;font-size:12px;color:var(--ac);cursor:pointer;border-top:1px solid var(--borderL)">
+          ${STATE._concShowAll ? '▲ Voir moins' : '▼ Voir les ' + (scored.length - 10) + ' autres vendeurs'}
+        </div>` : ''}
+      </div>
+
       <!-- DETAIL VENDEUR -->
       <div id="seller-detail-panel">
         ${scored.length > 0 ? renderSellerDetailHTML(scored[0]) : `<div class="card" style="text-align:center;padding:40px;color:var(--txT)">Cliquez sur un vendeur</div>`}
@@ -527,8 +532,8 @@ function renderConcurrents() {
       <div style="font-size:11px;color:var(--txS);margin-bottom:12px">
         Les ventes Cdiscount affichées sont glissantes sur 12 mois — la progression reflète l'activité récente du vendeur.
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px">
-        ${scored.filter(v => v.salesDelta !== null).map(v => {
+      <div id="prog-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px">
+        ${(STATE._progShowAll ? scored : scored.slice(0,10)).filter(v => v.salesDelta !== null).map(v => {
           const up = v.salesDelta > 0, down = v.salesDelta < 0;
           const bg = up ? 'var(--gnBg)' : down ? 'var(--rdBg)' : 'var(--bg)';
           const col = up ? 'var(--gn)' : down ? 'var(--rd)' : 'var(--txT)';
@@ -543,6 +548,7 @@ function renderConcurrents() {
         }).join("")}
         ${!scored.filter(v => v.salesDelta !== null).length ? '<div style="color:var(--txT);font-size:12px;grid-column:1/-1;padding:20px;text-align:center">Pas encore de données de progression — relancez l\'extension la semaine prochaine</div>' : ''}
       </div>
+      ${scored.filter(v=>v.salesDelta!==null).length > 10 ? `<div onclick="STATE._progShowAll=!STATE._progShowAll;renderContent()" style="margin-top:10px;text-align:center;font-size:12px;color:var(--ac);cursor:pointer">${STATE._progShowAll ? '▲ Voir moins' : '▼ Voir les ' + (scored.filter(v=>v.salesDelta!==null).length - 10) + ' autres'}</div>` : ''}
     </div>`;
 }
 
