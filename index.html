@@ -89,11 +89,11 @@ tr.stripe{background:var(--bg)}
       <div class="title">Marketplace tracker</div>
       <div class="subtitle" id="header-subtitle">Chargement...</div>
     </div>
-    <div class="mp-btns">
-      <button class="mp-btn active">Cdiscount</button>
-      <button class="mp-btn">Amazon</button>
-      <button class="mp-btn">La Redoute</button>
-      <button class="mp-btn">Conforama</button>
+    <div class="mp-btns" id="mp-btns">
+      <button class="mp-btn active" onclick="switchMarketplace('cdiscount',this)">Cdiscount</button>
+      <button class="mp-btn" onclick="switchMarketplace('amazon',this)">Amazon</button>
+      <button class="mp-btn" onclick="switchMarketplace('laredoute',this)">La Redoute</button>
+      <button class="mp-btn" onclick="switchMarketplace('conforama',this)">Conforama</button>
     </div>
   </div>
   <div class="tabs" id="tabs"></div>
@@ -115,7 +115,7 @@ tr.stripe{background:var(--bg)}
 <script>
 const SB_URL = "https://pmxsthzdxubqbemdgtbr.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBteHN0aHpkeHVicWJlbWRndGJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk4NDQsImV4cCI6MjA5MDAyNTg0NH0.GpfAw91eJ8D7RIeZLFIejCt9DTwGpXvOGcxYlhZS78I";
-const MARKETPLACE = "cdiscount";
+let MARKETPLACE = "cdiscount";
 
 async function sb(table, params="") {
   const r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } });
@@ -139,6 +139,14 @@ async function sbDelete(table, filter) {
 
 let STATE = { products:[], snapshots:[], positions:[], dates:[], sellerStats:[], tab:0 };
 const TAB_NAMES = ["Synthèse","Produits","Historique","Positions","Concurrents","Anomalies","Gestion"];
+
+function switchMarketplace(mp, btn) {
+  MARKETPLACE = mp;
+  document.querySelectorAll('.mp-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  STATE.tab = 0; // reset sur Synthèse
+  loadData();
+}
 
 async function loadData() {
   try {
