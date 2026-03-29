@@ -315,44 +315,89 @@ async function loadData() {
     const latestPosSession = posSessionsSorted[posSessionsSorted.length-1] || "";
     const latestPositions = positions.filter(p => p.date && sessionKey(p.date) === latestPosSession);
 
+    // Normalise le keyword : extrait le terme de recherche depuis les URLs Conforama
+    // ex: "https://www.conforama.fr/recherche-conforama/canap%C3%A9%20panoramique?fromSearch=canap%C3%A9%20panoramique"
+    // → "canapé panoramique"
+    function normalizeKeyword(kw) {
+      if (!kw) return kw;
+      try {
+        // Cas URL : on cherche fromSearch= ou le dernier segment du path
+        if (kw.startsWith("http")) {
+          const url = new URL(kw);
+          // Priorité au paramètre fromSearch
+          const fromSearch = url.searchParams.get("fromSearch");
+          if (fromSearch) return decodeURIComponent(fromSearch).trim();
+          // Sinon dernier segment du path
+          const segments = url.pathname.split("/").filter(Boolean);
+          const last = segments[segments.length - 1] || "";
+          return decodeURIComponent(last.replace(/-/g, " ")).trim();
+        }
+      } catch(e) {}
+      return kw;
+    }
+
     const keywordData = {};
     latestPositions.forEach(p => {
-      if (!keywordData[p.keyword]) keywordData[p.keyword] = [];
+      const kw = normalizeKeyword(p.keyword);
+      if (!keywordData[kw]) keywordData[kw] = [];
       const prod = prodByScraper[(p.product_id||"").toLowerCase()];
-      keywordData[p.keyword].push({...p, _product:prod});
+      keywordData[kw].push({...p, keyword: kw, _product:prod});
     });
 
-    const allPosSessions = [...new Set(positions.map(p => p.date ? sessionKey(p.date) : null).filter(Boolean))].sort();
-    const last8Sessions = allPosSessions.slice(-8);
+    // Comptage vendeurs : uniquement sur la dernière session pour éviter tout double-comptage.
+    // Pour Cdiscount on garde la moyenne sur 8 sessions (pertinent car on scrape souvent),
+    // pour les autres marketplaces (Conforama, MdM, Amazon) on prend uniquement la dernière session.
+    const isSingleSessionMP = MARKETPLACE !== "cdiscount";
 
-    const vendorSessionCounts = {};
-    positions.forEach(p => {
-      if (!p.seller || !p.date) return;
-      const sess = sessionKey(p.date);
-      if (!last8Sessions.includes(sess)) return;
-      if (!vendorSessionCounts[p.seller]) vendorSessionCounts[p.seller] = {};
-      if (!vendorSessionCounts[p.seller][sess]) vendorSessionCounts[p.seller][sess] = { total: 0, keywords: {} };
-      vendorSessionCounts[p.seller][sess].total++;
-      vendorSessionCounts[p.seller][sess].keywords[p.keyword] = (vendorSessionCounts[p.seller][sess].keywords[p.keyword] || 0) + 1;
-    });
+    let vendorsSorted;
+    if (isSingleSessionMP) {
+      // Comptage simple sur latestPositions seulement
+      const vendorCountsSimple = {};
+      latestPositions.forEach(p => {
+        if (!p.seller) return;
+        const kw = normalizeKeyword(p.keyword);
+        if (!vendorCountsSimple[p.seller]) vendorCountsSimple[p.seller] = { total: 0, keywords: {} };
+        vendorCountsSimple[p.seller].total++;
+        vendorCountsSimple[p.seller].keywords[kw] = (vendorCountsSimple[p.seller].keywords[kw] || 0) + 1;
+      });
+      vendorsSorted = Object.entries(vendorCountsSimple)
+        .map(([name, data]) => ({ name, ...data, totalExact: data.total, sessionsCount: 1 }))
+        .sort((a, b) => b.total - a.total);
+    } else {
+      // Cdiscount : moyenne sur les 8 dernières sessions
+      const allPosSessions = [...new Set(positions.map(p => p.date ? sessionKey(p.date) : null).filter(Boolean))].sort();
+      const last8Sessions = allPosSessions.slice(-8);
 
-    const vendorCounts = {};
-    Object.entries(vendorSessionCounts).forEach(([seller, sessions]) => {
-      const sessKeys = Object.keys(sessions);
-      const avgTotal = Math.round(sessKeys.reduce((s, k) => s + sessions[k].total, 0) / last8Sessions.length);
-      const kwTotals = {};
-      sessKeys.forEach(k => {
-        Object.entries(sessions[k].keywords).forEach(([kw, c]) => {
-          kwTotals[kw] = (kwTotals[kw] || 0) + c;
+      const vendorSessionCounts = {};
+      positions.forEach(p => {
+        if (!p.seller || !p.date) return;
+        const sess = sessionKey(p.date);
+        if (!last8Sessions.includes(sess)) return;
+        const kw = normalizeKeyword(p.keyword);
+        if (!vendorSessionCounts[p.seller]) vendorSessionCounts[p.seller] = {};
+        if (!vendorSessionCounts[p.seller][sess]) vendorSessionCounts[p.seller][sess] = { total: 0, keywords: {} };
+        vendorSessionCounts[p.seller][sess].total++;
+        vendorSessionCounts[p.seller][sess].keywords[kw] = (vendorSessionCounts[p.seller][sess].keywords[kw] || 0) + 1;
+      });
+
+      const vendorCounts = {};
+      Object.entries(vendorSessionCounts).forEach(([seller, sessions]) => {
+        const sessKeys = Object.keys(sessions);
+        const avgTotal = Math.round(sessKeys.reduce((s, k) => s + sessions[k].total, 0) / last8Sessions.length);
+        const kwTotals = {};
+        sessKeys.forEach(k => {
+          Object.entries(sessions[k].keywords).forEach(([kw, c]) => {
+            kwTotals[kw] = (kwTotals[kw] || 0) + c;
+          });
         });
+        const kwAvg = {};
+        Object.entries(kwTotals).forEach(([kw, total]) => {
+          kwAvg[kw] = Math.round(total / last8Sessions.length * 10) / 10;
+        });
+        vendorCounts[seller] = { total: avgTotal, totalExact: avgTotal, keywords: kwAvg, sessionsCount: sessKeys.length };
       });
-      const kwAvg = {};
-      Object.entries(kwTotals).forEach(([kw, total]) => {
-        kwAvg[kw] = Math.round(total / last8Sessions.length * 10) / 10;
-      });
-      vendorCounts[seller] = { total: avgTotal, totalExact: avgTotal, keywords: kwAvg, sessionsCount: sessKeys.length };
-    });
-    const vendorsSorted = Object.entries(vendorCounts).map(([name,data])=>({name,...data})).sort((a,b)=>b.total-a.total);
+      vendorsSorted = Object.entries(vendorCounts).map(([name,data])=>({name,...data})).sort((a,b)=>b.total-a.total);
+    }
 
     const bmByKeyword = {};
     const bmScraperIds = new Set(products.map(p=>(p.product_id_scraper||"").toLowerCase()));
