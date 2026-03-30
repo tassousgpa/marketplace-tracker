@@ -265,7 +265,7 @@ async function loadData() {
       sb("products", `marketplace=eq.${MARKETPLACE}&active=eq.true&select=*&order=product_id`),
       sb("products", `marketplace=eq.${MARKETPLACE}&select=*&order=product_id`),
       sb("product_snapshots", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=5000`),
-      sb("positions", `marketplace=eq.${MARKETPLACE}&select=*&order=date.asc`),
+      sb("positions", `marketplace=eq.${MARKETPLACE}&select=*&order=date.asc&limit=5000`),
       sb("seller_stats", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=2000`),
     ]);
 
@@ -391,60 +391,9 @@ async function loadData() {
       keywordData[kw].push({...p, keyword: kw, _product:prod});
     });
 
-    // Comptage vendeurs : uniquement sur la dernière session pour éviter tout double-comptage.
-    // Pour Cdiscount on garde la moyenne sur 8 sessions (pertinent car on scrape souvent),
-    // pour les autres marketplaces (Conforama, MdM, Amazon) on prend uniquement la dernière session.
-    const isSingleSessionMP = MARKETPLACE !== "cdiscount";
-
-    let vendorsSorted;
-    if (isSingleSessionMP) {
-      // Comptage simple sur latestPositions seulement
-      const vendorCountsSimple = {};
-      latestPositions.forEach(p => {
-        if (!p.seller) return;
-        const kw = normalizeKeyword(p.keyword);
-        if (!vendorCountsSimple[p.seller]) vendorCountsSimple[p.seller] = { total: 0, keywords: {} };
-        vendorCountsSimple[p.seller].total++;
-        vendorCountsSimple[p.seller].keywords[kw] = (vendorCountsSimple[p.seller].keywords[kw] || 0) + 1;
-      });
-      vendorsSorted = Object.entries(vendorCountsSimple)
-        .map(([name, data]) => ({ name, ...data, totalExact: data.total, sessionsCount: 1 }))
-        .sort((a, b) => b.total - a.total);
-    } else {
-      // Cdiscount : moyenne sur les 8 dernières sessions
-      const allPosSessions = [...new Set(positions.map(p => p.date ? sessionKey(p.date) : null).filter(Boolean))].sort();
-      const last8Sessions = allPosSessions.slice(-8);
-
-      const vendorSessionCounts = {};
-      positions.forEach(p => {
-        if (!p.seller || !p.date) return;
-        const sess = sessionKey(p.date);
-        if (!last8Sessions.includes(sess)) return;
-        const kw = normalizeKeyword(p.keyword);
-        if (!vendorSessionCounts[p.seller]) vendorSessionCounts[p.seller] = {};
-        if (!vendorSessionCounts[p.seller][sess]) vendorSessionCounts[p.seller][sess] = { total: 0, keywords: {} };
-        vendorSessionCounts[p.seller][sess].total++;
-        vendorSessionCounts[p.seller][sess].keywords[kw] = (vendorSessionCounts[p.seller][sess].keywords[kw] || 0) + 1;
-      });
-
-      const vendorCounts = {};
-      Object.entries(vendorSessionCounts).forEach(([seller, sessions]) => {
-        const sessKeys = Object.keys(sessions);
-        const avgTotal = Math.round(sessKeys.reduce((s, k) => s + sessions[k].total, 0) / last8Sessions.length);
-        const kwTotals = {};
-        sessKeys.forEach(k => {
-          Object.entries(sessions[k].keywords).forEach(([kw, c]) => {
-            kwTotals[kw] = (kwTotals[kw] || 0) + c;
-          });
-        });
-        const kwAvg = {};
-        Object.entries(kwTotals).forEach(([kw, total]) => {
-          kwAvg[kw] = Math.round(total / last8Sessions.length * 10) / 10;
-        });
-        vendorCounts[seller] = { total: avgTotal, totalExact: avgTotal, keywords: kwAvg, sessionsCount: sessKeys.length };
-      });
-      vendorsSorted = Object.entries(vendorCounts).map(([name,data])=>({name,...data})).sort((a,b)=>b.total-a.total);
-    }
+    // vendorsSorted est maintenant construit depuis seller_stats (p1_count)
+    // plus depuis positions — voir buildSellerStatsMap() dans renderConcurrents
+    const vendorsSorted = []; // placeholder, remplacé au render
 
     // ─── Matching BestMobilier ───────────────────────────────────────
     // On utilise seller === "BestMobilier" comme critère primaire,
@@ -524,7 +473,7 @@ async function loadData() {
     const posDay = latestPosSession ? latestPosSession.slice(0, 10) : null;
     const positionsOutdated = !posDay || !snapshotDay || posDay < snapshotDay;
 
-    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, vendorsSorted, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, tab:STATE.tab||0 };
+    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, tab:STATE.tab||0 };
 
     const sessionDisplay = latestDate ? new Date(latestDate + "T12:00:00Z").toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}) : "N/A";
     document.getElementById("header-subtitle").textContent = `${products.length} produits · Relevé du ${sessionDisplay}`;
@@ -782,6 +731,7 @@ function showPositionDetail(kw) {
 // - MdM       : seller_sales (comme Cdiscount par défaut)
 // =============================================
 function buildSellerStatsMap() {
+  // Groupe seller_stats par vendeur, triés du plus récent au plus ancien
   const byName = {};
   (STATE.sellerStats || []).forEach(s => {
     if (!byName[s.seller]) byName[s.seller] = [];
@@ -793,6 +743,22 @@ function buildSellerStatsMap() {
     result[seller] = { latest: sorted[0] || null, prev: sorted[1] || null, all: sorted };
   });
   return result;
+}
+
+function buildVendorsSortedFromStats(statsMap) {
+  // Construit la liste des vendeurs depuis seller_stats avec p1_count
+  // Remplace l'ancienne logique basée sur le comptage dans positions
+  return Object.entries(statsMap).map(([name, data]) => {
+    const latest = data.latest;
+    const p1 = latest?.p1_count || 0;
+    // keywords: on garde un objet vide — plus calculé depuis positions
+    return {
+      name,
+      total: p1,       // p1_count du dernier scraping
+      keywords: {},    // non utilisé dans la nouvelle logique
+      sessionsCount: data.all?.length || 1
+    };
+  }).sort((a, b) => b.total - a.total);
 }
 
 // Génère un SVG sparkline inline pour la courbe incrémentale Conforama
@@ -845,44 +811,61 @@ function getSalesLabel() {
 }
 
 function getSellerSalesValue(v, statsMap) {
-  if (MARKETPLACE === "amazon") {
-    const proxy = (STATE.amazonReviewsProxy || {})[v.name];
-    if (!proxy || !proxy.latest) return { sales: 0, salesDelta: null };
-    const latest = proxy.latest.count || 0;
-    const oldest = proxy.oldest12m?.count || null;
-    const delta = (oldest !== null && oldest > 0) ? Math.round(((latest - oldest) / oldest) * 100) : null;
-    return { sales: (oldest !== null ? latest - oldest : latest), salesDelta: delta, rating: proxy.latest.rating, sourceUrl: proxy.latest.sourceUrl };
-  }
   const stats = statsMap[v.name] || {};
-  const sales = stats.latest?.seller_sales || 0;
-  const prev_sales = stats.prev?.seller_sales || null;
+  const latest = stats.latest || {};
+  const prev = stats.prev || null;
+
+  // p1_count depuis seller_stats (plus depuis positions)
+  const p1 = latest.p1_count || 0;
+  const prevP1 = prev?.p1_count || null;
+  const p1Delta = (prevP1 !== null && prevP1 > 0) ? Math.round(((p1 - prevP1) / prevP1) * 100) : null;
+
+  if (MARKETPLACE === "amazon") {
+    // Proxy : delta du nombre d'avis sur les 12 derniers mois
+    const proxy = (STATE.amazonReviewsProxy || {})[v.name];
+    if (!proxy || !proxy.latest) return { sales: 0, salesDelta: null, p1, p1Delta, rating: latest.seller_rating, sourceUrl: latest.source_url };
+    const latestCount = proxy.latest.count || 0;
+    const oldest = proxy.oldest12m?.count || null;
+    const delta = (oldest !== null && oldest > 0) ? Math.round(((latestCount - oldest) / oldest) * 100) : null;
+    return { sales: (oldest !== null ? latestCount - oldest : latestCount), salesDelta: delta, p1, p1Delta, rating: proxy.latest.rating, sourceUrl: proxy.latest.sourceUrl };
+  }
+
+  const sales = latest.seller_sales || 0;
+  const prevSales = prev?.seller_sales || null;
   let salesDelta = null;
+
   if (MARKETPLACE === "conforama") {
-    // Pour Conforama delta = dernier - premier scrape (pas dernier vs avant-dernier)
     const hist = (STATE.confoSellerHistory || {})[v.name];
     if (hist && hist.length >= 2) {
       const x0 = hist[0].sales, xN = hist[hist.length - 1].sales;
       salesDelta = x0 > 0 ? Math.round(((xN - x0) / x0) * 100) : null;
     }
   } else {
-    salesDelta = (prev_sales !== null && prev_sales > 0) ? Math.round(((sales - prev_sales) / prev_sales) * 100) : null;
+    salesDelta = (prevSales !== null && prevSales > 0) ? Math.round(((sales - prevSales) / prevSales) * 100) : null;
   }
-  return { sales, salesDelta, rating: stats.latest?.seller_rating, ratingsCount: stats.latest?.seller_ratings_count, sourceUrl: stats.latest?.source_url };
+
+  return {
+    sales, salesDelta, p1, p1Delta,
+    rating: latest.seller_rating,
+    ratingsCount: latest.seller_ratings_count,
+    sourceUrl: latest.source_url
+  };
 }
 
 function renderConcurrents() {
-  const vendors = STATE.vendorsSorted;
+  // Vendeurs construits depuis seller_stats (p1_count) — plus depuis positions
   const statsMap = buildSellerStatsMap();
-  const maxT = vendors.length ? vendors[0].total : 1;
+  const vendors = buildVendorsSortedFromStats(statsMap);
 
   const scored = vendors.map(v => {
     const sv = getSellerSalesValue(v, statsMap);
     return { ...v, ...sv };
   });
 
+  const maxT = Math.max(...scored.map(v => v.p1 || 0), 1);
   const maxSales = Math.max(...scored.map(v => v.sales || 0), 1);
   const scoredFinal = scored.map(v => {
-    const scoreP1 = maxT > 0 ? (v.total / maxT) * 100 : 0;
+    const scoreP1 = maxT > 0 ? ((v.p1 || 0) / maxT) * 100 : 0;
     const scoreSales = maxSales > 0 ? ((v.sales || 0) / maxSales) * 100 : 0;
     return { ...v, score: Math.round(scoreP1 * 0.4 + scoreSales * 0.6) };
   }).sort((a, b) => b.score - a.score);
@@ -890,7 +873,7 @@ function renderConcurrents() {
   const BM_NAMES = ["BestMobilier","Best Mobilier","Lisa Design"];
   const bmIdx = scoredFinal.findIndex(v => BM_NAMES.includes(v.name));
   const topSales = [...scoredFinal].sort((a, b) => (b.sales||0) - (a.sales||0))[0];
-  const topP1 = [...scoredFinal].sort((a, b) => b.total - a.total)[0];
+  const topP1 = [...scoredFinal].sort((a, b) => (b.p1||0) - (a.p1||0))[0];
   const rankColor = i => ["#E5A91A","#888780","#9E6030","#3266AD"][Math.min(i,3)];
   const salesLabel = getSalesLabel();
 
@@ -899,14 +882,14 @@ function renderConcurrents() {
       <div class="metric"><div class="metric-label">Vendeurs identifiés</div><div class="metric-value">${scoredFinal.length}</div></div>
       <div class="metric"><div class="metric-label">Position BM</div><div class="metric-value" style="color:${bmIdx===0?'var(--gn)':bmIdx<=2?'var(--am)':'var(--tx)'}">${bmIdx>=0?'#'+(bmIdx+1):'—'}</div><div class="metric-sub">score ${scoredFinal[bmIdx]?.score||0}/100</div></div>
       <div class="metric"><div class="metric-label">Leader ${salesLabel}</div><div class="metric-value" style="font-size:16px">${esc(topSales?.name||'—')}</div><div class="metric-sub">${topSales?.sales?topSales.sales.toLocaleString("fr-FR")+(MARKETPLACE==='amazon'?' Δ avis':' ventes'):''}</div></div>
-      <div class="metric"><div class="metric-label">Leader page 1</div><div class="metric-value" style="font-size:16px">${esc(topP1?.name||'—')}</div><div class="metric-sub">${topP1?.total||0} app. moy./session</div></div>
+      <div class="metric"><div class="metric-label">Leader page 1</div><div class="metric-value" style="font-size:16px">${esc(topP1?.name||'—')}</div><div class="metric-sub">${topP1?.p1||0} app. en page 1</div></div>
     </div>
 
     <div class="grid-2" style="margin-bottom:14px">
       <div class="card" style="padding:0;overflow:hidden">
         <div style="padding:14px 18px 10px;border-bottom:1px solid var(--border)">
           <div class="card-title" style="margin:0">Classement global</div>
-          <div style="font-size:11px;color:var(--txS);margin-top:2px">Score = 40% moy. app. page 1 (8 sessions) · 60% ${salesLabel}</div>
+          <div style="font-size:11px;color:var(--txS);margin-top:2px">Score = 40% apparitions page 1 · 60% ${salesLabel}</div>
         </div>
         ${scoredFinal.slice(0, STATE._concShowAll ? scoredFinal.length : 10).map((v,i) => {
           const isBM = ["BestMobilier","Best Mobilier","Lisa Design"].includes(v.name);
@@ -932,7 +915,7 @@ function renderConcurrents() {
                 <div style="height:100%;width:${barW}%;background:${isBM?'var(--ac)':rankColor(i)};border-radius:2px;transition:width .4s"></div>
               </div>
               <div style="display:flex;gap:12px;margin-top:4px;font-size:11px;color:var(--txS)">
-                <span>📍 ${v.total} app. P1 moy.</span>
+                <span>📍 ${v.p1||0} app. P1</span>${v.p1Delta!==null&&v.p1Delta!==undefined?`<span style="font-size:10px;color:${v.p1Delta>0?'var(--gn)':v.p1Delta<0?'var(--rd)':'var(--txT)'}">${v.p1Delta>0?'+':''}${v.p1Delta}% P1</span>`:''}
                 ${v.sales?`<span>${MARKETPLACE==='amazon'?'👁':'💰'} ${v.sales.toLocaleString("fr-FR")} ${MARKETPLACE==='amazon'?'Δ avis':'ventes'}</span>`:''}
                 ${v.rating?`<span>⭐ ${v.rating}/5</span>`:''}
               </div>
@@ -1023,8 +1006,8 @@ function renderSellerDetailHTML(v, statsMap) {
         </div>
         <div style="background:var(--bg);border-radius:8px;padding:10px 12px;text-align:center">
           <div style="font-size:11px;color:var(--txS);margin-bottom:3px;text-transform:uppercase;letter-spacing:.03em">Page 1</div>
-          <div style="font-size:20px;font-weight:700;color:var(--ac)">${v.total||0}</div>
-          <div style="font-size:11px;color:var(--txS);margin-top:2px">moy./session</div>
+          <div style="font-size:20px;font-weight:700;color:var(--ac)">${v.p1||0}</div>
+          ${v.p1Delta!==null&&v.p1Delta!==undefined?`<div style="font-size:11px;color:${v.p1Delta>0?'var(--gn)':v.p1Delta<0?'var(--rd)':'var(--txT)'};margin-top:2px">${v.p1Delta>0?'+':''}${v.p1Delta}% vs préc.</div>`:'<div style="font-size:11px;color:var(--txT);margin-top:2px">app. dernier run</div>'}
         </div>
       </div>
       ${sparkline}
@@ -1039,13 +1022,14 @@ function renderSellerDetailHTML(v, statsMap) {
 
 function showSellerDetail(name) {
   const statsMap = buildSellerStatsMap();
-  const v = STATE.vendorsSorted.find(v => v.name === name);
+  const vendors = buildVendorsSortedFromStats(statsMap);
+  const v = vendors.find(v => v.name === name);
   if (!v) return;
   const sv = getSellerSalesValue(v, statsMap);
-  const maxT = STATE.vendorsSorted[0]?.total || 1;
-  const allVendorSales = STATE.vendorsSorted.map(vv => getSellerSalesValue(vv, statsMap).sales || 0);
+  const maxP1 = Math.max(...vendors.map(vv => vv.p1 || 0), 1);
+  const allVendorSales = vendors.map(vv => getSellerSalesValue(vv, statsMap).sales || 0);
   const maxSales = Math.max(...allVendorSales, 1);
-  const scoreP1 = maxT > 0 ? (v.total / maxT) * 100 : 0;
+  const scoreP1 = maxP1 > 0 ? ((sv.p1 || 0) / maxP1) * 100 : 0;
   const scoreSales = maxSales > 0 ? ((sv.sales || 0) / maxSales) * 100 : 0;
   const score = Math.round(scoreP1 * 0.4 + scoreSales * 0.6);
   document.getElementById("seller-detail-panel").innerHTML = renderSellerDetailHTML({ ...v, ...sv, score }, statsMap);
