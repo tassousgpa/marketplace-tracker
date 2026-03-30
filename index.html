@@ -776,20 +776,6 @@ function getSellerSalesValue(v, statsMap) {
 }
 
 function renderConcurrents() {
-  if (STATE.positionsOutdated) {
-    const prodDay = STATE.snapshotDay ? new Date(STATE.snapshotDay).toLocaleDateString("fr-FR",{day:"2-digit",month:"long"}) : "—";
-    const posDay = STATE.posDay ? new Date(STATE.posDay).toLocaleDateString("fr-FR",{day:"2-digit",month:"long"}) : "jamais";
-    return `<div style="display:flex;align-items:flex-start;gap:14px;background:var(--amBg);border:.5px solid #e9c97a;border-radius:10px;padding:20px 24px;margin-bottom:14px">
-      <div style="font-size:22px;line-height:1">⏳</div>
-      <div>
-        <div style="font-size:14px;font-weight:600;color:var(--am);margin-bottom:4px">Concurrents non synchronisés</div>
-        <div style="font-size:13px;color:var(--txS);line-height:1.6">
-          Le dernier scraping produits date du <b>${prodDay}</b>, mais les positions ont été relevées le <b>${posDay}</b>.<br>
-          Relancez l'extension de scraping des positions pour obtenir des données à jour.
-        </div>
-      </div>
-    </div>`;
-  }
   const vendors = STATE.vendorsSorted;
   const statsMap = buildSellerStatsMap();
   const maxT = vendors.length ? vendors[0].total : 1;
