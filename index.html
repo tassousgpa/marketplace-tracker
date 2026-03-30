@@ -441,12 +441,35 @@ async function loadData() {
       vendorsSorted = Object.entries(vendorCounts).map(([name,data])=>({name,...data})).sort((a,b)=>b.total-a.total);
     }
 
-    const bmByKeyword = {};
-    const bmScraperIds = new Set(products.map(p=>(p.product_id_scraper||"").toLowerCase()));
-    Object.entries(keywordData).forEach(([kw,items]) => { bmByKeyword[kw] = items.filter(i=>bmScraperIds.has((i.product_id||"").toLowerCase())).length; });
+    // ─── Matching BestMobilier ───────────────────────────────────────
+    // On utilise seller === "BestMobilier" comme critère primaire,
+    // plus fiable que le matching product_id_scraper qui peut être vide.
+    // On construit aussi un index product_id → produit suivi (pour les liens).
+    const bmScraperIds = new Set(products.map(p=>(p.product_id_scraper||"").toLowerCase()).filter(Boolean));
+    const trackedByScraperId = {}; // product_id_scraper → product row
+    products.forEach(p => { if (p.product_id_scraper) trackedByScraperId[p.product_id_scraper.toLowerCase()] = p; });
 
+    // Un product est BM si : seller === "BestMobilier" OU son product_id matche un product_id_scraper suivi
+    // Noms de vendeurs reconnus comme appartenant au groupe
+    const BM_SELLER_NAMES = new Set(["BestMobilier", "Best Mobilier", "Lisa Design"]);
+    function isBMPosition(p) {
+      return BM_SELLER_NAMES.has(p.seller) || bmScraperIds.has((p.product_id||"").toLowerCase());
+    }
+
+    // bmByKeyword : nombre de produits BM en page 1 par keyword
+    // On s'assure que TOUS les keywords du jour apparaissent (même ceux avec 0)
+    const allKeywordsToday = new Set(latestPositions.map(p => normalizeKeyword(p.keyword)));
+    const bmByKeyword = {};
+    allKeywordsToday.forEach(kw => { bmByKeyword[kw] = 0; }); // initialise à 0
+    Object.entries(keywordData).forEach(([kw, items]) => {
+      bmByKeyword[kw] = items.filter(i => isBMPosition(i)).length;
+    });
+
+    // productsInPage1 : set des product_ids BM présents en page 1
     const productsInPage1 = new Set();
-    latestPositions.forEach(p => { if(bmScraperIds.has((p.product_id||"").toLowerCase())) productsInPage1.add(p.product_id?.toLowerCase()); });
+    latestPositions.forEach(p => {
+      if (isBMPosition(p)) productsInPage1.add((p.product_id||"").toLowerCase());
+    });
 
     // =============================================
     // CONFORAMA: calcul incrémental des ventes
@@ -487,7 +510,7 @@ async function loadData() {
     const posDay = latestPosSession ? latestPosSession.slice(0, 10) : null;
     const positionsOutdated = !posDay || !snapshotDay || posDay < snapshotDay;
 
-    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, vendorsSorted, bmByKeyword, productsInPage1, prodByScraper, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, tab:STATE.tab||0 };
+    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, vendorsSorted, bmByKeyword, productsInPage1, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, tab:STATE.tab||0 };
 
     const sessionDisplay = latestDate ? new Date(latestDate + "T12:00:00Z").toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}) : "N/A";
     document.getElementById("header-subtitle").textContent = `${products.length} produits · Relevé du ${sessionDisplay}`;
@@ -708,13 +731,32 @@ function renderPositions() {
       <div class="cat-grid">${keywords.map(kw=>{const c=STATE.bmByKeyword[kw]||0;return`<div class="cat-card ${c===0?'cat-card-zero':''}" onclick="showPositionDetail('${esc(kw)}')"><div class="cat-card-header"><span class="cat-card-name">${esc(kw)}</span><span class="cat-card-count">${c}</span></div>${c>0?`<div style="margin-top:5px;height:4px;background:var(--borderL);border-radius:2px;overflow:hidden"><div style="height:100%;width:${Math.min(c/(maxBM+1)*100,100)}%;background:var(--ac);border-radius:2px"></div></div>`:''}</div>`;}).join("")}</div>
       ${!keywords.length?'<div style="color:var(--txT);font-size:12px;padding:20px;text-align:center">Aucune donnée de position disponible.</div>':''}
     </div>
-    <div class="card"><div class="card-title">Leader par catégorie</div><div class="grid-2">${keywords.map(kw=>{const items=STATE.keywordData[kw]||[];const sellers={};items.forEach(i=>{sellers[i.seller]=(sellers[i.seller]||0)+1;});const sorted=Object.entries(sellers).sort((a,b)=>b[1]-a[1]).slice(0,3);const bmC=STATE.bmByKeyword[kw]||0;const medals=['🥇','🥈','🥉'];return`<div style="padding:8px 12px;border-bottom:1px solid var(--borderL)"><div style="font-size:13px;font-weight:500;margin-bottom:4px">${esc(kw)}</div><div style="display:flex;gap:4px;flex-wrap:wrap">${sorted.map((s,i)=>pill(`${medals[i]} ${s[0]} (${s[1]})`,s[0]==="BestMobilier"?"accent":s[0]==="Cdiscount"?"purple":"default")).join("")}${bmC>0&&!sorted.find(s=>s[0]==="BestMobilier")?pill(`BM: ${bmC}`,"accent"):''}</div></div>`;}).join("")}</div></div>`;
+    <div class="card"><div class="card-title">Leader par catégorie</div><div class="grid-2">${keywords.map(kw=>{const items=STATE.keywordData[kw]||[];const sellers={};items.forEach(i=>{sellers[i.seller]=(sellers[i.seller]||0)+1;});const sorted=Object.entries(sellers).sort((a,b)=>b[1]-a[1]).slice(0,3);const bmC=STATE.bmByKeyword[kw]||0;const medals=['🥇','🥈','🥉'];return`<div style="padding:8px 12px;border-bottom:1px solid var(--borderL)"><div style="font-size:13px;font-weight:500;margin-bottom:4px">${esc(kw)}</div><div style="display:flex;gap:4px;flex-wrap:wrap">${sorted.map((s,i)=>pill(`${medals[i]} ${s[0]} (${s[1]})`,["BestMobilier","Best Mobilier","Lisa Design"].includes(s[0])?"accent":s[0]==="Cdiscount"?"purple":"default")).join("")}${bmC>0&&!sorted.find(s=>s[0]==="BestMobilier")?pill(`BM: ${bmC}`,"accent"):''}</div></div>`;}).join("")}</div></div>`;
 }
 function showPositionDetail(kw) {
-  const items=(STATE.keywordData[kw]||[]).filter(i=>i._product);
-  const bmItems=items.filter(i=>STATE.products.some(p=>(p.product_id_scraper||"").toLowerCase()===(i.product_id||"").toLowerCase()));
-  if(!bmItems.length){openModal(`Positions — ${kw}`,'<div style="padding:20px;text-align:center;color:var(--txT)">Aucun produit BestMobilier en page 1</div>');return;}
-  openModal(`Produits BM en page 1 — ${kw} (${bmItems.length})`,bmItems.map(i=>i._product?productRowHTML(i._product):`<div class="product-row"><div class="product-row-name">${esc(i.product_id)}</div></div>`).join(""));
+  // Tous les items BM de ce keyword : seller=BestMobilier OU product_id_scraper connu
+  const allItems = STATE.keywordData[kw] || [];
+  const BM_SELLERS = new Set(["BestMobilier", "Best Mobilier", "Lisa Design"]);
+  const bmItems = allItems.filter(i => BM_SELLERS.has(i.seller) || STATE.bmScraperIds?.has((i.product_id||"").toLowerCase()));
+  if (!bmItems.length) {
+    openModal(`Positions — ${kw}`, '<div style="padding:20px;text-align:center;color:var(--txT)">Aucun produit BestMobilier en page 1</div>');
+    return;
+  }
+  const html = bmItems.map(i => {
+    // Chercher le produit suivi correspondant
+    const tracked = STATE.trackedByScraperId?.[(i.product_id||"").toLowerCase()];
+    if (tracked) return productRowHTML(tracked);
+    // Fallback : afficher les infos de la position directement
+    return `<div class="product-row">
+      <div class="product-row-name">${esc(i.product_id)}</div>
+      <div class="product-row-refs">
+        <span>Position: ${i.position||'—'}</span>
+        <span>Vendeur: ${esc(i.seller)}</span>
+        ${i.url ? `<a href="${esc(i.url)}" target="_blank" class="link">Voir ↗</a>` : ''}
+      </div>
+    </div>`;
+  }).join("");
+  openModal(`Produits BM en page 1 — ${kw} (${bmItems.length})`, html);
 }
 
 // =============================================
@@ -830,7 +872,8 @@ function renderConcurrents() {
     return { ...v, score: Math.round(scoreP1 * 0.4 + scoreSales * 0.6) };
   }).sort((a, b) => b.score - a.score);
 
-  const bmIdx = scoredFinal.findIndex(v => v.name === "BestMobilier");
+  const BM_NAMES = ["BestMobilier","Best Mobilier","Lisa Design"];
+  const bmIdx = scoredFinal.findIndex(v => BM_NAMES.includes(v.name));
   const topSales = [...scoredFinal].sort((a, b) => (b.sales||0) - (a.sales||0))[0];
   const topP1 = [...scoredFinal].sort((a, b) => b.total - a.total)[0];
   const rankColor = i => ["#E5A91A","#888780","#9E6030","#3266AD"][Math.min(i,3)];
@@ -851,7 +894,7 @@ function renderConcurrents() {
           <div style="font-size:11px;color:var(--txS);margin-top:2px">Score = 40% moy. app. page 1 (8 sessions) · 60% ${salesLabel}</div>
         </div>
         ${scoredFinal.slice(0, STATE._concShowAll ? scoredFinal.length : 10).map((v,i) => {
-          const isBM = v.name === "BestMobilier";
+          const isBM = ["BestMobilier","Best Mobilier","Lisa Design"].includes(v.name);
           const barW = Math.round((v.score/100)*100);
           const deltaHtml = v.salesDelta !== null
             ? `<span style="font-size:11px;font-weight:600;color:${v.salesDelta>0?'var(--gn)':v.salesDelta<0?'var(--rd)':'var(--txT)'};margin-left:6px">${v.salesDelta>0?'+':''}${v.salesDelta}%</span>`
@@ -946,7 +989,7 @@ function renderSellerDetailHTML(v, statsMap) {
     <div class="card" style="height:100%">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">
         <div>
-          <div style="font-size:16px;font-weight:700;color:${v.name==='BestMobilier'?'var(--ac)':'var(--tx)'}">${esc(v.name)}</div>
+          <div style="font-size:16px;font-weight:700;color:${['BestMobilier','Best Mobilier','Lisa Design'].includes(v.name)?'var(--ac)':'var(--tx)'}">${esc(v.name)}</div>
           <div style="font-size:12px;color:var(--txS);margin-top:2px">Score global : <b>${v.score||0}/100</b></div>
         </div>
         ${v.sourceUrl?`<a href="${esc(v.sourceUrl)}" target="_blank" style="font-size:11px;color:var(--ac);text-decoration:none;border:.5px solid var(--border);padding:4px 10px;border-radius:6px">Boutique ↗</a>`:''}
