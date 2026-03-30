@@ -345,15 +345,15 @@ async function loadData() {
     // ex: "https://www.conforama.fr/recherche-conforama/canap%C3%A9%20panoramique?fromSearch=canap%C3%A9%20panoramique"
     // → "canapé panoramique"
     // Map statique URL → label lisible pour les URLs de catégorie Conforama (sans fromSearch)
+    // Map exhaustive basée sur les keywords réels en base Supabase (URLs /c/ sans fromSearch)
     const URL_LABEL_MAP = {
-      // Catégories /c/XXXXXX
-      "conforama.fr/canape-salon-sejour/canape/tous-les-canapes":     "Tous les canapés",
-      "conforama.fr/canape-salon-sejour/canape/canape-convertible":   "Canapé convertible",
-      "conforama.fr/canape-salon-sejour/banquette/banquette-clic-clac": "Banquette clic-clac",
-      "conforama.fr/canape-salon-sejour/sejour/table":                "Tables de séjour",
-      "conforama.fr/canape-salon-sejour/salon/meuble-tv":             "Meuble TV",
-      "conforama.fr/jardin-loisirs-sport/mobilier-de-jardin/salon-de-jardin": "Salon de jardin",
-      "conforama.fr/special/chambre-literie/chambre-adulte/lit-adulte": "Lit adulte",
+      "canape-salon-sejour/canape/tous-les-canapes":       "Tous les canapés",
+      "canape-salon-sejour/canape/canape-convertible":     "Canapé convertible",
+      "canape-salon-sejour/banquette/banquette-clic-clac": "Banquette clic-clac",
+      "canape-salon-sejour/sejour/table":                  "Tables de séjour",
+      "canape-salon-sejour/salon/meuble-tv":               "Meuble TV",
+      "mobilier-de-jardin/salon-de-jardin":                "Salon de jardin",
+      "chambre-adulte/lit-adulte":                         "Lit coffre",
     };
 
     function normalizeKeyword(kw) {
@@ -368,10 +368,10 @@ async function loadData() {
           const fromSearch = url.searchParams.get("fromSearch");
           if (fromSearch) return decodeURIComponent(fromSearch).trim();
 
-          // 2. Map statique : on cherche si le pathname contient une clé connue
-          const pathname = url.hostname + url.pathname.replace(/\/c\/\w+.*$/, "").replace(/\/$/, "");
+          // 2. Map statique : sous-chaîne du pathname (clés sans hostname)
+          const fullPath = url.hostname + url.pathname;
           for (const [key, label] of Object.entries(URL_LABEL_MAP)) {
-            if (pathname.includes(key)) return label;
+            if (fullPath.includes(key)) return label;
           }
 
           // 3. Fallback : avant-dernier segment du path (souvent plus lisible que le code)
