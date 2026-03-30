@@ -277,18 +277,22 @@ async function loadData() {
     products.forEach(p => { if (p.product_id_scraper) prodByScraper[p.product_id_scraper.toLowerCase()] = p; });
     snapshots.forEach(s => { s._product = prodByScraper[(s.product_id||"").toLowerCase()] || null; });
 
+    // sessionKey à l'heure : pour les positions (dernière session < 1h)
     function sessionKey(ts) { return new Date(ts).toISOString().slice(0, 13); }
+    // dayKey au jour : plusieurs scrapes le même jour = 1 seule colonne dans l'historique
+    function dayKey(ts) { return new Date(ts).toISOString().slice(0, 10); }
 
-    const sessionSet = new Set();
-    snapshots.forEach(s => { if (s.date) sessionSet.add(sessionKey(s.date)); });
-    const dates = [...sessionSet].sort();
+    const daySet = new Set();
+    snapshots.forEach(s => { if (s.date) daySet.add(dayKey(s.date)); });
+    const dates = [...daySet].sort(); // ex: ["2026-03-28", "2026-03-30"]
 
     const history = {};
     snapshots.forEach(s => {
       const key = (s.product_id||"").toLowerCase();
       if (!history[key]) history[key] = {};
-      const sess = sessionKey(s.date);
-      if (sess && (!history[key][sess] || s.id > history[key][sess].id)) history[key][sess] = s;
+      const dk = dayKey(s.date);
+      // On garde le snapshot le plus récent du jour (id le plus grand)
+      if (dk && (!history[key][dk] || s.id > history[key][dk].id)) history[key][dk] = s;
     });
 
     const latestDate = dates[dates.length-1] || "";
@@ -447,7 +451,7 @@ async function loadData() {
 
     STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, vendorsSorted, bmByKeyword, productsInPage1, prodByScraper, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, tab:STATE.tab||0 };
 
-    const sessionDisplay = latestDate ? new Date(latestDate + ":00:00Z").toLocaleString("fr-FR",{day:"numeric",month:"long",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "N/A";
+    const sessionDisplay = latestDate ? new Date(latestDate + "T12:00:00Z").toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}) : "N/A";
     document.getElementById("header-subtitle").textContent = `${products.length} produits · Relevé du ${sessionDisplay}`;
     renderTabs(); renderContent();
   } catch(e) {
@@ -555,9 +559,9 @@ function renderProduits() {
         <span style="font-size:12px;color:var(--txS)">Historique :</span>
         <select onchange="exportSessions=+this.value" style="padding:5px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;background:var(--card);font-family:inherit">
           ${STATE.dates.slice().reverse().map((d,i)=>{
-            const dt=new Date(d+":00:00Z");
-            const label=dt.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit"})+" "+dt.getUTCHours()+"h";
-            return`<option value="${i+1}" ${exportSessions===i+1?'selected':''}>${i+1} session${i>0?'s':''} (jusqu'au ${label})</option>`;
+            const dt=new Date(d+"T12:00:00Z");
+            const label=dt.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"2-digit"});
+            return`<option value="${i+1}" ${exportSessions===i+1?'selected':''}>${i+1} jour${i>0?'s':''} (jusqu'au ${label})</option>`;
           }).join("")}
         </select>
         <button onclick="exportCSV()" style="padding:6px 14px;border:.5px solid var(--ac);border-radius:6px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">⬇ Export CSV</button>
@@ -589,8 +593,8 @@ function toggleProdSort(col){if(prodFilters.sort===col)prodFilters.dir=prodFilte
 function exportCSV() {
   const sessions = STATE.dates.slice(-exportSessions);
   const fmtSession = sess => {
-    const dt = new Date(sess + ":00:00Z");
-    return dt.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "2-digit" }) + " " + dt.getUTCHours() + "h";
+    const dt = new Date(sess + "T12:00:00Z");
+    return dt.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "2-digit" });
   };
   const sessionHeaders = sessions.flatMap(s => [`Dispo ${fmtSession(s)}`,`Prix ${fmtSession(s)}`,`Note ${fmtSession(s)}`,`Délai ${fmtSession(s)}`]);
   const headers = ["Produit", "ID produit", "SKU", "SKU Marketplace", "Lien", ...sessionHeaders];
@@ -630,7 +634,7 @@ function renderHistorique() {
     <div class="filters"><div class="toggle-group">${["price","rating","delivery","dispo"].map(m=>`<button class="toggle-btn ${histMetric===m?'active':''}" onclick="histMetric='${m}';renderContent()">${{price:"Prix",rating:"Note",delivery:"Délai",dispo:"Dispo"}[m]}</button>`).join("")}</div></div>
     <div style="font-size:12px;color:var(--txS);margin-bottom:8px">${prods.length} produits · ${dates.length} dates</div>
     <div class="card" style="padding:0;overflow:hidden"><div class="scroll-table"><table style="min-width:700px">
-      <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)"><th style="min-width:200px">Produit</th><th>Réfs</th>${dates.map(d=>{const dt=new Date(d+":00:00Z");return`<th style="text-align:center;white-space:nowrap">${dt.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit"})} ${dt.getUTCHours()}h</th>`;}).join("")}</tr></thead>
+      <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)"><th style="min-width:200px">Produit</th><th>Réfs</th>${dates.map(d=>{const dt=new Date(d+"T12:00:00Z");return`<th style="text-align:center;white-space:nowrap">${dt.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit"})}</th>`;}).join("")}</tr></thead>
       <tbody>${prods.map((p,i)=>`<tr class="${i%2?'stripe':''}"><td style="font-weight:500;font-size:12px;max-width:200px">${esc(p.name)}</td><td style="font-size:10px;color:var(--txT);white-space:nowrap">${esc(p.product_id)}<br>${esc(p.sku)}</td>${dates.map((d,di)=>{const v=getVal(p,d),vr=hasVar(p,d,di);return`<td style="text-align:center;${vr?`background:${varBg(vr)};font-weight:600`:''}">${fmtVal(v)}</td>`;}).join("")}</tr>`).join("")}</tbody>
     </table></div></div>`;
 }
