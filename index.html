@@ -313,28 +313,66 @@ async function loadData() {
       }
     });
 
-    const posSessionSet = new Set();
-    positions.forEach(p => { if (p.date) posSessionSet.add(sessionKey(p.date)); });
-    const posSessionsSorted = [...posSessionSet].sort();
-    const latestPosSession = posSessionsSorted[posSessionsSorted.length-1] || "";
-    const latestPositions = positions.filter(p => p.date && sessionKey(p.date) === latestPosSession);
+    // Grouper les positions par JOUR (pas par heure) pour ne pas rater des recherches
+    // qui auraient été scrapées à des heures différentes dans la même journée.
+    // On prend toutes les positions du jour le plus récent.
+    const posDaySet = new Set();
+    positions.forEach(p => { if (p.date) posDaySet.add(dayKey(p.date)); });
+    const posDaysSorted = [...posDaySet].sort();
+    const latestPosDay = posDaysSorted[posDaysSorted.length-1] || "";
+    // On déduplique par (keyword, product_id) : si le même produit a été scrappé
+    // deux fois le même jour sur le même keyword, on ne garde que la ligne la plus récente.
+    const posSeenKey = new Set();
+    const latestPositions = [];
+    positions
+      .filter(p => p.date && dayKey(p.date) === latestPosDay)
+      .sort((a, b) => new Date(b.date) - new Date(a.date)) // plus récent en premier
+      .forEach(p => {
+        const dedupeKey = (p.keyword||"") + "||" + (p.product_id||"") + "||" + (p.seller||"");
+        if (!posSeenKey.has(dedupeKey)) {
+          posSeenKey.add(dedupeKey);
+          latestPositions.push(p);
+        }
+      });
+    const latestPosSession = latestPosDay; // utilisé pour la synchro snapshotDay
 
     // Normalise le keyword : extrait le terme de recherche depuis les URLs Conforama
     // ex: "https://www.conforama.fr/recherche-conforama/canap%C3%A9%20panoramique?fromSearch=canap%C3%A9%20panoramique"
     // → "canapé panoramique"
+    // Map statique URL → label lisible pour les URLs de catégorie Conforama (sans fromSearch)
+    const URL_LABEL_MAP = {
+      // Catégories /c/XXXXXX
+      "conforama.fr/canape-salon-sejour/canape/tous-les-canapes":     "Tous les canapés",
+      "conforama.fr/canape-salon-sejour/canape/canape-convertible":   "Canapé convertible",
+      "conforama.fr/canape-salon-sejour/banquette/banquette-clic-clac": "Banquette clic-clac",
+      "conforama.fr/canape-salon-sejour/sejour/table":                "Tables de séjour",
+      "conforama.fr/canape-salon-sejour/salon/meuble-tv":             "Meuble TV",
+      "conforama.fr/jardin-loisirs-sport/mobilier-de-jardin/salon-de-jardin": "Salon de jardin",
+      "conforama.fr/special/chambre-literie/chambre-adulte/lit-adulte": "Lit adulte",
+    };
+
     function normalizeKeyword(kw) {
       if (!kw) return kw;
       try {
-        // Cas URL : on cherche fromSearch= ou le dernier segment du path
-        if (kw.startsWith("http")) {
-          const url = new URL(kw);
-          // Priorité au paramètre fromSearch
+        if (kw.startsWith("http") || kw.startsWith("//")) {
+          // Normalise http:// et http://
+          const urlStr = kw.startsWith("//") ? "https:" + kw : kw;
+          const url = new URL(urlStr);
+
+          // 1. Priorité au paramètre fromSearch
           const fromSearch = url.searchParams.get("fromSearch");
           if (fromSearch) return decodeURIComponent(fromSearch).trim();
-          // Sinon dernier segment du path
-          const segments = url.pathname.split("/").filter(Boolean);
+
+          // 2. Map statique : on cherche si le pathname contient une clé connue
+          const pathname = url.hostname + url.pathname.replace(/\/c\/\w+.*$/, "").replace(/\/$/, "");
+          for (const [key, label] of Object.entries(URL_LABEL_MAP)) {
+            if (pathname.includes(key)) return label;
+          }
+
+          // 3. Fallback : avant-dernier segment du path (souvent plus lisible que le code)
+          const segments = url.pathname.split("/").filter(s => s && !/^c$/.test(s) && !/^\d+/.test(s));
           const last = segments[segments.length - 1] || "";
-          return decodeURIComponent(last.replace(/-/g, " ")).trim();
+          return decodeURIComponent(last.replace(/-/g, " ")).trim() || kw;
         }
       } catch(e) {}
       return kw;
