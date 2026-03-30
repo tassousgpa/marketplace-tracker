@@ -256,11 +256,23 @@ function switchMarketplace(mp, btn) {
 
 async function loadData() {
   try {
+    // Pour les positions : on récupère d'abord la date du dernier scraping (1 ligne),
+    // puis on fetche TOUTES les positions de ce jour-là pour garantir les 18 keywords.
+    // Évite le problème de la limite 5000 qui tronquerait les premiers keywords.
+    const latestPosRow = await sb("positions", `marketplace=eq.${MARKETPLACE}&select=date&order=date.desc&limit=1`);
+    const latestPosDateRaw = latestPosRow[0]?.date || null;
+    const latestPosDayFilter = latestPosDateRaw
+      ? new Date(latestPosDateRaw).toISOString().slice(0, 10)
+      : null;
+    const positionsFilter = latestPosDayFilter
+      ? `marketplace=eq.${MARKETPLACE}&select=*&date=gte.${latestPosDayFilter}T00:00:00&order=date.asc`
+      : `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=5000`;
+
     const [products, allProducts, snapshots, positions, sellerStats] = await Promise.all([
       sb("products", `marketplace=eq.${MARKETPLACE}&active=eq.true&select=*&order=product_id`),
       sb("products", `marketplace=eq.${MARKETPLACE}&select=*&order=product_id`),
       sb("product_snapshots", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=5000`),
-      sb("positions", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=5000`),
+      sb("positions", positionsFilter),
       sb("seller_stats", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=2000`),
     ]);
 
