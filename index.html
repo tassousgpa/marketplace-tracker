@@ -145,7 +145,14 @@ const MARKETPLACES = [
 const MP_LAST_SCRAPING = {};
 
 async function sb(table, params="") {
-  const r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` } });
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, {
+    headers: {
+      apikey: SB_KEY,
+      Authorization: `Bearer ${SB_KEY}`,
+      "Range-Unit": "items",
+      "Range": "0-4999"   // Force Supabase à renvoyer jusqu'à 5000 lignes (défaut = 1000)
+    }
+  });
   if (!r.ok) throw new Error(`Supabase error: ${r.status}`);
   return r.json();
 }
