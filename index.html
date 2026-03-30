@@ -24,7 +24,7 @@ body{font-family:'DM Sans',system-ui,sans-serif;background:var(--bg);color:var(-
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(1.3)}}
 .mp-indicator-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;padding:0 2px}
 .mp-indicator{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--txS)}
-.mp-indicator-name{font-weight:600;min-width:90px}
+.mp-indicator-name{font-weight:600}
 .tabs{display:flex;gap:0}
 .tab{padding:9px 18px;font-size:13px;font-weight:500;cursor:pointer;background:transparent;border:none;color:var(--txS);border-bottom:2px solid transparent;transition:all .15s;font-family:inherit}
 .tab.active{color:var(--ac);border-bottom-color:var(--ac)}
@@ -559,9 +559,9 @@ function renderProduits() {
     </div>
     <div class="card" style="padding:0;overflow:hidden"><div class="scroll-table"><table style="min-width:1000px">
       <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)">
-        <th style="cursor:pointer" onclick="toggleProdSort('name')">Produit${si('name')}</th><th>Réfs</th><th>Type</th>
+        <th style="cursor:pointer" onclick="toggleProdSort('name')">Produit${si('name')}</th><th>Réfs</th><th style="text-align:center">Type</th>
         <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('price')">Prix${si('price')}</th>
-        <th>Dispo</th><th style="cursor:pointer;text-align:right" onclick="toggleProdSort('rating')">Note${si('rating')}</th>
+        <th style="text-align:center">Dispo</th><th style="cursor:pointer;text-align:right" onclick="toggleProdSort('rating')">Note${si('rating')}</th>
         <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('delivery')">Délai${si('delivery')}</th>
         <th>Variations</th><th>Lien</th>
       </tr></thead><tbody>
