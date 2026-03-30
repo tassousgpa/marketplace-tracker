@@ -439,7 +439,13 @@ async function loadData() {
       });
     }
 
-    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, vendorsSorted, bmByKeyword, productsInPage1, prodByScraper, latestPosDate: latestPosSession, sellerStats, confoSellerHistory, amazonReviewsProxy, tab:STATE.tab||0 };
+    // Vérification synchronisation : les positions doivent être du même jour que les snapshots produits.
+    // On compare uniquement la date (YYYY-MM-DD), pas l'heure.
+    const snapshotDay = latestDate ? latestDate.slice(0, 10) : null;
+    const posDay = latestPosSession ? latestPosSession.slice(0, 10) : null;
+    const positionsOutdated = !posDay || !snapshotDay || posDay < snapshotDay;
+
+    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, vendorsSorted, bmByKeyword, productsInPage1, prodByScraper, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, tab:STATE.tab||0 };
 
     const sessionDisplay = latestDate ? new Date(latestDate + ":00:00Z").toLocaleString("fr-FR",{day:"numeric",month:"long",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "N/A";
     document.getElementById("header-subtitle").textContent = `${products.length} produits · Relevé du ${sessionDisplay}`;
@@ -633,6 +639,20 @@ function renderHistorique() {
 // TAB 3: POSITIONS
 // =============================================
 function renderPositions() {
+  if (STATE.positionsOutdated) {
+    const prodDay = STATE.snapshotDay ? new Date(STATE.snapshotDay).toLocaleDateString("fr-FR",{day:"2-digit",month:"long"}) : "—";
+    const posDay = STATE.posDay ? new Date(STATE.posDay).toLocaleDateString("fr-FR",{day:"2-digit",month:"long"}) : "jamais";
+    return `<div style="display:flex;align-items:flex-start;gap:14px;background:var(--amBg);border:.5px solid #e9c97a;border-radius:10px;padding:20px 24px;margin-bottom:14px">
+      <div style="font-size:22px;line-height:1">⏳</div>
+      <div>
+        <div style="font-size:14px;font-weight:600;color:var(--am);margin-bottom:4px">Positions non synchronisées</div>
+        <div style="font-size:13px;color:var(--txS);line-height:1.6">
+          Le dernier scraping produits date du <b>${prodDay}</b>, mais les positions ont été relevées le <b>${posDay}</b>.<br>
+          Relancez l'extension de scraping des positions pour obtenir des données à jour.
+        </div>
+      </div>
+    </div>`;
+  }
   const keywords=Object.keys(STATE.bmByKeyword).sort((a,b)=>(STATE.bmByKeyword[b]||0)-(STATE.bmByKeyword[a]||0));
   const maxBM=keywords.length?Math.max(...Object.values(STATE.bmByKeyword)):0;
   const totalBM=Object.values(STATE.bmByKeyword).reduce((s,v)=>s+v,0);
@@ -752,6 +772,20 @@ function getSellerSalesValue(v, statsMap) {
 }
 
 function renderConcurrents() {
+  if (STATE.positionsOutdated) {
+    const prodDay = STATE.snapshotDay ? new Date(STATE.snapshotDay).toLocaleDateString("fr-FR",{day:"2-digit",month:"long"}) : "—";
+    const posDay = STATE.posDay ? new Date(STATE.posDay).toLocaleDateString("fr-FR",{day:"2-digit",month:"long"}) : "jamais";
+    return `<div style="display:flex;align-items:flex-start;gap:14px;background:var(--amBg);border:.5px solid #e9c97a;border-radius:10px;padding:20px 24px;margin-bottom:14px">
+      <div style="font-size:22px;line-height:1">⏳</div>
+      <div>
+        <div style="font-size:14px;font-weight:600;color:var(--am);margin-bottom:4px">Concurrents non synchronisés</div>
+        <div style="font-size:13px;color:var(--txS);line-height:1.6">
+          Le dernier scraping produits date du <b>${prodDay}</b>, mais les positions ont été relevées le <b>${posDay}</b>.<br>
+          Relancez l'extension de scraping des positions pour obtenir des données à jour.
+        </div>
+      </div>
+    </div>`;
+  }
   const vendors = STATE.vendorsSorted;
   const statsMap = buildSellerStatsMap();
   const maxT = vendors.length ? vendors[0].total : 1;
