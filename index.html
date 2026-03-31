@@ -523,7 +523,13 @@ const tagColor=t=>(t.includes("up")&&t!=="note_up")?"red":(t.includes("down")&&t
 function renderSynthese() {
   const P=STATE.products;
   const avail=P.filter(p=>p._available===true).length, unavail=P.filter(p=>p._available===false).length;
-  const page1=STATE.productsInPage1.size;
+  // Nombre total d'apparitions page 1 des produits suivis (1 produit sur 2 keywords = 2)
+  // = somme des pills "Page 1" dans l'onglet Produits
+  const page1 = STATE.products.reduce((sum, p) => {
+    const pid = (p.product_id_scraper || "").toLowerCase();
+    const kws = STATE.page1Keywords?.[pid];
+    return sum + (kws ? kws.size : 0);
+  }, 0);
   const prices=P.filter(p=>p._price!=null).map(p=>p._price);
   const ratings=P.filter(p=>p._rating!=null).map(p=>p._rating);
   const deliveries=P.filter(p=>p._delivery!=null).map(p=>p._delivery);
