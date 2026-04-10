@@ -447,10 +447,11 @@ async function loadData() {
     // CONFORAMA: calcul incrémental des ventes
     // seller_sales = total cumulé depuis début, on calcule xn - x0 par session
     // =============================================
+    // confoSellerHistory sert aussi pour MdM (même logique : ventes cumulées totales)
     const confoSellerHistory = {}; // { sellerName: [{date, sales}] trié par date ASC }
-    if (MARKETPLACE === "conforama") {
-      const allConfoStats = await sb("seller_stats", `marketplace=eq.conforama&select=*&order=date.asc&limit=5000`);
-      allConfoStats.forEach(s => {
+    if (MARKETPLACE === "conforama" || MARKETPLACE === "maisonsdumonde") {
+      const allStats = await sb("seller_stats", `marketplace=eq.${MARKETPLACE}&select=*&order=date.asc&limit=5000`);
+      allStats.forEach(s => {
         if (!s.seller || s.seller_sales == null) return;
         if (!confoSellerHistory[s.seller]) confoSellerHistory[s.seller] = [];
         confoSellerHistory[s.seller].push({ date: s.date, sales: s.seller_sales, rating: s.seller_rating, ratingsCount: s.seller_ratings_count, sourceUrl: s.source_url });
@@ -762,18 +763,33 @@ function buildSellerStatsMap() {
 
 function buildVendorsSortedFromStats(statsMap) {
   // Construit la liste des vendeurs depuis seller_stats avec p1_count
-  // Remplace l'ancienne logique basée sur le comptage dans positions
-  return Object.entries(statsMap).map(([name, data]) => {
+  // Lisa Design est fusionnée dans BestMobilier : p1 cumulés, ventes non doublées
+  const vendors = {};
+
+  Object.entries(statsMap).forEach(([name, data]) => {
     const latest = data.latest;
     const p1 = latest?.p1_count || 0;
-    // keywords: on garde un objet vide — plus calculé depuis positions
-    return {
-      name,
-      total: p1,       // p1_count du dernier scraping
-      keywords: {},    // non utilisé dans la nouvelle logique
-      sessionsCount: data.all?.length || 1
-    };
-  }).sort((a, b) => b.total - a.total);
+    // Normaliser : Lisa Design → BestMobilier
+    const displayName = name === "Lisa Design" ? "BestMobilier" : name;
+
+    if (!vendors[displayName]) {
+      vendors[displayName] = {
+        name: displayName,
+        total: p1,
+        p1: p1,
+        keywords: {},
+        sessionsCount: data.all?.length || 1,
+        _rawNames: [name]
+      };
+    } else {
+      // Fusion : additionner les p1, garder les ventes du nom principal
+      vendors[displayName].total += p1;
+      vendors[displayName].p1 += p1;
+      vendors[displayName]._rawNames.push(name);
+    }
+  });
+
+  return Object.values(vendors).sort((a, b) => b.total - a.total);
 }
 
 // Génère un SVG sparkline inline pour la courbe incrémentale Conforama
@@ -820,7 +836,7 @@ function renderConfoSparkline(sellerName) {
 }
 
 function getSalesLabel() {
-  if (MARKETPLACE === "conforama") return "Ventes totales (cumul)";
+  if (MARKETPLACE === "conforama" || MARKETPLACE === "maisonsdumonde") return "Ventes totales (cumul)";
   if (MARKETPLACE === "amazon") return "Δ Avis 12 mois (proxy)";
   return "Ventes 12 mois";
 }
@@ -854,16 +870,20 @@ function getSellerSalesValue(v, statsMap) {
     };
   }
 
-  if (MARKETPLACE === "conforama") {
-    // Ventes cumulées : delta depuis le 1er scraping
-    const hist = (STATE.confoSellerHistory || {})[v.name];
+  if (MARKETPLACE === "conforama" || MARKETPLACE === "maisonsdumonde") {
+    // Ventes cumulées depuis le 1er scraping — même logique Conforama et MdM
+    // Si vendeur fusionné (BestMobilier = BestMobilier + Lisa Design), prendre le plus riche
+    const rawNames = v._rawNames || [v.name];
+    const allHists = rawNames.map(n => (STATE.confoSellerHistory || {})[n]).filter(Boolean);
+    const hist = allHists.reduce((best, h) => (!best || h.length > best.length) ? h : best, null);
     let salesDelta = null;
     if (hist && hist.length >= 2) {
       const x0 = hist[0].sales, xN = hist[hist.length - 1].sales;
       salesDelta = x0 > 0 ? Math.round(((xN - x0) / x0) * 100) : null;
     }
+    const latestSales = latest.seller_sales || 0;
     return {
-      sales: latest.seller_sales || 0, salesDelta, salesTag: null,
+      sales: latestSales, salesDelta, salesTag: null,
       p1, p1Delta,
       rating: latest.seller_rating,
       ratingsCount: latest.seller_ratings_count,
@@ -976,33 +996,7 @@ function renderConcurrents() {
       </div>
     </div>
 
-    <div class="card">
-      <div class="card-title">Progression ${salesLabel} — session vs session</div>
-      <div style="font-size:11px;color:var(--txS);margin-bottom:12px">
-        ${MARKETPLACE === 'conforama'
-          ? 'Ventes cumulées totales depuis la première session de scraping.'
-          : MARKETPLACE === 'amazon'
-          ? 'Proxy : delta du nombre d\'avis sur les 12 derniers mois. Reflète l\'activité récente du vendeur.'
-          : 'Les ventes affichées sont glissantes sur 12 mois — la progression reflète l\'activité récente du vendeur.'}
-      </div>
-      <div id="prog-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px">
-        ${(STATE._progShowAll ? scoredFinal : scoredFinal.slice(0,10)).filter(v => v.salesTag !== null).map(v => {
-          const bg = v.salesTag==='up' ? 'var(--gnBg)' : v.salesTag==='down' ? 'var(--rdBg)' : 'var(--bg)';
-          const col = v.salesTag==='up' ? 'var(--gn)' : v.salesTag==='down' ? 'var(--rd)' : 'var(--txT)';
-          const arrow = v.salesTag==='up' ? '↑' : v.salesTag==='down' ? '↓' : '—';
-          const salesLabel = MARKETPLACE==='amazon' ? `${v.sales.toLocaleString("fr-FR")} avis` : `${v.sales.toLocaleString("fr-FR")} ventes`;
-          return `<div style="padding:10px 14px;background:${bg};border-radius:8px;border:.5px solid var(--border)">
-            <div style="font-size:12px;font-weight:500;margin-bottom:3px">${esc(v.name)}</div>
-            <div style="display:flex;justify-content:space-between;align-items:baseline">
-              <span style="font-size:11px;color:var(--txS)">${v.sales ? salesLabel : "—"}</span>
-              <span style="font-size:15px;font-weight:700;color:${col}">${arrow} ${v.salesDelta !== null ? Math.abs(v.salesDelta)+'%' : ''}</span>
-            </div>
-          </div>`;
-        }).join("")}
-        ${!scoredFinal.filter(v => v.salesDelta !== null).length ? '<div style="color:var(--txT);font-size:12px;grid-column:1/-1;padding:20px;text-align:center">Pas encore de données de progression — relancez l\'extension la semaine prochaine</div>' : ''}
-      </div>
-      ${scoredFinal.filter(v=>v.salesDelta!==null).length > 10 ? `<div onclick="STATE._progShowAll=!STATE._progShowAll;renderContent()" style="margin-top:10px;text-align:center;font-size:12px;color:var(--ac);cursor:pointer">${STATE._progShowAll ? '▲ Voir moins' : '▼ Voir les ' + (scoredFinal.filter(v=>v.salesDelta!==null).length - 10) + ' autres'}</div>` : ''}
-    </div>`;
+`;
 }
 
 function renderSellerDetailHTML(v, statsMap) {
@@ -1018,8 +1012,8 @@ function renderSellerDetailHTML(v, statsMap) {
     if (MARKETPLACE === "amazon") {
       salesDisplay = v.sales ? v.sales.toLocaleString("fr-FR") : "—";
       salesSubDisplay = `<div style="font-size:11px;color:var(--txT);margin-top:2px">avis (dernier scraping)</div>`;
-    } else if (MARKETPLACE === "conforama") {
-      salesDisplay = v.sales.toLocaleString("fr-FR");
+    } else if (MARKETPLACE === "conforama" || MARKETPLACE === "maisonsdumonde") {
+      salesDisplay = v.sales ? v.sales.toLocaleString("fr-FR") : "—";
       salesSubDisplay = `<div style="font-size:11px;color:var(--txT);margin-top:2px">total depuis 1er scrape</div>`;
     } else {
       salesDisplay = v.sales.toLocaleString("fr-FR");
@@ -1027,8 +1021,18 @@ function renderSellerDetailHTML(v, statsMap) {
     }
   }
 
-  // Sparkline Conforama
-  const sparkline = MARKETPLACE === "conforama" ? renderConfoSparkline(v.name) : "";
+  // Sparkline Conforama + MdM (ventes cumulées)
+  // Pour les vendeurs fusionnés (BestMobilier = BM + Lisa Design), chercher le bon historique
+  const sparklineSellerName = (() => {
+    if (MARKETPLACE !== "conforama" && MARKETPLACE !== "maisonsdumonde") return v.name;
+    const rawNames = v._rawNames || [v.name];
+    const best = rawNames.reduce((b, n) => {
+      const h = (STATE.confoSellerHistory || {})[n];
+      return (!b || (h && h.length > ((STATE.confoSellerHistory||{})[b]||[]).length)) ? n : b;
+    }, null);
+    return best || v.name;
+  })();
+  const sparkline = (MARKETPLACE === "conforama" || MARKETPLACE === "maisonsdumonde") ? renderConfoSparkline(sparklineSellerName) : "";
 
   return `
     <div class="card" style="height:100%">
@@ -1044,7 +1048,7 @@ function renderSellerDetailHTML(v, statsMap) {
           <div style="font-size:11px;color:var(--txS);margin-bottom:3px;text-transform:uppercase;letter-spacing:.03em">${salesLabel}</div>
           <div style="font-size:20px;font-weight:700">${salesDisplay}</div>
           ${salesSubDisplay}
-          ${v.salesDelta!==null?`<div style="font-size:11px;color:${v.salesDelta>0?'var(--gn)':v.salesDelta<0?'var(--rd)':'var(--txT)'};margin-top:2px">${v.salesDelta>0?'+':''}${v.salesDelta}% ${MARKETPLACE==='conforama'?'vs 1er scrape':'vs préc.'}</div>`:'<div style="font-size:11px;color:var(--txT);margin-top:2px">1ère mesure</div>'}
+          ${v.salesDelta!==null?`<div style="font-size:11px;color:${v.salesDelta>0?'var(--gn)':v.salesDelta<0?'var(--rd)':'var(--txT)'};margin-top:2px">${v.salesDelta>0?'+':''}${v.salesDelta}% ${(MARKETPLACE==='conforama'||MARKETPLACE==='maisonsdumonde')?'vs 1er scrape':'vs préc.'}</div>`:'<div style="font-size:11px;color:var(--txT);margin-top:2px">1ère mesure</div>'}
         </div>
         <div style="background:var(--bg);border-radius:8px;padding:10px 12px;text-align:center">
           <div style="font-size:11px;color:var(--txS);margin-bottom:3px;text-transform:uppercase;letter-spacing:.03em">Note vendeur</div>
