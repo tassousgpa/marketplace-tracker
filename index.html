@@ -1024,10 +1024,11 @@ function getSellerData(displayName) {
       salesFirst12m = first.seller_sales || 0;
     }
 
-    // Croissance YoY (valeur actuelle vs valeur la plus ancienne disponible)
-    const yoyDelta = (salesFirst12m != null && salesFirst12m > 0)
-      ? Math.round((salesLatest - salesFirst12m) / salesFirst12m * 100)
-      : null;
+    // Croissance vs dernière mesure précédente (current trading trend)
+    const yoyDelta = (prev != null && (MARKETPLACE === "amazon" ? prev.seller_ratings_count : prev.seller_sales) != null) ? (() => {
+      const prevVal = MARKETPLACE === "amazon" ? (prev.seller_ratings_count || 0) : (prev.seller_sales || 0);
+      return prevVal > 0 ? Math.round((salesLatest - prevVal) / prevVal * 100) : null;
+    })() : null;
 
     // Ligne 3 : nombre de sessions de suivi (proxy de la régularité)
     const sessionsCount = allEntries.length;
@@ -1053,25 +1054,17 @@ function renderConcurrents() {
   const isCumul = mpType(MARKETPLACE) === "cumul";
   const isAmazon = MARKETPLACE === "amazon";
 
-  // Source de vérité : tracked_sellers depuis Supabase (chargé dans STATE)
-  // Fallback sur le hardcode si la table n'est pas encore créée
   let trackedRows = STATE.trackedSellers || [];
   if (!trackedRows.length) {
     const fallback = TRACKED_COMPETITORS_FALLBACK[MARKETPLACE] || [];
     trackedRows = fallback.map(name => ({ seller_name: name, shop_url: null, active: true }));
   }
 
-  // Libellés colonnes selon type
-  const col1Label  = isCumul ? "Ventes totales" : (isAmazon ? "Avis (proxy)" : "Ventes LTM");
-  const col2Label  = isCumul ? `Variation (depuis dernier scraping)` : "Croissance YoY";
-  const col3Label  = isCumul ? "Ventes/jour moy." : "Sessions de suivi";
-  const col4Label  = "Moy. appari. P1";
-
   const fmtNum = v => v != null ? Number(v).toLocaleString("fr-FR") : "—";
   const fmtDelta = (v, unit="") => {
-    if (v == null) return '<span style="color:var(--txT)">—</span>';
+    if (v == null) return '<span style="color:var(--txT);font-size:11px">—</span>';
     const color = v > 0 ? "var(--gn)" : v < 0 ? "var(--rd)" : "var(--txT)";
-    return `<span style="color:${color};font-weight:600">${v>0?"+":""}${fmtNum(v)}${unit}</span>`;
+    return `<span style="color:${color};font-size:15px;font-weight:700">${v>0?"+":""}${fmtNum(v)}${unit}</span>`;
   };
 
   const rows = trackedRows.map(ts => {
@@ -1083,11 +1076,61 @@ function renderConcurrents() {
 
   const hasAnyData = rows.some(r => r.data);
 
+  const CHART_COLORS = ["#2c5ea0","#e8963a","#2e9e6b","#c0392b","#8e44ad","#16a085","#d35400","#2980b9","#27ae60","#e74c3c"];
+
+  // Métriques (lignes du tableau transposé)
+  const metricRows = [
+    { key:"col1", label: isCumul ? "Ventes totales" : (isAmazon ? "Avis (proxy)" : "Ventes LTM") },
+    { key:"col2", label: isCumul ? "Variation (dernier scraping)" : "Tendance vs préc." },
+    ...(isCumul ? [{ key:"col3", label:"Ventes/jour moy." }] : []),
+    { key:"col4", label:"Moy. appari. P1" },
+    ...(!isCumul ? [{ key:"col5", label:"Best-seller" }] : []),
+    { key:"col6", label:"Note vendeur" },
+  ];
+
+  function cellFor(r, key) {
+    const d = r.data;
+    if (!d) return '<span style="color:var(--txT);font-size:11px">—</span>';
+    switch(key) {
+      case "col1": {
+        const v = fmtNum(d.salesLatest);
+        const sub = isCumul ? "depuis inscr." : (isAmazon ? "avis" : "ventes LTM");
+        return `<div style="font-size:16px;font-weight:700">${v}</div><div style="font-size:10px;color:var(--txT)">${sub}</div>`;
+      }
+      case "col2": {
+        if (isCumul) {
+          if (d.salesVarSincePrev == null) return '<span style="color:var(--txT);font-size:11px">1ère mesure</span>';
+          return `${fmtDelta(d.salesVarSincePrev," ventes")}<div style="font-size:10px;color:var(--txT);margin-top:1px">en ${d.daysSincePrev}j</div>`;
+        } else {
+          if (d.yoyDelta == null) return '<span style="color:var(--txT);font-size:11px">1ère mesure</span>';
+          return `${fmtDelta(d.yoyDelta,"%")}<div style="font-size:10px;color:var(--txT);margin-top:1px">vs préc.</div>`;
+        }
+      }
+      case "col3":
+        return d.dailyAvg != null
+          ? `<div style="font-size:16px;font-weight:700">${d.dailyAvg.toLocaleString("fr-FR")}</div><div style="font-size:10px;color:var(--txT)">/j moy.</div>`
+          : '<span style="color:var(--txT);font-size:11px">—</span>';
+      case "col4":
+        return `<div style="font-size:16px;font-weight:700">${d.p1Avg.toLocaleString("fr-FR")}</div><div style="font-size:10px;color:var(--txT)">app. moy.</div>`;
+      case "col5": {
+        if (!d.bestSellerTitle) return '<span style="color:var(--txT);font-size:11px">—</span>';
+        return `<div style="font-size:11px;font-weight:600;max-width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(d.bestSellerTitle)}">${esc(d.bestSellerTitle)}</div>
+          ${d.bestSellerPrice?`<div style="font-size:12px;color:var(--txS);font-weight:700">${d.bestSellerPrice}€</div>`:""}
+          ${d.bestSellerUrl?`<a href="${esc(d.bestSellerUrl)}" target="_blank" class="link" style="font-size:10px">Voir ↗</a>`:""}`;
+      }
+      case "col6":
+        return d.rating
+          ? `<div style="font-size:16px;font-weight:700">${d.rating}<span style="font-size:11px;font-weight:400;color:var(--txT)">/5</span></div><div style="font-size:10px;color:var(--txT)">${d.ratingsCount?fmtNum(d.ratingsCount)+" avis":""}</div>`
+          : '<span style="color:var(--txT);font-size:11px">—</span>';
+      default: return "—";
+    }
+  }
+
   return `
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
     <div>
       <div style="font-size:15px;font-weight:700">Suivi concurrents — ${MARKETPLACES.find(m=>m.id===MARKETPLACE)?.label||MARKETPLACE}</div>
-      <div style="font-size:12px;color:var(--txS);margin-top:2px">${trackedRows.length} vendeurs suivis · données depuis seller_stats</div>
+      <div style="font-size:12px;color:var(--txS);margin-top:2px">${trackedRows.length} vendeurs suivis</div>
     </div>
     <button onclick="openAddCompetitorModal()" style="padding:7px 14px;border:.5px solid var(--ac);border-radius:8px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">+ Ajouter un concurrent</button>
   </div>
@@ -1095,124 +1138,118 @@ function renderConcurrents() {
   ${!hasAnyData ? `<div class="card" style="padding:30px;text-align:center;color:var(--txT)">
     <div style="font-size:14px;font-weight:600;margin-bottom:8px">Aucune donnée seller_stats pour cette marketplace</div>
     <div style="font-size:12px">Lancez d'abord l'extension de scraping des boutiques vendeurs.</div>
-  </div>` : ''}
+  </div>` : `
 
-  ${hasAnyData ? `
   <div class="card" style="padding:0;overflow:hidden">
-    <div class="scroll-table"><table style="min-width:760px">
-      <thead>
-        <tr style="border-bottom:2px solid var(--border);background:var(--bg)">
-          <th style="min-width:160px">Vendeur</th>
-          <th style="text-align:right">${col1Label}</th>
-          <th style="text-align:right">${col2Label}</th>
-          <th style="text-align:right">${col3Label}</th>
-          <th style="text-align:right">${col4Label}</th>
-          ${!isCumul ? `<th style="min-width:180px">Best-seller</th>` : ''}
-          <th style="text-align:right">Note vendeur</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rows.map((r, i) => {
-          const d = r.data;
-          const bmStyle = r.isBM
-            ? 'background:var(--acBg);font-weight:700;'
-            : i%2 ? 'background:var(--bg);' : '';
-          const nameStyle = r.isBM ? 'color:var(--ac);font-weight:700' : 'font-weight:500';
-
-          if (!d) {
-            return `<tr style="${bmStyle}">
-              <td>
-                <div style="${nameStyle}">${esc(r.name)}</div>
-                ${r.isBM?'<span class="pill pill-accent" style="font-size:10px">Vous</span>':''}
-              </td>
-              <td colspan="${isCumul?6:7}" style="color:var(--txT);font-size:12px;text-align:center">Pas encore de données scraping</td>
-            </tr>`;
-          }
-
-          // Ligne 1 : valeur principale
-          const col1 = isCumul ? fmtNum(d.salesLatest) : (isAmazon ? fmtNum(d.salesLatest)+" avis" : fmtNum(d.salesLatest)+" ventes");
-
-          // Ligne 2
-          let col2html;
-          if (isCumul) {
-            if (d.salesVarSincePrev != null) {
-              const days = d.daysSincePrev;
-              col2html = `${fmtDelta(d.salesVarSincePrev," ventes")}<div style="font-size:10px;color:var(--txT);margin-top:1px">en ${days}j</div>`;
-            } else col2html = '<span style="color:var(--txT)">1ère mesure</span>';
-          } else {
-            col2html = d.yoyDelta != null ? `${fmtDelta(d.yoyDelta,"%")}<div style="font-size:10px;color:var(--txT);margin-top:1px">vs première mesure</div>` : '<span style="color:var(--txT)">1ère mesure</span>';
-          }
-
-          // Ligne 3
-          let col3html;
-          if (isCumul) {
-            col3html = d.dailyAvg != null ? `<span style="font-weight:600">${d.dailyAvg.toLocaleString("fr-FR")}</span><span style="font-size:10px;color:var(--txT)"> /j moy.</span>` : '<span style="color:var(--txT)">—</span>';
-          } else {
-            col3html = `<span style="font-weight:600">${d.sessionsCount}</span><span style="font-size:10px;color:var(--txT)"> sessions</span>`;
-          }
-
-          // Ligne 4 : P1 moy
-          const col4html = `<span style="font-weight:600">${d.p1Avg.toLocaleString("fr-FR")}</span><span style="font-size:10px;color:var(--txT)"> app. moy.</span><div style="font-size:10px;color:var(--txT)">dernier: ${d.p1Latest}</div>`;
-
-          // Best seller (LTM only)
-          let bsHtml = '';
-          if (!isCumul) {
-            if (d.bestSellerTitle) {
-              bsHtml = `<div style="font-size:12px;font-weight:500;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(d.bestSellerTitle)}">${esc(d.bestSellerTitle)}</div>
-                ${d.bestSellerPrice?`<div style="font-size:11px;color:var(--txS)">${d.bestSellerPrice}€</div>`:''}
-                ${d.bestSellerUrl?`<a href="${esc(d.bestSellerUrl)}" target="_blank" class="link" style="font-size:10px">Voir ↗</a>`:''}`;
-            } else bsHtml = '<span style="color:var(--txT);font-size:11px">—</span>';
-          }
-
-          // Note vendeur
-          const ratingHtml = d.rating
-            ? `<span style="font-weight:600">${d.rating}/5</span><div style="font-size:10px;color:var(--txT)">${d.ratingsCount?fmtNum(d.ratingsCount)+" avis":''}</div>`
-            : '<span style="color:var(--txT)">—</span>';
-
-          return `<tr style="${bmStyle}">
-            <td>
-              <div style="${nameStyle}">${esc(r.name)}</div>
-              ${r.isBM?'<span class="pill pill-accent" style="font-size:10px">Vous</span>':''}
-              ${d.sourceUrl?`<div><a href="${esc(d.sourceUrl)}" target="_blank" class="link" style="font-size:10px">Boutique ↗</a></div>`:''}
-            </td>
-            <td style="text-align:right">${col1}</td>
-            <td style="text-align:right;line-height:1.4">${col2html}</td>
-            <td style="text-align:right;line-height:1.4">${col3html}</td>
-            <td style="text-align:right;line-height:1.4">${col4html}</td>
-            ${!isCumul?`<td style="line-height:1.4">${bsHtml}</td>`:''}
-            <td style="text-align:right;line-height:1.4">${ratingHtml}</td>
-            <td></td>
-          </tr>`;
-        }).join("")}
-      </tbody>
-    </table></div>
+    <div class="scroll-table">
+      <table style="min-width:${100 + rows.length * 130}px;width:100%;border-collapse:collapse;font-size:12px">
+        <thead>
+          <tr style="border-bottom:2px solid var(--border);background:var(--bg)">
+            <th style="min-width:150px;padding:10px 14px;text-align:left;font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;border-right:1px solid var(--border)">Métrique</th>
+            ${rows.map((r, ci) => {
+              const color = CHART_COLORS[ci % CHART_COLORS.length];
+              const bmBg = r.isBM ? "background:var(--acBg);" : "";
+              return `<th style="min-width:130px;padding:10px 14px;text-align:center;${bmBg}">
+                <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+                  <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color}"></span>
+                  <span style="font-size:13px;font-weight:700;color:${r.isBM?"var(--ac)":"var(--tx)"}">${esc(r.name)}</span>
+                  ${r.isBM ? '<span class="pill pill-accent" style="font-size:10px">Vous</span>' : ""}
+                  ${r.shopUrl ? `<a href="${esc(r.shopUrl)}" target="_blank" class="link" style="font-size:10px">Boutique ↗</a>` : (r.data?.sourceUrl ? `<a href="${esc(r.data.sourceUrl)}" target="_blank" class="link" style="font-size:10px">Boutique ↗</a>` : "")}
+                </div>
+              </th>`;
+            }).join("")}
+          </tr>
+        </thead>
+        <tbody>
+          ${metricRows.map(({ key, label }, ri) => `
+          <tr style="${ri%2?"background:var(--bg)":""}">
+            <td style="padding:10px 14px;font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;letter-spacing:.03em;white-space:nowrap;border-right:1px solid var(--border)">${label}</td>
+            ${rows.map(r => {
+              const bmBg = r.isBM ? "background:var(--acBg);" : "";
+              return `<td style="padding:10px 14px;text-align:center;line-height:1.4;${bmBg}">${cellFor(r, key)}</td>`;
+            }).join("")}
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
   </div>
 
-  ${isCumul ? `
-  <div class="card" style="margin-top:14px">
-    <div class="card-title">Détail — courbes incrémentales (ventes cumulées)</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">
-      ${trackedRows.map(ts => {
-        const name = ts.seller_name;
-        const rawNames = resolveSellerNames(name);
-        let best = null;
-        rawNames.forEach(rn => {
-          const h = (STATE.confoSellerHistory||{})[rn];
-          if (h && (!best || h.length > best.length)) best = h;
-        });
-        if (!best || best.length < 2) return '';
-        const isBM = BM_NAMES_SET.has(name) || name === "BestMobilier";
-        const sparkSeller = rawNames.find(rn => (STATE.confoSellerHistory||{})[rn]) || name;
-        return `<div style="background:var(--bg);border-radius:8px;padding:10px 12px;border:.5px solid var(--border)${isBM?';border-color:var(--ac)':''}">
-          <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:${isBM?'var(--ac)':'var(--tx)'}">${esc(name)}</div>
-          ${renderConfoSparkline(sparkSeller)}
-        </div>`;
-      }).filter(Boolean).join("")}
-    </div>
-  </div>` : ''}
-  ` : ''}`;
+  ${isCumul ? renderCombinedSalesChart(trackedRows, CHART_COLORS) : ""}`}`;
 }
+
+function renderCombinedSalesChart(trackedRows, CHART_COLORS) {
+  const series = [];
+  trackedRows.forEach((ts, ci) => {
+    const name = ts.seller_name;
+    const rawNames = resolveSellerNames(name);
+    let hist = null;
+    rawNames.forEach(rn => {
+      const h = (STATE.confoSellerHistory||{})[rn];
+      if (h && (!hist || h.length > hist.length)) hist = h;
+    });
+    if (!hist || hist.length < 2) return;
+    const x0 = hist[0].sales;
+    const points = hist.map(h => ({ date: h.date, inc: h.sales - x0 }));
+    const isBM = BM_NAMES_SET.has(name) || name === "BestMobilier";
+    series.push({ name, color: CHART_COLORS[ci % CHART_COLORS.length], points, isBM });
+  });
+  if (!series.length) return "";
+
+  const W = 820, H = 220, PAD_L = 52, PAD_R = 100, PAD_T = 16, PAD_B = 36;
+  const CW = W - PAD_L - PAD_R, CH = H - PAD_T - PAD_B;
+  const allDates = [...new Set(series.flatMap(s => s.points.map(p => p.date)))].sort();
+  const allIncs  = series.flatMap(s => s.points.map(p => p.inc));
+  const maxInc   = Math.max(...allIncs, 1);
+  const dateToX  = d => PAD_L + (allDates.indexOf(d) / Math.max(allDates.length - 1, 1)) * CW;
+  const incToY   = v => PAD_T + CH - (v / maxInc) * CH;
+  const fmt = d => new Date(d).toLocaleDateString("fr-FR", { day:"2-digit", month:"2-digit" });
+
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map(r => ({ v: Math.round(r * maxInc), y: PAD_T + CH - r * CH }));
+  const yGridLines = yTicks.map(t =>
+    `<line x1="${PAD_L}" y1="${t.y.toFixed(1)}" x2="${W-PAD_R}" y2="${t.y.toFixed(1)}" stroke="#e8e6e1" stroke-width="1"/>
+     <text x="${(PAD_L-4).toFixed(1)}" y="${(t.y+4).toFixed(1)}" text-anchor="end" fill="#9c9a92" font-size="10">${t.v.toLocaleString("fr-FR")}</text>`
+  ).join("");
+
+  const seriesPaths = series.map(s => {
+    const pts = allDates.map(d => {
+      const found = s.points.find(p => p.date === d);
+      return found ? { x: dateToX(d), y: incToY(found.inc), v: found.inc } : null;
+    }).filter(Boolean);
+    if (pts.length < 2) return "";
+    const pathD = pts.map((p,i) => `${i===0?"M":"L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" ");
+    const lastPt = pts[pts.length-1];
+    return `<path d="${pathD}" stroke="${s.color}" stroke-width="${s.isBM?2.5:1.8}" fill="none" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="3.5" fill="${s.color}"/>
+      <text x="${(lastPt.x+6).toFixed(1)}" y="${(lastPt.y+4).toFixed(1)}" fill="${s.color}" font-size="10" font-weight="600">+${lastPt.v.toLocaleString("fr-FR")}</text>`;
+  }).join("");
+
+  const xLabelIdxSet = new Set([0, allDates.length-1]);
+  for (let i = 1; i <= 4; i++) xLabelIdxSet.add(Math.round(i * (allDates.length-1) / 5));
+  const xLabels = [...xLabelIdxSet].sort((a,b)=>a-b).map(i =>
+    `<text x="${dateToX(allDates[i]).toFixed(1)}" y="${(H-6).toFixed(1)}" text-anchor="middle" fill="#9c9a92" font-size="10">${fmt(allDates[i])}</text>`
+  ).join("");
+
+  const legend = series.map(s =>
+    `<div style="display:flex;align-items:center;gap:5px;font-size:11px;font-weight:${s.isBM?700:500};color:${s.isBM?"var(--ac)":"var(--tx)"}">
+      <span style="display:inline-block;width:18px;height:3px;background:${s.color};border-radius:2px;flex-shrink:0"></span>
+      ${esc(s.name)}
+    </div>`
+  ).join("");
+
+  return `<div class="card" style="margin-top:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <div class="card-title" style="margin:0">Évolution des ventes cumulées</div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px">${legend}</div>
+    </div>
+    <div style="overflow-x:auto">
+      <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;min-width:460px;display:block">
+        ${yGridLines}${seriesPaths}${xLabels}
+      </svg>
+    </div>
+  </div>`;
+}
+
+
 
 function openAddCompetitorModal() {
   openModal("Ajouter un concurrent à suivre", `
