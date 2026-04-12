@@ -255,6 +255,39 @@ setInterval(() => {
 }, 20000);
 
 let STATE = { products:[], snapshots:[], positions:[], dates:[], sellerStats:[], tab:0 };
+
+// =============================================
+// normalizeKeyword — globale (utilisée dans loadData ET renderPositions)
+// =============================================
+const URL_LABEL_MAP_GLOBAL = {
+  "canape-salon-sejour/canape/tous-les-canapes":       "Tous les canapés",
+  "canape-salon-sejour/canape/canape-convertible":     "Canapé convertible",
+  "canape-salon-sejour/banquette/banquette-clic-clac": "Banquette clic-clac",
+  "canape-salon-sejour/sejour/table":                  "Tables de séjour",
+  "canape-salon-sejour/salon/meuble-tv":               "Meuble TV",
+  "mobilier-de-jardin/salon-de-jardin":                "Salon de jardin",
+  "chambre-adulte/lit-adulte":                         "Lit coffre",
+};
+function normalizeKeyword(kw) {
+  if (!kw) return kw;
+  try {
+    if (kw.startsWith("http") || kw.startsWith("//")) {
+      const urlStr = kw.startsWith("//") ? "https:" + kw : kw;
+      const url = new URL(urlStr);
+      const fromSearch = url.searchParams.get("fromSearch");
+      if (fromSearch) return decodeURIComponent(fromSearch).trim();
+      const fullPath = url.hostname + url.pathname;
+      for (const [key, label] of Object.entries(URL_LABEL_MAP_GLOBAL)) {
+        if (fullPath.includes(key)) return label;
+      }
+      const segments = url.pathname.split("/").filter(s => s && !/^c$/.test(s) && !/^\d+/.test(s));
+      const last = segments[segments.length - 1] || "";
+      return decodeURIComponent(last.replace(/-/g, " ")).trim() || kw;
+    }
+  } catch(e) {}
+  return kw;
+}
+
 const TAB_NAMES = ["Synthèse","Produits","Historique","Positions","Concurrents","Anomalies","Gestion"];
 
 function switchMarketplace(mp, btn) {
@@ -357,45 +390,6 @@ async function loadData() {
     // Normalise le keyword : extrait le terme de recherche depuis les URLs Conforama
     // ex: "https://www.conforama.fr/recherche-conforama/canap%C3%A9%20panoramique?fromSearch=canap%C3%A9%20panoramique"
     // → "canapé panoramique"
-    // Map statique URL → label lisible pour les URLs de catégorie Conforama (sans fromSearch)
-    // Map exhaustive basée sur les keywords réels en base Supabase (URLs /c/ sans fromSearch)
-    const URL_LABEL_MAP = {
-      "canape-salon-sejour/canape/tous-les-canapes":       "Tous les canapés",
-      "canape-salon-sejour/canape/canape-convertible":     "Canapé convertible",
-      "canape-salon-sejour/banquette/banquette-clic-clac": "Banquette clic-clac",
-      "canape-salon-sejour/sejour/table":                  "Tables de séjour",
-      "canape-salon-sejour/salon/meuble-tv":               "Meuble TV",
-      "mobilier-de-jardin/salon-de-jardin":                "Salon de jardin",
-      "chambre-adulte/lit-adulte":                         "Lit coffre",
-    };
-
-    function normalizeKeyword(kw) {
-      if (!kw) return kw;
-      try {
-        if (kw.startsWith("http") || kw.startsWith("//")) {
-          // Normalise http:// et http://
-          const urlStr = kw.startsWith("//") ? "https:" + kw : kw;
-          const url = new URL(urlStr);
-
-          // 1. Priorité au paramètre fromSearch
-          const fromSearch = url.searchParams.get("fromSearch");
-          if (fromSearch) return decodeURIComponent(fromSearch).trim();
-
-          // 2. Map statique : sous-chaîne du pathname (clés sans hostname)
-          const fullPath = url.hostname + url.pathname;
-          for (const [key, label] of Object.entries(URL_LABEL_MAP)) {
-            if (fullPath.includes(key)) return label;
-          }
-
-          // 3. Fallback : avant-dernier segment du path (souvent plus lisible que le code)
-          const segments = url.pathname.split("/").filter(s => s && !/^c$/.test(s) && !/^\d+/.test(s));
-          const last = segments[segments.length - 1] || "";
-          return decodeURIComponent(last.replace(/-/g, " ")).trim() || kw;
-        }
-      } catch(e) {}
-      return kw;
-    }
-
     const keywordData = {};
     latestPositions.forEach(p => {
       const kw = normalizeKeyword(p.keyword);
@@ -966,6 +960,12 @@ const BM_NAMES_SET = new Set(["BestMobilier","Best Mobilier","Lisa Design"]);
 // BestMobilier peut être "BestMobilier" ou "Best Mobilier" ou "Lisa Design" en base
 function resolveSellerNames(displayName) {
   if (displayName === "BestMobilier") return ["BestMobilier","Best Mobilier","Lisa Design"];
+  // Correspondances entre nom affiché (tracked_sellers) et nom réel en base (seller_stats)
+  const SELLER_NAME_MAP = {
+    "Habitat et Jardin": ["Habitat & Jardin", "Habitat et Jardin"],
+    "Gutent (KOMHTOM)":  ["Gutent", "Gutent (KOMHTOM)"],
+  };
+  if (SELLER_NAME_MAP[displayName]) return SELLER_NAME_MAP[displayName];
   return [displayName];
 }
 
