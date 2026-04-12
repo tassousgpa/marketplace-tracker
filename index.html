@@ -1001,6 +1001,13 @@ function getSellerData(displayName) {
   const prev   = allEntries.length >= 2 ? allEntries[allEntries.length - 2] : null;
   const first  = allEntries[0];
 
+  // Pour les calculs LTM : on ignore les entrées où seller_sales est null
+  // (scrapes partiels où le clic "En savoir plus" n'a pas fonctionné)
+  const validSalesEntries = allEntries.filter(e => e.seller_sales != null);
+  const latestValid = validSalesEntries.length ? validSalesEntries[validSalesEntries.length - 1] : null;
+  const prevValid   = validSalesEntries.length >= 2 ? validSalesEntries[validSalesEntries.length - 2] : null;
+  const firstValid  = validSalesEntries.length ? validSalesEntries[0] : null;
+
   // Calcul p1 moyen sur toutes les sessions
   const p1Values = allEntries.map(e => e.p1_count || 0);
   const p1Avg = p1Values.length ? Math.round(p1Values.reduce((a,b)=>a+b,0) / p1Values.length * 10) / 10 : 0;
@@ -1046,21 +1053,33 @@ function getSellerData(displayName) {
       const in12m = allEntries.filter(e => new Date(e.date) >= cutoff);
       salesFirst12m = in12m.length ? (in12m[0].seller_ratings_count || 0) : null;
     } else {
-      salesLatest = latest.seller_sales || 0;
-      salesFirst12m = first.seller_sales || 0;
+      salesLatest = latestValid?.seller_sales || 0;
+      salesFirst12m = firstValid?.seller_sales || 0;
     }
 
-    // Tendance vs dernier scrape précédent (court terme)
-    const yoyDelta = (prev != null && (MARKETPLACE === "amazon" ? prev.seller_ratings_count : prev.seller_sales) != null) ? (() => {
-      const prevVal = MARKETPLACE === "amazon" ? (prev.seller_ratings_count || 0) : (prev.seller_sales || 0);
-      return prevVal > 0 ? Math.round((salesLatest - prevVal) / prevVal * 100) : null;
-    })() : null;
+    // Tendance vs dernier scrape précédent (court terme) — sur entrées valides uniquement
+    const yoyDelta = (() => {
+      if (MARKETPLACE === "amazon") {
+        if (!prev || prev.seller_ratings_count == null) return null;
+        const prevVal = prev.seller_ratings_count || 0;
+        return prevVal > 0 ? (salesLatest - prevVal) / prevVal * 100 : null;
+      }
+      if (!prevValid || prevValid.seller_sales == null) return null;
+      const prevVal = prevValid.seller_sales || 0;
+      return prevVal > 0 ? (salesLatest - prevVal) / prevVal * 100 : null;
+    })();
 
-    // Tendance depuis 1er scrape (long terme)
-    const firstVal = MARKETPLACE === "amazon" ? (first.seller_ratings_count || 0) : (first.seller_sales || 0);
-    const yoyDeltaFirst = (allEntries.length >= 2 && firstVal > 0)
-      ? Math.round((salesLatest - firstVal) / firstVal * 100)
-      : null;
+    // Tendance depuis 1er scrape (long terme) — sur entrées valides uniquement
+    const yoyDeltaFirst = (() => {
+      if (MARKETPLACE === "amazon") {
+        if (!first || first.seller_ratings_count == null || allEntries.length < 2) return null;
+        const fVal = first.seller_ratings_count || 0;
+        return fVal > 0 ? (salesLatest - fVal) / fVal * 100 : null;
+      }
+      if (!firstValid || validSalesEntries.length < 2) return null;
+      const fVal = firstValid.seller_sales || 0;
+      return fVal > 0 ? (salesLatest - fVal) / fVal * 100 : null;
+    })();
 
     const sessionsCount = allEntries.length;
 
@@ -1096,7 +1115,12 @@ function renderConcurrents() {
   const fmtDelta = (v, unit="") => {
     if (v == null) return '<span style="color:var(--txT);font-size:11px">—</span>';
     const color = v > 0 ? "var(--gn)" : v < 0 ? "var(--rd)" : "var(--txT)";
-    return `<span style="color:${color};font-size:15px;font-weight:700">${v>0?"+":""}${fmtNum(v)}${unit}</span>`;
+    const rounded = Math.round(v);
+    // Variation non nulle mais < 0.5% en valeur absolue → afficher "<1%" ou ">-1%"
+    const display = (rounded === 0 && v !== 0)
+      ? (v > 0 ? "<+1" : ">-1")
+      : (rounded > 0 ? "+" : "") + rounded;
+    return `<span style="color:${color};font-size:15px;font-weight:700">${display}${unit}</span>`;
   };
 
   const rows = trackedRows.map(ts => {
