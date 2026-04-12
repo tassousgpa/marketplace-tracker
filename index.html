@@ -907,8 +907,9 @@ function renderPositions() {
     </div>
     <div class="card"><div class="card-title">Leader par catégorie</div><div class="grid-2">${(()=>{
       const medals = ['🥇','🥈','🥉'];
+      const lc = STATE.leaderCounts || {};
       return keywords.map(kw => {
-        const sellers = STATE.leaderCounts[kw] || {};
+        const sellers = lc[kw] || {};
         const sorted = Object.entries(sellers).sort((a,b) => b[1]-a[1]).slice(0,3);
         const bmC = STATE.bmByKeyword[kw] || 0;
         return `<div style="padding:8px 12px;border-bottom:1px solid var(--borderL)"><div style="font-size:13px;font-weight:500;margin-bottom:4px">${esc(kw)}</div><div style="display:flex;gap:4px;flex-wrap:wrap">${sorted.map((s,i)=>pill(`${medals[i]} ${s[0]} (${s[1]})`,["BestMobilier","Best Mobilier","Lisa Design"].includes(s[0])?"accent":s[0]==="Conforama"?"purple":"default")).join("")}${bmC>0&&!sorted.find(s=>["BestMobilier","Best Mobilier","Lisa Design"].includes(s[0]))?pill(`BM: ${bmC}`,"accent"):''}</div></div>`;
