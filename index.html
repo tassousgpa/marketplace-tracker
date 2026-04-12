@@ -900,7 +900,23 @@ function renderPositions() {
       <div class="cat-grid">${keywords.map(kw=>{const c=STATE.bmByKeyword[kw]||0;return`<div class="cat-card ${c===0?'cat-card-zero':''}" onclick="showPositionDetail('${esc(kw)}')"><div class="cat-card-header"><span class="cat-card-name">${esc(kw)}</span><span class="cat-card-count">${c}</span></div>${c>0?`<div style="margin-top:5px;height:4px;background:var(--borderL);border-radius:2px;overflow:hidden"><div style="height:100%;width:${Math.min(c/(maxBM+1)*100,100)}%;background:var(--ac);border-radius:2px"></div></div>`:''}</div>`;}).join("")}</div>
       ${!keywords.length?'<div style="color:var(--txT);font-size:12px;padding:20px;text-align:center">Aucune donnée de position disponible.</div>':''}
     </div>
-    <div class="card"><div class="card-title">Leader par catégorie</div><div class="grid-2">${keywords.map(kw=>{const items=STATE.keywordData[kw]||[];const sellers={};items.forEach(i=>{sellers[i.seller]=(sellers[i.seller]||0)+1;});const sorted=Object.entries(sellers).sort((a,b)=>b[1]-a[1]).slice(0,3);const bmC=STATE.bmByKeyword[kw]||0;const medals=['🥇','🥈','🥉'];return`<div style="padding:8px 12px;border-bottom:1px solid var(--borderL)"><div style="font-size:13px;font-weight:500;margin-bottom:4px">${esc(kw)}</div><div style="display:flex;gap:4px;flex-wrap:wrap">${sorted.map((s,i)=>pill(`${medals[i]} ${s[0]} (${s[1]})`,["BestMobilier","Best Mobilier","Lisa Design"].includes(s[0])?"accent":s[0]==="Cdiscount"?"purple":"default")).join("")}${bmC>0&&!sorted.find(s=>s[0]==="BestMobilier")?pill(`BM: ${bmC}`,"accent"):''}</div></div>`;}).join("")}</div></div>`;
+    <div class="card"><div class="card-title">Leader par catégorie</div><div class="grid-2">${(()=>{
+      // Construire les compteurs depuis STATE.positions (avant dédup) pour avoir les vrais totaux
+      // STATE.keywordData est dédupliqué par (keyword,product_id,seller) ce qui sous-compte Conforama
+      const leaderMap = {};
+      STATE.positions.forEach(p => {
+        const kw = normalizeKeyword(p.keyword);
+        if (!leaderMap[kw]) leaderMap[kw] = {};
+        leaderMap[kw][p.seller] = (leaderMap[kw][p.seller] || 0) + 1;
+      });
+      const medals = ['🥇','🥈','🥉'];
+      return keywords.map(kw => {
+        const sellers = leaderMap[kw] || {};
+        const sorted = Object.entries(sellers).sort((a,b) => b[1]-a[1]).slice(0,3);
+        const bmC = STATE.bmByKeyword[kw] || 0;
+        return `<div style="padding:8px 12px;border-bottom:1px solid var(--borderL)"><div style="font-size:13px;font-weight:500;margin-bottom:4px">${esc(kw)}</div><div style="display:flex;gap:4px;flex-wrap:wrap">${sorted.map((s,i)=>pill(`${medals[i]} ${s[0]} (${s[1]})`,["BestMobilier","Best Mobilier","Lisa Design"].includes(s[0])?"accent":s[0]==="Conforama"?"purple":"default")).join("")}${bmC>0&&!sorted.find(s=>["BestMobilier","Best Mobilier","Lisa Design"].includes(s[0]))?pill(`BM: ${bmC}`,"accent"):''}</div></div>`;
+      }).join("");
+    })()}</div></div>`;
 }
 function showPositionDetail(kw) {
   // Tous les items BM de ce keyword : seller=BestMobilier OU product_id_scraper connu
