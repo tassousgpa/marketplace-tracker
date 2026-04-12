@@ -1238,9 +1238,11 @@ function renderConcurrents() {
 }
 
 function renderCombinedSalesChart(trackedRows, CHART_COLORS) {
-  // Construire les séries par vendeur : { name, color, isBM, monthData: { "2026-03": 1234, ... } }
-  // monthData[mois] = ventes réalisées sur ce mois
-  //   = max(seller_sales du mois) - max(seller_sales du mois précédent ou 1er scrape global)
+  // Pour chaque vendeur : construire les points { month, inc }
+  // inc = seller_sales(point) - seller_sales(1er scrape du mois)
+  // On groupe par mois calendaire, et dans chaque mois on calcule l'incrément
+  // depuis la 1ère valeur du mois (ou la dernière valeur du mois précédent si dispo)
+
   const series = [];
 
   trackedRows.forEach((ts, ci) => {
@@ -1251,47 +1253,53 @@ function renderCombinedSalesChart(trackedRows, CHART_COLORS) {
       const h = (STATE.confoSellerHistory||{})[rn];
       if (h && (!hist || h.length > hist.length)) hist = h;
     });
-    if (!hist || hist.length < 1) return;
+    if (!hist || !hist.length) return;
 
-    // Grouper par mois : garder la valeur MAX de seller_sales par mois
-    const maxByMonth = {};
-    hist.forEach(h => {
-      const month = h.date.slice(0, 7); // "2026-03"
-      if (h.sales == null) return;
-      if (maxByMonth[month] == null || h.sales > maxByMonth[month]) {
-        maxByMonth[month] = h.sales;
-      }
+    // Filtrer les entrées sans sales
+    const validHist = hist.filter(h => h.sales != null);
+    if (!validHist.length) return;
+
+    // Grouper par mois : garder toutes les entrées avec leur date et valeur
+    // monthPoints[mois] = [ {date, sales}, ... ]
+    const monthPoints = {};
+    validHist.forEach(h => {
+      const month = h.date.slice(0, 7);
+      if (!monthPoints[month]) monthPoints[month] = [];
+      monthPoints[month].push({ date: h.date, sales: h.sales });
     });
 
-    const months = Object.keys(maxByMonth).sort();
+    const months = Object.keys(monthPoints).sort();
     if (!months.length) return;
 
-    // Ventes par mois = valeur max du mois - valeur max du mois précédent
-    // Pour le 1er mois : valeur max du mois - valeur du 1er scrape (=0 incrémental)
+    // Pour chaque mois : calculer l'incrément
+    // baseline = dernière valeur du mois précédent, ou 1ère valeur du 1er mois
     const monthData = {};
     months.forEach((m, i) => {
+      const pts = monthPoints[m].sort((a, b) => a.date > b.date ? 1 : -1);
+      const lastVal = pts[pts.length - 1].sales;
+
       if (i === 0) {
-        // Premier mois : on ne peut pas calculer l'incrément sans baseline → on met 0
-        // sauf s'il y a plusieurs scrapes dans ce mois
-        monthData[m] = 0;
+        // 1er mois : baseline = 1ère valeur du mois
+        // incrément = dernière valeur - 1ère valeur (ventes réalisées dans le mois)
+        const firstVal = pts[0].sales;
+        monthData[m] = Math.max(0, lastVal - firstVal);
       } else {
-        const prev = maxByMonth[months[i-1]];
-        const curr = maxByMonth[m];
-        monthData[m] = Math.max(0, curr - prev);
+        // Autres mois : baseline = dernière valeur du mois précédent
+        const prevPts = monthPoints[months[i-1]].sort((a, b) => a.date > b.date ? 1 : -1);
+        const baseline = prevPts[prevPts.length - 1].sales;
+        monthData[m] = Math.max(0, lastVal - baseline);
       }
     });
 
     const isBM = BM_NAMES_SET.has(name) || name === "BestMobilier";
-    series.push({ name, color: CHART_COLORS[ci % CHART_COLORS.length], isBM, monthData });
+    series.push({ name, color: CHART_COLORS[ci % CHART_COLORS.length], isBM, monthData, months });
   });
 
   if (!series.length) return "";
 
-  // Tous les mois couverts
-  const allMonths = [...new Set(series.flatMap(s => Object.keys(s.monthData)))].sort();
-  // Filtrer le 1er mois si toutes les séries y ont 0 (pas d'incrément calculable)
-  const displayMonths = allMonths.filter(m => series.some(s => (s.monthData[m] || 0) > 0));
-  if (!displayMonths.length) return "";
+  // Tous les mois couverts (y compris ceux avec incrément 0 — on les affiche quand même)
+  const allMonths = [...new Set(series.flatMap(s => s.months))].sort();
+  if (!allMonths.length) return "";
 
   const fmtMonth = m => {
     const [y, mo] = m.split("-");
@@ -1300,18 +1308,17 @@ function renderCombinedSalesChart(trackedRows, CHART_COLORS) {
   };
 
   // Dimensions SVG
-  const BAR_W = 18; // largeur d'une barre
-  const BAR_GAP = 4; // espace entre barres d'un même groupe
-  const GROUP_GAP = 24; // espace entre groupes de mois
+  const BAR_W   = 20;
+  const BAR_GAP = 3;
+  const GROUP_GAP = 28;
   const nSeries = series.length;
-  const groupW = nSeries * (BAR_W + BAR_GAP) - BAR_GAP + GROUP_GAP;
+  const groupW  = nSeries * (BAR_W + BAR_GAP) - BAR_GAP + GROUP_GAP;
   const PAD_L = 52, PAD_R = 20, PAD_T = 16, PAD_B = 48;
-  const W = PAD_L + displayMonths.length * groupW + PAD_R;
+  const W = PAD_L + allMonths.length * groupW + PAD_R;
   const H = 220;
   const CH = H - PAD_T - PAD_B;
 
-  // Max global pour l'échelle Y
-  const maxVal = Math.max(...series.flatMap(s => displayMonths.map(m => s.monthData[m] || 0)), 1);
+  const maxVal = Math.max(...series.flatMap(s => allMonths.map(m => s.monthData[m] || 0)), 1);
 
   // Grille Y
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map(r => ({
@@ -1324,24 +1331,24 @@ function renderCombinedSalesChart(trackedRows, CHART_COLORS) {
   ).join("");
 
   // Barres
-  const bars = displayMonths.map((m, mi) => {
+  const bars = allMonths.map((m, mi) => {
     const groupX = PAD_L + mi * groupW;
-    // Label mois centré sous le groupe
     const labelX = groupX + (nSeries * (BAR_W + BAR_GAP) - BAR_GAP) / 2;
-    const label = `<text x="${labelX.toFixed(1)}" y="${(H - 6).toFixed(1)}" text-anchor="middle" fill="#6b6a65" font-size="10" font-weight="500">${fmtMonth(m)}</text>`;
+    const isCurrentMonth = m === new Date().toISOString().slice(0, 7);
+    const monthLabel = fmtMonth(m) + (isCurrentMonth ? " *" : "");
+    const label = `<text x="${labelX.toFixed(1)}" y="${(H - 6).toFixed(1)}" text-anchor="middle" fill="#6b6a65" font-size="10" font-weight="500">${monthLabel}</text>`;
 
     const rects = series.map((s, si) => {
       const val = s.monthData[m] || 0;
       const barH = val > 0 ? Math.max((val / maxVal) * CH, 2) : 0;
       const x = groupX + si * (BAR_W + BAR_GAP);
       const y = PAD_T + CH - barH;
-      const opacity = s.isBM ? "1" : "0.82";
       const stroke = s.isBM ? ` stroke="${s.color}" stroke-width="1.5"` : "";
-      // Valeur au-dessus si assez de place
-      const valueLabel = val > 0 && barH > 14
+      const opacity = s.isBM ? "1" : "0.82";
+      const valLabel = val > 0 && barH > 14
         ? `<text x="${(x + BAR_W/2).toFixed(1)}" y="${(y - 3).toFixed(1)}" text-anchor="middle" fill="${s.color}" font-size="9" font-weight="600">${val >= 1000 ? (val/1000).toFixed(1)+"k" : val}</text>`
         : "";
-      return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${BAR_W}" height="${barH.toFixed(1)}" fill="${s.color}" opacity="${opacity}" rx="2"${stroke}/>${valueLabel}`;
+      return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${BAR_W}" height="${barH.toFixed(1)}" fill="${s.color}" opacity="${opacity}" rx="2"${stroke}/>${valLabel}`;
     }).join("");
 
     return label + rects;
@@ -1356,23 +1363,24 @@ function renderCombinedSalesChart(trackedRows, CHART_COLORS) {
   ).join("");
 
   const svgW = Math.max(W, 400);
+  const noteCurrentMonth = allMonths.some(m => m === new Date().toISOString().slice(0, 7))
+    ? '<div style="font-size:10px;color:var(--txT);margin-top:6px">* Mois en cours — incrément partiel</div>'
+    : "";
 
   return `<div class="card" style="margin-top:14px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
       <div class="card-title" style="margin:0">Ventes mensuelles par acteur</div>
       <div style="display:flex;flex-wrap:wrap;gap:10px">${legend}</div>
     </div>
-    <div style="font-size:11px;color:var(--txT);margin-bottom:8px">Ventes réalisées dans le mois (incrément vs mois précédent). Premier mois exclu (pas de baseline).</div>
+    <div style="font-size:11px;color:var(--txT);margin-bottom:8px">Ventes réalisées dans le mois (incrément depuis début du mois ou fin du mois précédent).</div>
     <div style="overflow-x:auto">
-      <svg viewBox="0 0 ${svgW} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;min-width:${Math.min(svgW,500)}px;display:block">
+      <svg viewBox="0 0 ${svgW} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;min-width:${Math.min(svgW,400)}px;display:block">
         ${yGrid}${bars}
       </svg>
     </div>
+    ${noteCurrentMonth}
   </div>`;
 }
-
-
-
 function openAddCompetitorModal() {
   openModal("Ajouter un concurrent à suivre", `
     <div style="font-size:12px;color:var(--txS);margin-bottom:14px">
