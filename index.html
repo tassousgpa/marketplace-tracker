@@ -398,6 +398,17 @@ async function loadData() {
       keywordData[kw].push({...p, keyword: kw, _product:prod});
     });
 
+    // leaderCounts : comptage brut par (keyword normalisé, seller) pour "Leader par catégorie"
+    // Construit depuis toutes les positions du jour AVANT dédup, avec keyword normalisé
+    const leaderCounts = {};
+    positions
+      .filter(p => p.date && dayKey(p.date) === latestPosDay)
+      .forEach(p => {
+        const kw = normalizeKeyword(p.keyword);
+        if (!leaderCounts[kw]) leaderCounts[kw] = {};
+        leaderCounts[kw][p.seller] = (leaderCounts[kw][p.seller] || 0) + 1;
+      });
+
     // vendorsSorted est maintenant construit depuis seller_stats (p1_count)
     // plus depuis positions — voir buildSellerStatsMap() dans renderConcurrents
     const vendorsSorted = []; // placeholder, remplacé au render
@@ -481,7 +492,7 @@ async function loadData() {
     const posDay = latestPosSession ? latestPosSession.slice(0, 10) : null;
     const positionsOutdated = !posDay || !snapshotDay || posDay < snapshotDay;
 
-    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], tab:STATE.tab||0 };
+    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, leaderCounts, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], tab:STATE.tab||0 };
 
     const sessionDisplay = latestDate ? new Date(latestDate + "T12:00:00Z").toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}) : "N/A";
     document.getElementById("header-subtitle").textContent = `${products.length} produits · Relevé du ${sessionDisplay}`;
@@ -895,17 +906,9 @@ function renderPositions() {
       ${!keywords.length?'<div style="color:var(--txT);font-size:12px;padding:20px;text-align:center">Aucune donnée de position disponible.</div>':''}
     </div>
     <div class="card"><div class="card-title">Leader par catégorie</div><div class="grid-2">${(()=>{
-      // Construire les compteurs depuis STATE.positions (avant dédup) pour avoir les vrais totaux
-      // STATE.keywordData est dédupliqué par (keyword,product_id,seller) ce qui sous-compte Conforama
-      const leaderMap = {};
-      STATE.positions.forEach(p => {
-        const kw = normalizeKeyword(p.keyword);
-        if (!leaderMap[kw]) leaderMap[kw] = {};
-        leaderMap[kw][p.seller] = (leaderMap[kw][p.seller] || 0) + 1;
-      });
       const medals = ['🥇','🥈','🥉'];
       return keywords.map(kw => {
-        const sellers = leaderMap[kw] || {};
+        const sellers = STATE.leaderCounts[kw] || {};
         const sorted = Object.entries(sellers).sort((a,b) => b[1]-a[1]).slice(0,3);
         const bmC = STATE.bmByKeyword[kw] || 0;
         return `<div style="padding:8px 12px;border-bottom:1px solid var(--borderL)"><div style="font-size:13px;font-weight:500;margin-bottom:4px">${esc(kw)}</div><div style="display:flex;gap:4px;flex-wrap:wrap">${sorted.map((s,i)=>pill(`${medals[i]} ${s[0]} (${s[1]})`,["BestMobilier","Best Mobilier","Lisa Design"].includes(s[0])?"accent":s[0]==="Conforama"?"purple":"default")).join("")}${bmC>0&&!sorted.find(s=>["BestMobilier","Best Mobilier","Lisa Design"].includes(s[0]))?pill(`BM: ${bmC}`,"accent"):''}</div></div>`;
@@ -964,8 +967,14 @@ function resolveSellerNames(displayName) {
   const SELLER_NAME_MAP = {
     "Habitat et Jardin": ["Habitat & Jardin", "Habitat et Jardin"],
     "Gutent (KOMHTOM)":  ["Gutent", "Gutent (KOMHTOM)"],
+    "VidaXL":            ["VidaXL", "vidaXL", "Vida XL", "VidaXl", "VIDAXL"],
   };
   if (SELLER_NAME_MAP[displayName]) return SELLER_NAME_MAP[displayName];
+  // Fallback insensible à la casse pour VidaXL et variantes non listées
+  const stats = STATE.sellerStats || [];
+  const lower = displayName.toLowerCase().replace(/[\s\-_]/g, "");
+  const matches = [...new Set(stats.map(s => s.seller).filter(s => s && s.toLowerCase().replace(/[\s\-_]/g, "") === lower))];
+  if (matches.length) return matches;
   return [displayName];
 }
 
