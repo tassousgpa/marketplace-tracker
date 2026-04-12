@@ -1050,19 +1050,25 @@ function getSellerData(displayName) {
       salesFirst12m = first.seller_sales || 0;
     }
 
-    // Croissance vs dernière mesure précédente (current trading trend)
+    // Tendance vs dernier scrape précédent (court terme)
     const yoyDelta = (prev != null && (MARKETPLACE === "amazon" ? prev.seller_ratings_count : prev.seller_sales) != null) ? (() => {
       const prevVal = MARKETPLACE === "amazon" ? (prev.seller_ratings_count || 0) : (prev.seller_sales || 0);
       return prevVal > 0 ? Math.round((salesLatest - prevVal) / prevVal * 100) : null;
     })() : null;
 
-    // Ligne 3 : nombre de sessions de suivi (proxy de la régularité)
+    // Tendance depuis 1er scrape (long terme)
+    const firstVal = MARKETPLACE === "amazon" ? (first.seller_ratings_count || 0) : (first.seller_sales || 0);
+    const yoyDeltaFirst = (allEntries.length >= 2 && firstVal > 0)
+      ? Math.round((salesLatest - firstVal) / firstVal * 100)
+      : null;
+
     const sessionsCount = allEntries.length;
 
     return {
       type: "ltm",
       salesLatest,
       yoyDelta,
+      yoyDeltaFirst,
       sessionsCount,
       p1Latest, p1Avg,
       rating: latest.seller_rating,
@@ -1108,6 +1114,7 @@ function renderConcurrents() {
   const metricRows = [
     { key:"col1", label: isCumul ? "Ventes totales" : (isAmazon ? "Avis (proxy)" : "Ventes LTM") },
     { key:"col2", label: isCumul ? "Variation (dernier scraping)" : "Tendance vs préc." },
+    ...(!isCumul ? [{ key:"col7", label:"Tendance depuis 1er scrape" }] : []),
     ...(isCumul ? [{ key:"col3", label:"Ventes/jour moy." }] : []),
     { key:"col4", label:"Moy. appari. P1" },
     ...(!isCumul ? [{ key:"col5", label:"Best-seller" }] : []),
@@ -1136,6 +1143,9 @@ function renderConcurrents() {
         return d.dailyAvg != null
           ? `<div style="font-size:16px;font-weight:700">${d.dailyAvg.toLocaleString("fr-FR")}</div><div style="font-size:10px;color:var(--txT)">/j moy.</div>`
           : '<span style="color:var(--txT);font-size:11px">—</span>';
+      case "col7":
+        if (d.yoyDeltaFirst == null) return '<span style="color:var(--txT);font-size:11px">1ère mesure</span>';
+        return `${fmtDelta(d.yoyDeltaFirst,"%")}<div style="font-size:10px;color:var(--txT);margin-top:1px">depuis 1er scrape</div>`;
       case "col4":
         return `<div style="font-size:16px;font-weight:700">${d.p1Avg.toLocaleString("fr-FR")}</div><div style="font-size:10px;color:var(--txT)">app. moy.</div>`;
       case "col5": {
