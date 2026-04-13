@@ -96,6 +96,8 @@ tr.stripe{background:var(--bg)}
 </style>
   <!-- Vercel Web Analytics -->
   <script defer src="/_vercel/insights/script.js"></script>
+  <!-- SheetJS pour parsing XLS/XLSX côté client -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -589,7 +591,10 @@ function renderRevenueBlock() {
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
         <div class="card-title" style="margin:0">Chiffre d'affaires</div>
+        <div style="display:flex;gap:8px">
         <button onclick="openRevenueModal()" style="padding:6px 14px;border:.5px solid var(--ac);border-radius:6px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">+ Ajouter une semaine</button>
+        <button onclick="openImportXLSModal()" style="padding:6px 14px;border:.5px solid var(--pu);border-radius:6px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">⬆ Import XLS</button>
+      </div>
       </div>
       <div style="padding:30px;text-align:center;color:var(--txT);font-size:13px">Aucune donnée CA pour ${MARKETPLACE}. Cliquez sur "+ Ajouter" pour saisir la première semaine.</div>
     </div>`;
@@ -1590,6 +1595,267 @@ async function addProduct() {
 async function updateType(dbId,newType){try{await sbUpdate("products",`id=eq.${dbId}`,{type:newType});const p=STATE.products.find(p=>p.id===dbId);if(p)p.type=newType;}catch(e){alert("Erreur : "+e.message);}}
 async function toggleActive(dbId,active){try{await sbUpdate("products",`id=eq.${dbId}`,{active});await loadData();}catch(e){alert("Erreur : "+e.message);}}
 async function deleteProduct(dbId,name){if(!confirm(`Supprimer définitivement "${name}..." ?`))return;try{await sbDelete("products",`id=eq.${dbId}`);await loadData();}catch(e){alert("Erreur : "+e.message);}}
+
+// =============================================
+// IMPORT XLS — CA par marketplace (N vs N-1)
+// =============================================
+
+// Règles de matching marketplace → lignes du fichier XLS
+// Une ligne est attribuée à une marketplace si son nom (lowercase, sans espaces)
+// CONTIENT l'une des clés de matching
+const MP_MATCHING = {
+  cdiscount:      ["cdiscount"],
+  amazon:         ["amazon"],
+  maisonsdumonde: ["maisonsdumonde"],
+  laredoute:      ["laredoute"],
+  conforama:      ["conforama"],
+};
+
+const MP_LABELS = {
+  cdiscount:      "Cdiscount",
+  amazon:         "Amazon",
+  maisonsdumonde: "Maisons du Monde",
+  laredoute:      "La Redoute",
+  conforama:      "Conforama",
+};
+
+const ADMIN_PASSWORD = "sgpa92!";
+
+function openImportXLSModal() {
+  openModal("Import CA par marketplace (XLS)", `
+    <div style="display:grid;gap:14px">
+
+      <div style="background:var(--puBg);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--pu)">
+        Importe les fichiers YTD N et N-1 pour calculer le CA par marketplace.
+        Les données seront stockées dans <b>revenue_imports</b>.
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Période — date début *</label>
+          <input id="imp-start" type="date" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Période — date fin *</label>
+          <input id="imp-end" type="date" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">
+        </div>
+      </div>
+
+      <div style="font-size:11px;color:var(--txT);margin-top:-8px">
+        → N-1 sera automatiquement calculé sur la même période l'année précédente.
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div>
+          <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Fichier N (année en cours) *</label>
+          <input id="imp-file-n" type="file" accept=".xls,.xlsx" style="width:100%;padding:6px;border:.5px solid var(--border);border-radius:6px;font-size:11px;font-family:inherit;background:var(--card)">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Fichier N-1 (année précédente) *</label>
+          <input id="imp-file-n1" type="file" accept=".xls,.xlsx" style="width:100%;padding:6px;border:.5px solid var(--border);border-radius:6px;font-size:11px;font-family:inherit;background:var(--card)">
+        </div>
+      </div>
+
+      <div>
+        <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Label de la période (ex: YTD S15 2026) *</label>
+        <input id="imp-label" placeholder="ex: YTD S15 2026" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">
+      </div>
+
+      <div>
+        <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Mot de passe admin *</label>
+        <input id="imp-pwd" type="password" placeholder="••••••••" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">
+      </div>
+
+      <div id="imp-preview" style="display:none"></div>
+
+      <div style="display:flex;gap:8px">
+        <button onclick="previewImport()" style="flex:1;padding:9px;background:var(--bg);color:var(--tx);border:.5px solid var(--border);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">👁 Prévisualiser</button>
+        <button onclick="confirmImport()" style="flex:2;padding:9px;background:var(--pu);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">⬆ Importer dans Supabase</button>
+      </div>
+      <div id="imp-status" style="font-size:12px;text-align:center;min-height:16px"></div>
+    </div>`);
+
+  // Pré-remplir les dates avec YTD actuel
+  const now = new Date();
+  const yearStart = `${now.getFullYear()}-01-01`;
+  const today = now.toISOString().slice(0,10);
+  document.getElementById("imp-start").value = yearStart;
+  document.getElementById("imp-end").value = today;
+
+  // Auto-générer le label
+  const yr = now.getFullYear();
+  const dayOfYear = Math.floor((now - new Date(yr, 0, 0)) / 86400000);
+  const week = Math.ceil(dayOfYear / 7);
+  document.getElementById("imp-label").value = `YTD S${week} ${yr}`;
+}
+
+// Parse un fichier XLS/XLSX et retourne { marketplace: total }
+async function parseXLSFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const wb = XLSX.read(data, { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+
+        // Agréger par marketplace
+        const totals = {};
+        Object.keys(MP_MATCHING).forEach(mp => totals[mp] = 0);
+
+        rows.forEach(row => {
+          if (!row || !row[0] || !row[1]) return;
+          const label = String(row[0]).toLowerCase().replace(/\s/g, "");
+          const val = parseFloat(String(row[1]).replace(",", "."));
+          if (isNaN(val)) return;
+
+          for (const [mp, keys] of Object.entries(MP_MATCHING)) {
+            if (keys.some(k => label.includes(k))) {
+              totals[mp] += val;
+              break;
+            }
+          }
+        });
+
+        // Arrondir
+        Object.keys(totals).forEach(k => totals[k] = Math.round(totals[k] * 100) / 100);
+        resolve(totals);
+      } catch(e) {
+        reject(e);
+      }
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+let _importData = null; // cache pour confirmImport
+
+async function previewImport() {
+  const statusEl = document.getElementById("imp-status");
+  const previewEl = document.getElementById("imp-preview");
+  statusEl.innerHTML = '<span style="color:var(--txS)">Lecture des fichiers…</span>';
+
+  const fileN  = document.getElementById("imp-file-n")?.files[0];
+  const fileN1 = document.getElementById("imp-file-n1")?.files[0];
+  const start  = document.getElementById("imp-start")?.value;
+  const end    = document.getElementById("imp-end")?.value;
+  const label  = document.getElementById("imp-label")?.value?.trim();
+
+  if (!fileN || !fileN1 || !start || !end || !label) {
+    statusEl.innerHTML = '<span style="color:var(--rd)">Tous les champs sont obligatoires.</span>';
+    return;
+  }
+
+  try {
+    const [totalsN, totalsN1] = await Promise.all([parseXLSFile(fileN), parseXLSFile(fileN1)]);
+
+    // Calculer dates N-1 (même période, -1 an)
+    const startN1 = new Date(start); startN1.setFullYear(startN1.getFullYear() - 1);
+    const endN1   = new Date(end);   endN1.setFullYear(endN1.getFullYear() - 1);
+    const fmtDate = d => d.toLocaleDateString("fr-FR", {day:"2-digit",month:"2-digit",year:"numeric"});
+
+    // Stocker pour confirmImport
+    _importData = { totalsN, totalsN1, start, end, label,
+      startN1: startN1.toISOString().slice(0,10),
+      endN1:   endN1.toISOString().slice(0,10) };
+
+    // Construire tableau de prévisualisation
+    const fmtCA = v => v.toLocaleString("fr-FR", {minimumFractionDigits:0, maximumFractionDigits:0}) + " €";
+    const rows = Object.keys(MP_MATCHING).map(mp => {
+      const n  = totalsN[mp]  || 0;
+      const n1 = totalsN1[mp] || 0;
+      const evol = n1 > 0 ? Math.round((n - n1) / n1 * 100) : null;
+      const evolHtml = evol != null
+        ? `<span style="color:${evol>=0?'var(--gn)':'var(--rd)'};font-weight:600">${evol>=0?'+':''}${evol}%</span>`
+        : '—';
+      return `<tr style="border-bottom:1px solid var(--borderL)">
+        <td style="padding:6px 10px;font-weight:500">${MP_LABELS[mp]}</td>
+        <td style="padding:6px 10px;text-align:right;font-weight:600">${fmtCA(n)}</td>
+        <td style="padding:6px 10px;text-align:right;color:var(--txS)">${fmtCA(n1)}</td>
+        <td style="padding:6px 10px;text-align:center">${evolHtml}</td>
+      </tr>`;
+    }).join("");
+
+    previewEl.style.display = "block";
+    previewEl.innerHTML = `
+      <div style="font-size:12px;color:var(--txS);margin-bottom:6px">
+        Période N : <b>${fmtDate(new Date(start))} → ${fmtDate(new Date(end))}</b> &nbsp;|&nbsp;
+        Période N-1 : <b>${fmtDate(startN1)} → ${fmtDate(endN1)}</b>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="background:var(--bg);border-bottom:1px solid var(--border)">
+            <th style="padding:6px 10px;text-align:left">Marketplace</th>
+            <th style="padding:6px 10px;text-align:right">N</th>
+            <th style="padding:6px 10px;text-align:right">N-1</th>
+            <th style="padding:6px 10px;text-align:center">Évol.</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+
+    statusEl.innerHTML = '<span style="color:var(--gn)">✓ Prévisualisation prête — vérifiez puis cliquez Importer.</span>';
+  } catch(e) {
+    statusEl.innerHTML = `<span style="color:var(--rd)">Erreur lecture fichier : ${e.message}</span>`;
+  }
+}
+
+async function confirmImport() {
+  const statusEl = document.getElementById("imp-status");
+  const pwd = document.getElementById("imp-pwd")?.value;
+
+  if (pwd !== ADMIN_PASSWORD) {
+    statusEl.innerHTML = '<span style="color:var(--rd)">❌ Mot de passe incorrect.</span>';
+    return;
+  }
+
+  if (!_importData) {
+    statusEl.innerHTML = '<span style="color:var(--am)">⚠ Lancez d'abord la prévisualisation.</span>';
+    return;
+  }
+
+  statusEl.innerHTML = '<span style="color:var(--txS)">Insertion dans Supabase…</span>';
+
+  const { totalsN, totalsN1, start, end, label, startN1, endN1 } = _importData;
+  const rows = [];
+
+  Object.keys(MP_MATCHING).forEach(mp => {
+    if (totalsN[mp] > 0) rows.push({
+      period_label: label, period_start: start, period_end: end,
+      year_type: "N", marketplace: mp, revenue: totalsN[mp]
+    });
+    if (totalsN1[mp] > 0) rows.push({
+      period_label: label, period_start: startN1, period_end: endN1,
+      year_type: "N-1", marketplace: mp, revenue: totalsN1[mp]
+    });
+  });
+
+  try {
+    // Supprimer les entrées existantes pour ce label (éviter doublons si réimport)
+    await sbDelete("revenue_imports", `period_label=eq.${encodeURIComponent(label)}`);
+
+    // Insérer toutes les lignes
+    const r = await fetch(`${SB_URL}/rest/v1/revenue_imports`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: SB_KEY,
+        Authorization: `Bearer ${SB_KEY}`,
+        Prefer: "return=minimal"
+      },
+      body: JSON.stringify(rows)
+    });
+    if (!r.ok) { const t = await r.text(); throw new Error(`${r.status}: ${t}`); }
+
+    statusEl.innerHTML = `<span style="color:var(--gn)">✓ ${rows.length} lignes importées pour "${label}".</span>`;
+    _importData = null;
+    setTimeout(() => { closeModal(); loadData(); }, 1200);
+  } catch(e) {
+    statusEl.innerHTML = `<span style="color:var(--rd)">Erreur : ${e.message}</span>`;
+  }
+}
 
 // Init
 loadScrapingIndicators();
