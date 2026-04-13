@@ -590,8 +590,9 @@ function renderRevenueBlock() {
   const entries = (STATE.revenueEntries || []).slice().sort((a,b) => a.week_start_date > b.week_start_date ? 1 : -1);
   const hasAnyData = imports.length > 0 || entries.length > 0;
   const now = new Date();
+
   const fmtCA = v => {
-    if (v == null || isNaN(v)) return "—";
+    if (v == null || isNaN(v) || v === 0) return "—";
     if (Math.abs(v) >= 1000000) return (v/1000000).toFixed(2).replace(".",",") + "M€";
     if (Math.abs(v) >= 1000) return (v/1000).toFixed(1).replace(".",",") + "k€";
     return Math.round(v) + "€";
@@ -600,7 +601,12 @@ function renderRevenueBlock() {
     if (!n1 || n1 === 0) return "";
     const pct = Math.round((n - n1) / n1 * 100);
     const color = pct >= 0 ? "var(--gn)" : "var(--rd)";
-    return `<span style="font-size:11px;font-weight:600;color:${color};margin-left:6px">${pct>=0?"+":""}${pct}%</span>`;
+    return `<span style="font-size:15px;font-weight:700;color:${color}">${pct>=0?"+":""}${pct}%</span>`;
+  };
+  const fmtMonthLabel = m => {
+    const [y, mo] = m.split("-");
+    const names = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
+    return names[parseInt(mo)-1] + " " + y;
   };
 
   const btnRow = `<div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -620,214 +626,145 @@ function renderRevenueBlock() {
   }
 
   // ── YTD ─────────────────────────────────────────────────────────────
-  // Prendre le YTD le plus récent (period_label le plus récent parmi les imports sans "S" suivi de chiffres seuls)
-  // On distingue YTD vs semaine par la durée : YTD = period_end - period_start > 14 jours
-  const ytdImports = imports.filter(i => {
-    const days = (new Date(i.period_end) - new Date(i.period_start)) / 86400000;
-    return days > 14;
-  });
-  // Grouper par period_label, prendre le plus récent
+  const ytdImports = imports.filter(i => (new Date(i.period_end) - new Date(i.period_start)) / 86400000 > 14);
   const ytdLabels = [...new Set(ytdImports.map(i => i.period_label))];
   const latestYtdLabel = ytdLabels.sort().pop();
-  const ytdN  = ytdImports.filter(i => i.period_label === latestYtdLabel && i.year_type === "N");
-  const ytdN1 = ytdImports.filter(i => i.period_label === latestYtdLabel && i.year_type === "N-1");
-  const ytdRevN  = ytdN.reduce((s,i) => s + (i.revenue||0), 0);
-  const ytdRevN1 = ytdN1.reduce((s,i) => s + (i.revenue||0), 0);
+  const ytdRevN  = ytdImports.filter(i => i.period_label === latestYtdLabel && i.year_type === "N").reduce((s,i) => s+(i.revenue||0), 0);
+  const ytdRevN1 = ytdImports.filter(i => i.period_label === latestYtdLabel && i.year_type === "N-1").reduce((s,i) => s+(i.revenue||0), 0);
 
   // ── SEMAINES ────────────────────────────────────────────────────────
-  // Imports semaine (durée ≤ 14 jours) + saisies manuelles revenue_entries
-  const weekImportsN = imports.filter(i => {
-    const days = (new Date(i.period_end) - new Date(i.period_start)) / 86400000;
-    return days <= 14 && i.year_type === "N";
-  }).sort((a,b) => a.period_start > b.period_start ? 1 : -1);
+  const weekImportsN  = imports.filter(i => (new Date(i.period_end)-new Date(i.period_start))/86400000 <= 14 && i.year_type === "N").sort((a,b) => a.period_start>b.period_start?1:-1);
+  const weekImportsN1 = imports.filter(i => (new Date(i.period_end)-new Date(i.period_start))/86400000 <= 14 && i.year_type === "N-1");
 
-  const weekImportsN1 = imports.filter(i => {
-    const days = (new Date(i.period_end) - new Date(i.period_start)) / 86400000;
-    return days <= 14 && i.year_type === "N-1";
-  });
-
-  // Combiner imports semaine + saisies manuelles pour les semaines N
-  // Saisies manuelles = revenue_entries
   const allWeeks = [
-    ...weekImportsN.map(i => ({
-      label: i.period_label,
-      rev: i.revenue,
-      start: i.period_start,
-      end: i.period_end,
-      source: "import"
-    })),
-    ...entries.map(e => ({
-      label: e.week_label,
-      rev: e.revenue,
-      start: e.week_start_date,
-      end: e.week_start_date,
-      source: "manual"
-    }))
-  ].sort((a,b) => a.start > b.start ? 1 : -1);
+    ...weekImportsN.map(i => ({ label: i.period_label, rev: i.revenue, start: i.period_start, end: i.period_end, source: "import" })),
+    ...entries.map(e => ({ label: e.week_label, rev: e.revenue, start: e.week_start_date, end: e.week_start_date, source: "manual" }))
+  ].sort((a,b) => a.start>b.start?1:-1);
 
   // ── MOIS ─────────────────────────────────────────────────────────────
-  // Calculer le CA par mois depuis les semaines N
-  // Pour les semaines à cheval : prorata nb jours dans le mois
-  const monthRevs = {};
+  const monthRevs = {}, monthRevsN1 = {};
   allWeeks.forEach(w => {
-    const wStart = new Date(w.start);
-    const wEnd   = w.end ? new Date(w.end) : new Date(w.start);
-    const totalDays = Math.max(1, Math.round((wEnd - wStart) / 86400000) + 1);
-
-    // Parcourir chaque jour de la semaine
+    const wStart = new Date(w.start), wEnd = w.end ? new Date(w.end) : new Date(w.start);
+    const totalDays = Math.max(1, Math.round((wEnd-wStart)/86400000)+1);
     let d = new Date(wStart);
     while (d <= wEnd) {
-      const month = d.toISOString().slice(0, 7);
-      if (!monthRevs[month]) monthRevs[month] = 0;
-      monthRevs[month] += (w.rev / totalDays);
-      d.setDate(d.getDate() + 1);
+      const m = d.toISOString().slice(0,7);
+      monthRevs[m] = (monthRevs[m]||0) + w.rev/totalDays;
+      d.setDate(d.getDate()+1);
     }
   });
-  // Arrondir
-  Object.keys(monthRevs).forEach(m => monthRevs[m] = Math.round(monthRevs[m]));
-
-  // N-1 par mois : même logique depuis weekImportsN1
-  const monthRevsN1 = {};
   weekImportsN1.forEach(w => {
-    const wStart = new Date(w.period_start);
-    const wEnd   = new Date(w.period_end);
-    const totalDays = Math.max(1, Math.round((wEnd - wStart) / 86400000) + 1);
+    const wStart = new Date(w.period_start), wEnd = new Date(w.period_end);
+    const totalDays = Math.max(1, Math.round((wEnd-wStart)/86400000)+1);
     let d = new Date(wStart);
     while (d <= wEnd) {
-      const month = d.toISOString().slice(0, 7);
-      if (!monthRevsN1[month]) monthRevsN1[month] = 0;
-      monthRevsN1[month] += (w.revenue / totalDays);
-      d.setDate(d.getDate() + 1);
+      const m = d.toISOString().slice(0,7);
+      monthRevsN1[m] = (monthRevsN1[m]||0) + w.revenue/totalDays;
+      d.setDate(d.getDate()+1);
     }
   });
+  Object.keys(monthRevs).forEach(m => monthRevs[m] = Math.round(monthRevs[m]));
   Object.keys(monthRevsN1).forEach(m => monthRevsN1[m] = Math.round(monthRevsN1[m]));
 
-  const curMonth = now.toISOString().slice(0, 7);
+  const curMonth = now.toISOString().slice(0,7);
   const caMonthN  = monthRevs[curMonth] || 0;
-  // N-1 mois : même mois l'année précédente
-  const curMonthN1 = `${now.getFullYear()-1}-${String(now.getMonth()+1).padStart(2,"0")}`;
-  const caMonthN1 = monthRevsN1[curMonthN1] || 0;
+  const curMonthN1key = `${now.getFullYear()-1}-${String(now.getMonth()+1).padStart(2,"0")}`;
+  const caMonthN1 = monthRevsN1[curMonthN1key] || 0;
 
-  // Dernière semaine
-  const lastWeek   = allWeeks[allWeeks.length-1];
-  const prevWeek   = allWeeks.length >= 2 ? allWeeks[allWeeks.length-2] : null;
-  // N-1 dernière semaine : chercher import N-1 avec même period_label
-  const lastWeekN1 = lastWeek
-    ? weekImportsN1.find(i => i.period_label === lastWeek.label)
-    : null;
+  const lastWeek  = allWeeks[allWeeks.length-1];
   const lastRevN  = lastWeek?.rev || 0;
-  const lastRevN1 = lastWeekN1?.revenue || null;
+  const lastWeekN1 = lastWeek ? weekImportsN1.find(i => i.period_label === lastWeek.label) : null;
+  const lastRevN1 = lastWeekN1?.revenue || 0;
 
-  // Variation semaine vs S-1
-  const varVsPrev = (prevWeek && prevWeek.rev > 0)
-    ? Math.round((lastRevN - prevWeek.rev) / prevWeek.rev * 100)
-    : null;
-
-  const fmtMonthLabel = m => {
-    const [y, mo] = m.split("-");
-    const names = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
-    return names[parseInt(mo)-1] + " " + y;
+  // ── KPI card helper ──────────────────────────────────────────────────
+  const kpiCard = (title, n, n1, sublabel) => {
+    const pct = (n && n1 && n1 > 0) ? Math.round((n-n1)/n1*100) : null;
+    const pctColor = pct != null ? (pct >= 0 ? "var(--gn)" : "var(--rd)") : "";
+    return `<div style="background:var(--bg);border-radius:10px;padding:14px 16px">
+      <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">${title}</div>
+      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+        <div style="font-size:22px;font-weight:700;color:var(--ac)">${fmtCA(n)}</div>
+        ${n1 > 0 ? `<div style="color:var(--borderL);font-size:18px;font-weight:300">|</div>
+        <div style="font-size:16px;font-weight:600;color:var(--txS)">${fmtCA(n1)}</div>
+        ${pct != null ? `<div style="font-size:15px;font-weight:700;color:${pctColor}">${pct>=0?"+":""}${pct}%</div>` : ""}` : ""}
+      </div>
+      <div style="font-size:11px;color:var(--txT);margin-top:5px;font-style:italic">${sublabel}</div>
+    </div>`;
   };
 
-  // Graphique barres semaines
-  const maxRev = Math.max(...allWeeks.map(w => w.rev), 1);
+  const weekSublabel = lastWeek ? lastWeek.label + (lastWeekN1 ? ` · N-1 : ${lastWeek.label}` : "") : "";
+  const monthSublabel = fmtMonthLabel(curMonth) + (caMonthN1 > 0 ? ` · N-1 : ${fmtMonthLabel(curMonthN1key)}` : "");
+  const ytdSublabel = latestYtdLabel || "YTD";
+
+  // ── Tableau mois ─────────────────────────────────────────────────────
+  const monthRows = Object.entries(monthRevs).sort(([a],[b]) => a>b?1:-1).map(([m, rev], i) => {
+    const n1key = `${parseInt(m.slice(0,4))-1}-${m.slice(5,7)}`;
+    const revN1 = monthRevsN1[n1key] || 0;
+    const pct = revN1 > 0 ? Math.round((rev-revN1)/revN1*100) : null;
+    const pctHtml = pct != null ? `<span style="font-weight:600;color:${pct>=0?"var(--gn)":"var(--rd)"}">${pct>=0?"+":""}${pct}%</span>` : "—";
+    return `<tr class="${i%2?"stripe":""}">
+      <td style="font-weight:500">${fmtMonthLabel(m)}</td>
+      <td style="text-align:right;font-weight:600">${fmtCA(rev)}</td>
+      <td style="text-align:right;color:var(--txS)">${revN1>0?fmtCA(revN1):"—"}</td>
+      <td style="text-align:center">${pctHtml}</td>
+    </tr>`;
+  }).join("");
+
+  // ── Tableau semaines ─────────────────────────────────────────────────
+  const weekRows = allWeeks.slice().reverse().map((w, i) => {
+    const n1 = weekImportsN1.find(x => x.period_label === w.label);
+    const n1Rev = n1?.revenue || null;
+    const pct = (n1Rev && n1Rev > 0) ? Math.round((w.rev-n1Rev)/n1Rev*100) : null;
+    const pctHtml = pct != null ? `<span style="font-weight:600;color:${pct>=0?"var(--gn)":"var(--rd)"}">${pct>=0?"+":""}${pct}%</span>` : "—";
+    const deleteBtn = w.source === "manual"
+      ? `<button onclick="deleteRevenue('${esc(w.label)}')" style="padding:2px 8px;border-radius:5px;border:.5px solid var(--rd);background:var(--rdBg);color:var(--rd);font-size:11px;cursor:pointer;font-family:inherit">Suppr.</button>`
+      : `<button onclick="deleteImportWeek('${esc(w.label)}')" style="padding:2px 8px;border-radius:5px;border:.5px solid var(--rd);background:var(--rdBg);color:var(--rd);font-size:11px;cursor:pointer;font-family:inherit">Suppr.</button>`;
+    return `<tr class="${i%2?"stripe":""}">
+      <td style="font-weight:500">${esc(w.label)}</td>
+      <td style="color:var(--txS)">${w.start||""}</td>
+      <td style="text-align:right;font-weight:600">${fmtCA(w.rev)}</td>
+      <td style="text-align:right;color:var(--txS)">${n1Rev!=null?fmtCA(n1Rev):"—"}</td>
+      <td style="text-align:center">${pctHtml}</td>
+      <td style="text-align:center">${deleteBtn}</td>
+    </tr>`;
+  }).join("");
 
   return `
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
-      <div style="display:flex;align-items:center;gap:10px">
-        <div class="card-title" style="margin:0">Chiffre d'affaires</div>
-        ${varVsPrev != null ? `<span style="font-size:12px;font-weight:600;color:${varVsPrev>=0?"var(--gn)":"var(--rd)"}">${varVsPrev>=0?"+":""}${varVsPrev}% vs S-1</span>` : ""}
-      </div>
+      <div class="card-title" style="margin:0">Chiffre d'affaires</div>
       ${btnRow}
     </div>
 
-    <!-- KPIs : 3 granularités -->
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px">
-
-      <!-- Dernière semaine -->
-      <div style="background:var(--bg);border-radius:8px;padding:12px 14px">
-        <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Dernière semaine</div>
-        <div style="font-size:22px;font-weight:700;color:var(--ac)">${fmtCA(lastRevN)}</div>
-        ${lastWeek ? `<div style="font-size:11px;color:var(--txT);margin-top:2px">${lastWeek.label}</div>` : ""}
-        ${lastRevN1 != null ? `<div style="font-size:11px;margin-top:4px">N-1 : <b>${fmtCA(lastRevN1)}</b>${fmtPct(lastRevN, lastRevN1)}</div>` : ""}
-      </div>
-
-      <!-- Mois en cours -->
-      <div style="background:var(--bg);border-radius:8px;padding:12px 14px">
-        <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Mois en cours</div>
-        <div style="font-size:22px;font-weight:700">${fmtCA(caMonthN)}</div>
-        <div style="font-size:11px;color:var(--txT);margin-top:2px">${fmtMonthLabel(curMonth)}</div>
-        ${caMonthN1 > 0 ? `<div style="font-size:11px;margin-top:4px">N-1 : <b>${fmtCA(caMonthN1)}</b>${fmtPct(caMonthN, caMonthN1)}</div>` : ""}
-      </div>
-
-      <!-- YTD -->
-      <div style="background:var(--bg);border-radius:8px;padding:12px 14px">
-        <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">YTD ${latestYtdLabel ? `(${latestYtdLabel})` : ""}</div>
-        <div style="font-size:22px;font-weight:700">${fmtCA(ytdRevN)}</div>
-        ${ytdRevN1 > 0 ? `<div style="font-size:11px;margin-top:4px">N-1 : <b>${fmtCA(ytdRevN1)}</b>${fmtPct(ytdRevN, ytdRevN1)}</div>` : ""}
-      </div>
-
+    <!-- 3 KPIs -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
+      ${kpiCard("Dernière semaine", lastRevN, lastRevN1, lastWeek?.label || "—")}
+      ${kpiCard("Mois en cours", caMonthN, caMonthN1, monthSublabel)}
+      ${kpiCard("YTD", ytdRevN, ytdRevN1, ytdSublabel)}
     </div>
 
-    <!-- Graphique barres hebdo -->
-    ${allWeeks.length > 0 ? `
-    <div style="font-size:12px;font-weight:600;color:var(--txS);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em">CA hebdomadaire</div>
-    <div style="overflow-x:auto">
-      <div style="display:flex;gap:6px;align-items:flex-end;min-width:${Math.max(allWeeks.length*56,300)}px;height:80px;padding:0 2px">
-        ${allWeeks.slice(-20).map((w,i,arr) => {
-          const pct = Math.max(Math.round((w.rev/maxRev)*100), 4);
-          const isLast = i === arr.length-1;
-          return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:48px">
-            <div style="font-size:10px;font-weight:600;color:${isLast?"var(--ac)":"var(--txS)"}">${fmtCA(w.rev)}</div>
-            <div style="width:100%;height:${pct}%;background:${isLast?"var(--ac)":"var(--borderL)"};border-radius:3px 3px 0 0;min-height:3px;border:.5px solid ${isLast?"var(--ac)":"var(--border)"}"></div>
-            <div style="font-size:10px;color:var(--txT);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:52px;text-align:center">${w.label}</div>
-          </div>`;
-        }).join("")}
-      </div>
-    </div>` : ""}
-
-    <!-- Détail mois -->
-    ${Object.keys(monthRevs).length > 0 ? `
-    <div style="margin-top:14px;border-top:1px solid var(--borderL);padding-top:12px">
-      <div style="font-size:12px;font-weight:600;color:var(--txS);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Détail par mois</div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px">
-        ${Object.entries(monthRevs).sort(([a],[b]) => a>b?1:-1).map(([m, rev]) => {
-          const n1key = `${parseInt(m.slice(0,4))-1}-${m.slice(5,7)}`;
-          const revN1 = monthRevsN1[n1key] || 0;
-          return `<div style="background:var(--bg);border-radius:8px;padding:10px 14px;min-width:130px">
-            <div style="font-size:11px;color:var(--txS);margin-bottom:4px">${fmtMonthLabel(m)}</div>
-            <div style="font-size:16px;font-weight:700">${fmtCA(rev)}</div>
-            ${revN1 > 0 ? `<div style="font-size:11px;color:var(--txT);margin-top:2px">N-1 : ${fmtCA(revN1)}${fmtPct(rev, revN1)}</div>` : ""}
-          </div>`;
-        }).join("")}
-      </div>
-    </div>` : ""}
-
-    <!-- Historique semaines (collapsible) -->
-    <div style="margin-top:10px;border-top:1px solid var(--borderL);padding-top:10px">
+    <!-- Détail par mois (déroulant) -->
+    ${monthRows ? `<div style="border-top:1px solid var(--borderL);padding-top:10px;margin-bottom:8px">
       <details style="font-size:12px">
-        <summary style="cursor:pointer;color:var(--txS);font-weight:500;margin-bottom:6px">Toutes les semaines (${allWeeks.length})</summary>
+        <summary style="cursor:pointer;color:var(--txS);font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Détail par mois (${Object.keys(monthRevs).length})</summary>
+        <div class="scroll-table"><table style="min-width:360px">
+          <thead><tr style="background:var(--bg);border-bottom:1px solid var(--border)">
+            <th>Mois</th><th style="text-align:right">CA N</th><th style="text-align:right">CA N-1</th><th style="text-align:center">Évol.</th>
+          </tr></thead>
+          <tbody>${monthRows}</tbody>
+        </table></div>
+      </details>
+    </div>` : ""}
+
+    <!-- Toutes les semaines (déroulant) -->
+    <div style="border-top:1px solid var(--borderL);padding-top:10px">
+      <details style="font-size:12px">
+        <summary style="cursor:pointer;color:var(--txS);font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Toutes les semaines (${allWeeks.length})</summary>
         <div class="scroll-table"><table style="min-width:400px">
           <thead><tr style="background:var(--bg);border-bottom:1px solid var(--border)">
             <th>Semaine</th><th>Début</th><th style="text-align:right">CA N</th><th style="text-align:right">CA N-1</th><th style="text-align:center">Évol.</th><th style="text-align:center">Actions</th>
           </tr></thead>
-          <tbody>${allWeeks.slice().reverse().map((w,i) => {
-            const n1 = weekImportsN1.find(x => x.period_label === w.label);
-            const n1Rev = n1?.revenue || null;
-            const evolHtml = (n1Rev && n1Rev > 0) ? fmtPct(w.rev, n1Rev) : "—";
-            const deleteBtn = w.source === "manual"
-              ? `<button onclick="deleteRevenue('${w.label}')" style="padding:2px 8px;border-radius:5px;border:.5px solid var(--rd);background:var(--rdBg);color:var(--rd);font-size:11px;cursor:pointer;font-family:inherit">Suppr.</button>`
-              : `<button onclick="deleteImportWeek('${w.label}')" style="padding:2px 8px;border-radius:5px;border:.5px solid var(--rd);background:var(--rdBg);color:var(--rd);font-size:11px;cursor:pointer;font-family:inherit">Suppr.</button>`;
-            return `<tr class="${i%2?"stripe":""}">
-              <td style="font-weight:500">${esc(w.label)}</td>
-              <td style="color:var(--txS)">${w.start||""}</td>
-              <td style="text-align:right;font-weight:600">${fmtCA(w.rev)}</td>
-              <td style="text-align:right;color:var(--txS)">${n1Rev != null ? fmtCA(n1Rev) : "—"}</td>
-              <td style="text-align:center">${evolHtml}</td>
-              <td style="text-align:center">${deleteBtn}</td>
-            </tr>`;
-          }).join("")}</tbody>
+          <tbody>${weekRows}</tbody>
         </table></div>
       </details>
     </div>
