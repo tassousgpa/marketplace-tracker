@@ -307,7 +307,7 @@ async function loadData() {
     // Évite le problème de la limite 5000 qui tronquerait les premiers keywords.
     // La table positions ne contient que le dernier run (purge côté scraper avant chaque session)
     // → select * sans filtre ni limite, requête simple et fiable
-    const [products, allProducts, snapshots, positions, sellerStats, revenueEntries, trackedSellers] = await Promise.all([
+    const [products, allProducts, snapshots, positions, sellerStats, revenueEntries, trackedSellers, revenueImports] = await Promise.all([
       sb("products", `marketplace=eq.${MARKETPLACE}&active=eq.true&select=*&order=product_id`),
       sb("products", `marketplace=eq.${MARKETPLACE}&select=*&order=product_id`),
       sb("product_snapshots", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=5000`),
@@ -315,6 +315,7 @@ async function loadData() {
       sb("seller_stats", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=2000`),
       sb("revenue_entries", `marketplace=eq.${MARKETPLACE}&select=*&order=week_start_date.asc`).catch(()=>[]),
       sb("tracked_sellers", `marketplace=eq.${MARKETPLACE}&active=eq.true&select=*&order=id.asc`).catch(()=>[]),
+      sb("revenue_imports", `marketplace=eq.${MARKETPLACE}&select=*&order=period_start.asc`).catch(()=>[]),
     ]);
 
     // Mettre à jour le cache de scraping avec les données fraîchement chargées
@@ -494,7 +495,7 @@ async function loadData() {
     const posDay = latestPosSession ? latestPosSession.slice(0, 10) : null;
     const positionsOutdated = !posDay || !snapshotDay || posDay < snapshotDay;
 
-    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, leaderCounts, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], tab:STATE.tab||0 };
+    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, leaderCounts, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], revenueImports: revenueImports||[], tab:STATE.tab||0 };
 
     const sessionDisplay = latestDate ? new Date(latestDate + "T12:00:00Z").toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}) : "N/A";
     document.getElementById("header-subtitle").textContent = `${products.length} produits · Relevé du ${sessionDisplay}`;
@@ -585,98 +586,253 @@ function showVariation(tag) {
 // BLOC CA (Synthèse)
 // =============================================
 function renderRevenueBlock() {
+  const imports = (STATE.revenueImports || []);
   const entries = (STATE.revenueEntries || []).slice().sort((a,b) => a.week_start_date > b.week_start_date ? 1 : -1);
-  if (!entries.length) {
-    return `
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+  const hasAnyData = imports.length > 0 || entries.length > 0;
+  const now = new Date();
+  const fmtCA = v => {
+    if (v == null || isNaN(v)) return "—";
+    if (Math.abs(v) >= 1000000) return (v/1000000).toFixed(2).replace(".",",") + "M€";
+    if (Math.abs(v) >= 1000) return (v/1000).toFixed(1).replace(".",",") + "k€";
+    return Math.round(v) + "€";
+  };
+  const fmtPct = (n, n1) => {
+    if (!n1 || n1 === 0) return "";
+    const pct = Math.round((n - n1) / n1 * 100);
+    const color = pct >= 0 ? "var(--gn)" : "var(--rd)";
+    return `<span style="font-size:11px;font-weight:600;color:${color};margin-left:6px">${pct>=0?"+":""}${pct}%</span>`;
+  };
+
+  const btnRow = `<div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button onclick="openRevenueModal()" style="padding:6px 14px;border:.5px solid var(--ac);border-radius:6px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">+ Semaine manuelle</button>
+    <button onclick="openImportXLSModal('ytd')" style="padding:6px 14px;border:.5px solid var(--pu);border-radius:6px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">⬆ Import YTD</button>
+    <button onclick="openImportXLSModal('week')" style="padding:6px 14px;border:.5px solid var(--am);border-radius:6px;font-size:12px;background:var(--amBg);color:var(--am);cursor:pointer;font-weight:600;font-family:inherit">⬆ Import Semaine</button>
+  </div>`;
+
+  if (!hasAnyData) {
+    return `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
         <div class="card-title" style="margin:0">Chiffre d'affaires</div>
-        <div style="display:flex;gap:8px">
-        <button onclick="openRevenueModal()" style="padding:6px 14px;border:.5px solid var(--ac);border-radius:6px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">+ Ajouter une semaine</button>
-        <button onclick="openImportXLSModal()" style="padding:6px 14px;border:.5px solid var(--pu);border-radius:6px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">⬆ Import XLS</button>
+        ${btnRow}
       </div>
-      </div>
-      <div style="padding:30px;text-align:center;color:var(--txT);font-size:13px">Aucune donnée CA pour ${MARKETPLACE}. Cliquez sur "+ Ajouter" pour saisir la première semaine.</div>
+      <div style="padding:30px;text-align:center;color:var(--txT);font-size:13px">Aucune donnée CA. Importez un fichier XLS ou saisissez une semaine manuellement.</div>
     </div>`;
   }
 
-  // CA hebdo
-  const weeks = entries.map(e => ({ label: e.week_label, rev: e.revenue, date: e.week_start_date }));
+  // ── YTD ─────────────────────────────────────────────────────────────
+  // Prendre le YTD le plus récent (period_label le plus récent parmi les imports sans "S" suivi de chiffres seuls)
+  // On distingue YTD vs semaine par la durée : YTD = period_end - period_start > 14 jours
+  const ytdImports = imports.filter(i => {
+    const days = (new Date(i.period_end) - new Date(i.period_start)) / 86400000;
+    return days > 14;
+  });
+  // Grouper par period_label, prendre le plus récent
+  const ytdLabels = [...new Set(ytdImports.map(i => i.period_label))];
+  const latestYtdLabel = ytdLabels.sort().pop();
+  const ytdN  = ytdImports.filter(i => i.period_label === latestYtdLabel && i.year_type === "N");
+  const ytdN1 = ytdImports.filter(i => i.period_label === latestYtdLabel && i.year_type === "N-1");
+  const ytdRevN  = ytdN.reduce((s,i) => s + (i.revenue||0), 0);
+  const ytdRevN1 = ytdN1.reduce((s,i) => s + (i.revenue||0), 0);
 
-  // CA cumulé du mois en cours
-  const now = new Date();
-  const curMonth = now.toISOString().slice(0, 7); // "YYYY-MM"
-  const monthEntries = entries.filter(e => (e.week_start_date || "").slice(0, 7) === curMonth);
-  const caMonth = monthEntries.reduce((s, e) => s + (e.revenue || 0), 0);
+  // ── SEMAINES ────────────────────────────────────────────────────────
+  // Imports semaine (durée ≤ 14 jours) + saisies manuelles revenue_entries
+  const weekImportsN = imports.filter(i => {
+    const days = (new Date(i.period_end) - new Date(i.period_start)) / 86400000;
+    return days <= 14 && i.year_type === "N";
+  }).sort((a,b) => a.period_start > b.period_start ? 1 : -1);
 
-  // CA YTD : depuis 1er janvier de l'année courante
-  const yearStart = `${now.getFullYear()}-01-01`;
-  const ytdEntries = entries.filter(e => (e.week_start_date || "") >= yearStart);
-  const caYTD = ytdEntries.reduce((s, e) => s + (e.revenue || 0), 0);
+  const weekImportsN1 = imports.filter(i => {
+    const days = (new Date(i.period_end) - new Date(i.period_start)) / 86400000;
+    return days <= 14 && i.year_type === "N-1";
+  });
 
-  const fmtCA = v => v >= 1000 ? (v/1000).toFixed(1).replace(".",",")+"k€" : v+"€";
-  const maxRev = Math.max(...weeks.map(w => w.rev), 1);
+  // Combiner imports semaine + saisies manuelles pour les semaines N
+  // Saisies manuelles = revenue_entries
+  const allWeeks = [
+    ...weekImportsN.map(i => ({
+      label: i.period_label,
+      rev: i.revenue,
+      start: i.period_start,
+      end: i.period_end,
+      source: "import"
+    })),
+    ...entries.map(e => ({
+      label: e.week_label,
+      rev: e.revenue,
+      start: e.week_start_date,
+      end: e.week_start_date,
+      source: "manual"
+    }))
+  ].sort((a,b) => a.start > b.start ? 1 : -1);
 
-  // Variation hebdo (dernière semaine vs avant-dernière)
-  let varHtml = "";
-  if (weeks.length >= 2) {
-    const last = weeks[weeks.length-1].rev, prev2 = weeks[weeks.length-2].rev;
-    const pct = prev2 > 0 ? Math.round((last-prev2)/prev2*100) : null;
-    if (pct !== null) varHtml = `<span style="font-size:12px;font-weight:600;color:${pct>=0?'var(--gn)':'var(--rd)'};margin-left:8px">${pct>=0?'+':''}${pct}% vs S-1</span>`;
-  }
+  // ── MOIS ─────────────────────────────────────────────────────────────
+  // Calculer le CA par mois depuis les semaines N
+  // Pour les semaines à cheval : prorata nb jours dans le mois
+  const monthRevs = {};
+  allWeeks.forEach(w => {
+    const wStart = new Date(w.start);
+    const wEnd   = w.end ? new Date(w.end) : new Date(w.start);
+    const totalDays = Math.max(1, Math.round((wEnd - wStart) / 86400000) + 1);
+
+    // Parcourir chaque jour de la semaine
+    let d = new Date(wStart);
+    while (d <= wEnd) {
+      const month = d.toISOString().slice(0, 7);
+      if (!monthRevs[month]) monthRevs[month] = 0;
+      monthRevs[month] += (w.rev / totalDays);
+      d.setDate(d.getDate() + 1);
+    }
+  });
+  // Arrondir
+  Object.keys(monthRevs).forEach(m => monthRevs[m] = Math.round(monthRevs[m]));
+
+  // N-1 par mois : même logique depuis weekImportsN1
+  const monthRevsN1 = {};
+  weekImportsN1.forEach(w => {
+    const wStart = new Date(w.period_start);
+    const wEnd   = new Date(w.period_end);
+    const totalDays = Math.max(1, Math.round((wEnd - wStart) / 86400000) + 1);
+    let d = new Date(wStart);
+    while (d <= wEnd) {
+      const month = d.toISOString().slice(0, 7);
+      if (!monthRevsN1[month]) monthRevsN1[month] = 0;
+      monthRevsN1[month] += (w.revenue / totalDays);
+      d.setDate(d.getDate() + 1);
+    }
+  });
+  Object.keys(monthRevsN1).forEach(m => monthRevsN1[m] = Math.round(monthRevsN1[m]));
+
+  const curMonth = now.toISOString().slice(0, 7);
+  const caMonthN  = monthRevs[curMonth] || 0;
+  // N-1 mois : même mois l'année précédente
+  const curMonthN1 = `${now.getFullYear()-1}-${String(now.getMonth()+1).padStart(2,"0")}`;
+  const caMonthN1 = monthRevsN1[curMonthN1] || 0;
+
+  // Dernière semaine
+  const lastWeek   = allWeeks[allWeeks.length-1];
+  const prevWeek   = allWeeks.length >= 2 ? allWeeks[allWeeks.length-2] : null;
+  // N-1 dernière semaine : chercher import N-1 avec même period_label
+  const lastWeekN1 = lastWeek
+    ? weekImportsN1.find(i => i.period_label === lastWeek.label)
+    : null;
+  const lastRevN  = lastWeek?.rev || 0;
+  const lastRevN1 = lastWeekN1?.revenue || null;
+
+  // Variation semaine vs S-1
+  const varVsPrev = (prevWeek && prevWeek.rev > 0)
+    ? Math.round((lastRevN - prevWeek.rev) / prevWeek.rev * 100)
+    : null;
+
+  const fmtMonthLabel = m => {
+    const [y, mo] = m.split("-");
+    const names = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
+    return names[parseInt(mo)-1] + " " + y;
+  };
+
+  // Graphique barres semaines
+  const maxRev = Math.max(...allWeeks.map(w => w.rev), 1);
 
   return `
   <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
       <div style="display:flex;align-items:center;gap:10px">
         <div class="card-title" style="margin:0">Chiffre d'affaires</div>
-        ${varHtml}
+        ${varVsPrev != null ? `<span style="font-size:12px;font-weight:600;color:${varVsPrev>=0?"var(--gn)":"var(--rd)"}">${varVsPrev>=0?"+":""}${varVsPrev}% vs S-1</span>` : ""}
       </div>
-      <button onclick="openRevenueModal()" style="padding:6px 14px;border:.5px solid var(--ac);border-radius:6px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">+ Ajouter une semaine</button>
+      ${btnRow}
     </div>
+
+    <!-- KPIs : 3 granularités -->
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px">
-      <div style="background:var(--bg);border-radius:8px;padding:12px 14px;text-align:center">
-        <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Dernière semaine</div>
-        <div style="font-size:22px;font-weight:700;color:var(--ac)">${fmtCA(weeks[weeks.length-1]?.rev||0)}</div>
-        <div style="font-size:11px;color:var(--txT);margin-top:2px">${weeks[weeks.length-1]?.label||''}</div>
+
+      <!-- Dernière semaine -->
+      <div style="background:var(--bg);border-radius:8px;padding:12px 14px">
+        <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Dernière semaine</div>
+        <div style="font-size:22px;font-weight:700;color:var(--ac)">${fmtCA(lastRevN)}</div>
+        ${lastWeek ? `<div style="font-size:11px;color:var(--txT);margin-top:2px">${lastWeek.label}</div>` : ""}
+        ${lastRevN1 != null ? `<div style="font-size:11px;margin-top:4px">N-1 : <b>${fmtCA(lastRevN1)}</b>${fmtPct(lastRevN, lastRevN1)}</div>` : ""}
       </div>
-      <div style="background:var(--bg);border-radius:8px;padding:12px 14px;text-align:center">
-        <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Mois en cours (cumulé)</div>
-        <div style="font-size:22px;font-weight:700">${fmtCA(caMonth)}</div>
-        <div style="font-size:11px;color:var(--txT);margin-top:2px">${now.toLocaleString("fr-FR",{month:"long",year:"numeric"})}</div>
+
+      <!-- Mois en cours -->
+      <div style="background:var(--bg);border-radius:8px;padding:12px 14px">
+        <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Mois en cours</div>
+        <div style="font-size:22px;font-weight:700">${fmtCA(caMonthN)}</div>
+        <div style="font-size:11px;color:var(--txT);margin-top:2px">${fmtMonthLabel(curMonth)}</div>
+        ${caMonthN1 > 0 ? `<div style="font-size:11px;margin-top:4px">N-1 : <b>${fmtCA(caMonthN1)}</b>${fmtPct(caMonthN, caMonthN1)}</div>` : ""}
       </div>
-      <div style="background:var(--bg);border-radius:8px;padding:12px 14px;text-align:center">
-        <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">CA YTD</div>
-        <div style="font-size:22px;font-weight:700">${fmtCA(caYTD)}</div>
-        <div style="font-size:11px;color:var(--txT);margin-top:2px">Depuis le 1er janv. ${now.getFullYear()}</div>
+
+      <!-- YTD -->
+      <div style="background:var(--bg);border-radius:8px;padding:12px 14px">
+        <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">YTD ${latestYtdLabel ? `(${latestYtdLabel})` : ""}</div>
+        <div style="font-size:22px;font-weight:700">${fmtCA(ytdRevN)}</div>
+        ${ytdRevN1 > 0 ? `<div style="font-size:11px;margin-top:4px">N-1 : <b>${fmtCA(ytdRevN1)}</b>${fmtPct(ytdRevN, ytdRevN1)}</div>` : ""}
       </div>
+
     </div>
+
+    <!-- Graphique barres hebdo -->
+    ${allWeeks.length > 0 ? `
     <div style="font-size:12px;font-weight:600;color:var(--txS);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em">CA hebdomadaire</div>
     <div style="overflow-x:auto">
-      <div style="display:flex;gap:6px;align-items:flex-end;min-width:${Math.max(weeks.length*52,300)}px;height:80px;padding:0 2px">
-        ${weeks.slice(-20).map((w,i,arr) => {
+      <div style="display:flex;gap:6px;align-items:flex-end;min-width:${Math.max(allWeeks.length*56,300)}px;height:80px;padding:0 2px">
+        ${allWeeks.slice(-20).map((w,i,arr) => {
           const pct = Math.max(Math.round((w.rev/maxRev)*100), 4);
           const isLast = i === arr.length-1;
-          return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:44px">
-            <div style="font-size:10px;font-weight:600;color:${isLast?'var(--ac)':'var(--txS)'}">${fmtCA(w.rev)}</div>
-            <div style="width:100%;height:${pct}%;background:${isLast?'var(--ac)':'var(--borderL)'};border-radius:3px 3px 0 0;transition:height .3s;min-height:3px;border:.5px solid ${isLast?'var(--ac)':'var(--border)'}"></div>
-            <div style="font-size:10px;color:var(--txT);white-space:nowrap">${w.label}</div>
+          return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:48px">
+            <div style="font-size:10px;font-weight:600;color:${isLast?"var(--ac)":"var(--txS)"}">${fmtCA(w.rev)}</div>
+            <div style="width:100%;height:${pct}%;background:${isLast?"var(--ac)":"var(--borderL)"};border-radius:3px 3px 0 0;min-height:3px;border:.5px solid ${isLast?"var(--ac)":"var(--border)"}"></div>
+            <div style="font-size:10px;color:var(--txT);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:52px;text-align:center">${w.label}</div>
           </div>`;
         }).join("")}
       </div>
-    </div>
+    </div>` : ""}
+
+    <!-- Détail mois -->
+    ${Object.keys(monthRevs).length > 0 ? `
+    <div style="margin-top:14px;border-top:1px solid var(--borderL);padding-top:12px">
+      <div style="font-size:12px;font-weight:600;color:var(--txS);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Détail par mois</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${Object.entries(monthRevs).sort(([a],[b]) => a>b?1:-1).map(([m, rev]) => {
+          const n1key = `${parseInt(m.slice(0,4))-1}-${m.slice(5,7)}`;
+          const revN1 = monthRevsN1[n1key] || 0;
+          return `<div style="background:var(--bg);border-radius:8px;padding:10px 14px;min-width:130px">
+            <div style="font-size:11px;color:var(--txS);margin-bottom:4px">${fmtMonthLabel(m)}</div>
+            <div style="font-size:16px;font-weight:700">${fmtCA(rev)}</div>
+            ${revN1 > 0 ? `<div style="font-size:11px;color:var(--txT);margin-top:2px">N-1 : ${fmtCA(revN1)}${fmtPct(rev, revN1)}</div>` : ""}
+          </div>`;
+        }).join("")}
+      </div>
+    </div>` : ""}
+
+    <!-- Historique semaines (collapsible) -->
     <div style="margin-top:10px;border-top:1px solid var(--borderL);padding-top:10px">
       <details style="font-size:12px">
-        <summary style="cursor:pointer;color:var(--txS);font-weight:500;margin-bottom:6px">Toutes les semaines (${weeks.length})</summary>
-        <div class="scroll-table"><table style="min-width:300px">
-          <thead><tr style="background:var(--bg);border-bottom:1px solid var(--border)"><th>Semaine</th><th>Début</th><th style="text-align:right">CA</th><th style="text-align:center">Actions</th></tr></thead>
-          <tbody>${weeks.map((w,i)=>`<tr class="${i%2?'stripe':''}"><td style="font-weight:500">${esc(w.label)}</td><td style="color:var(--txS)">${w.date||''}</td><td style="text-align:right;font-weight:600">${fmtCA(w.rev)}</td><td style="text-align:center"><button onclick="deleteRevenue('${esc(w.label)}')" style="padding:2px 8px;border-radius:5px;border:.5px solid var(--rd);background:var(--rdBg);color:var(--rd);font-size:11px;cursor:pointer;font-family:inherit">Suppr.</button></td></tr>`).join("")}</tbody>
+        <summary style="cursor:pointer;color:var(--txS);font-weight:500;margin-bottom:6px">Toutes les semaines (${allWeeks.length})</summary>
+        <div class="scroll-table"><table style="min-width:400px">
+          <thead><tr style="background:var(--bg);border-bottom:1px solid var(--border)">
+            <th>Semaine</th><th>Début</th><th style="text-align:right">CA N</th><th style="text-align:right">CA N-1</th><th style="text-align:center">Évol.</th><th style="text-align:center">Actions</th>
+          </tr></thead>
+          <tbody>${allWeeks.slice().reverse().map((w,i) => {
+            const n1 = weekImportsN1.find(x => x.period_label === w.label);
+            const n1Rev = n1?.revenue || null;
+            const evolHtml = (n1Rev && n1Rev > 0) ? fmtPct(w.rev, n1Rev) : "—";
+            const deleteBtn = w.source === "manual"
+              ? `<button onclick="deleteRevenue('${w.label}')" style="padding:2px 8px;border-radius:5px;border:.5px solid var(--rd);background:var(--rdBg);color:var(--rd);font-size:11px;cursor:pointer;font-family:inherit">Suppr.</button>`
+              : `<button onclick="deleteImportWeek('${w.label}')" style="padding:2px 8px;border-radius:5px;border:.5px solid var(--rd);background:var(--rdBg);color:var(--rd);font-size:11px;cursor:pointer;font-family:inherit">Suppr.</button>`;
+            return `<tr class="${i%2?"stripe":""}">
+              <td style="font-weight:500">${esc(w.label)}</td>
+              <td style="color:var(--txS)">${w.start||""}</td>
+              <td style="text-align:right;font-weight:600">${fmtCA(w.rev)}</td>
+              <td style="text-align:right;color:var(--txS)">${n1Rev != null ? fmtCA(n1Rev) : "—"}</td>
+              <td style="text-align:center">${evolHtml}</td>
+              <td style="text-align:center">${deleteBtn}</td>
+            </tr>`;
+          }).join("")}</tbody>
         </table></div>
       </details>
     </div>
   </div>`;
 }
-
 function openRevenueModal() {
   // Générer un label semaine automatique
   const now = new Date();
@@ -717,6 +873,14 @@ async function saveRevenue() {
     statusEl.innerHTML = '<span style="color:var(--gn)">✓ Semaine ajoutée !</span>';
     setTimeout(() => { closeModal(); loadData(); }, 800);
   } catch(e) { statusEl.innerHTML = `<span style="color:var(--rd)">Erreur : ${e.message}</span>`; }
+}
+
+async function deleteImportWeek(label) {
+  if (!confirm(`Supprimer la semaine "${label}" ?`)) return;
+  try {
+    await sbDelete("revenue_imports", `marketplace=eq.${MARKETPLACE}&period_label=eq.${encodeURIComponent(label)}`);
+    await loadData();
+  } catch(e) { alert("Erreur : " + e.message); }
 }
 
 async function deleteRevenue(label) {
@@ -1621,8 +1785,9 @@ const MP_LABELS = {
 
 const ADMIN_PASSWORD = "sgpa92!";
 
-function openImportXLSModal() {
-  openModal("Import CA par marketplace (XLS)", `
+function openImportXLSModal(importType = 'ytd') {
+  const isWeek = importType === 'week';
+  openModal(isWeek ? "Import CA Semaine (XLS)" : "Import CA YTD (XLS)", `
     <div style="display:grid;gap:14px">
 
       <div style="background:var(--puBg);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--pu)">
@@ -1682,11 +1847,21 @@ function openImportXLSModal() {
   document.getElementById("imp-start").value = yearStart;
   document.getElementById("imp-end").value = today;
 
-  // Auto-générer le label
+  // Auto-générer le label selon le type
   const yr = now.getFullYear();
   const dayOfYear = Math.floor((now - new Date(yr, 0, 0)) / 86400000);
   const week = Math.ceil(dayOfYear / 7);
-  document.getElementById("imp-label").value = `YTD S${week} ${yr}`;
+  if (isWeek) {
+    // Pour une semaine : date début = lundi dernier, fin = dimanche
+    const day = now.getDay() || 7; // 1=lun, 7=dim
+    const monday = new Date(now); monday.setDate(now.getDate() - day + 1);
+    const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+    document.getElementById("imp-start").value = monday.toISOString().slice(0,10);
+    document.getElementById("imp-end").value = sunday.toISOString().slice(0,10);
+    document.getElementById("imp-label").value = `S${week} ${yr}`;
+  } else {
+    document.getElementById("imp-label").value = `YTD S${week} ${yr}`;
+  }
 }
 
 // Parse un fichier XLS/XLSX et retourne { marketplace: total }
