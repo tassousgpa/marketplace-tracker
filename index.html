@@ -927,7 +927,8 @@ function exportCSV() {
 let histMetric="price";
 function renderHistorique() {
   const dates=STATE.dates.slice(-5);
-  const prods=STATE.products.filter(p=>Object.keys(p._history).length>0);
+  const prods=STATE.products; // tous les produits suivis actifs, avec ou sans historique
+  const withData=prods.filter(p=>Object.keys(p._history).length>0).length;
   const getVal=(p,d)=>{const e=p._history[d];if(!e)return null;if(histMetric==="price")return e.price;if(histMetric==="rating")return e.rating;if(histMetric==="delivery")return e.delivery_days;if(histMetric==="dispo")return e.available;return null;};
   const fmtVal=v=>{if(v==null)return"—";if(histMetric==="price")return Math.round(v)+"€";if(histMetric==="rating")return v;if(histMetric==="delivery")return v+"j";if(histMetric==="dispo")return v?"✓":"✗";return v;};
   const hasVar=(p,d,di)=>{if(di===0)return null;const prev=getVal(p,dates[di-1]),curr=getVal(p,d);if(prev==null||curr==null)return null;if(histMetric==="price"&&prev>0){const pct=(curr-prev)/prev;if(pct>.10)return"up";if(pct<-.15)return"down";}if(histMetric==="delivery"){const diff=curr-prev;if(diff>5)return"up";if(diff<-5)return"down";}if(histMetric==="rating"){const diff=curr-prev;if(diff>=.2)return"good";if(diff<=-.2)return"bad";}if(histMetric==="dispo"&&prev!==curr)return curr?"good":"bad";return null;};
@@ -939,7 +940,7 @@ function renderHistorique() {
         ${histMetric==="delivery"?`<button onclick="exportDeliveryCSV()" style="padding:6px 14px;border:.5px solid var(--ac);border-radius:6px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">⬇ Export délais (tout l'historique)</button>`:''}
       </div>
     </div>
-    <div style="font-size:12px;color:var(--txS);margin-bottom:8px">${prods.length} produits · ${dates.length} dates affichées · <span style="color:var(--txT)">${STATE.dates.length} total en base</span></div>
+    <div style="font-size:12px;color:var(--txS);margin-bottom:8px">${prods.length} produits suivis · ${withData} avec données · ${dates.length} dates affichées · <span style="color:var(--txT)">${STATE.dates.length} total en base</span></div>
     <div class="card" style="padding:0;overflow:hidden"><div class="scroll-table"><table style="min-width:700px">
       <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)"><th style="min-width:200px">Produit</th><th>Réfs</th>${dates.map(d=>{const dt=new Date(d+"T12:00:00Z");return`<th style="text-align:center;white-space:nowrap">${dt.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit"})}</th>`;}).join("")}</tr></thead>
       <tbody>${prods.map((p,i)=>`<tr class="${i%2?'stripe':''}"><td style="font-weight:500;font-size:12px;max-width:200px">${esc(p.name)}</td><td style="font-size:10px;color:var(--txT);white-space:nowrap">${esc(p.product_id)}<br>${esc(p.sku)}</td>${dates.map((d,di)=>{const v=getVal(p,d),vr=hasVar(p,d,di);return`<td style="text-align:center;${vr?`background:${varBg(vr)};font-weight:600`:''}">${fmtVal(v)}</td>`;}).join("")}</tr>`).join("")}</tbody>
@@ -949,7 +950,7 @@ function renderHistorique() {
 // Export délais : toutes les refs, tout l'historique, une colonne par date
 function exportDeliveryCSV() {
   const allDates = STATE.dates; // toutes les dates dispo en base (triées ASC)
-  const prods = STATE.products.filter(p => Object.keys(p._history).length > 0);
+  const prods = STATE.products; // tous les produits suivis actifs
   if (!allDates.length || !prods.length) { alert("Aucune donnée à exporter."); return; }
 
   const fmtDate = d => {
