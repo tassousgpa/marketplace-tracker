@@ -313,7 +313,7 @@ async function loadData() {
       sb("products", `marketplace=eq.${MARKETPLACE}&active=eq.true&select=*&order=product_id`),
       sb("products", `marketplace=eq.${MARKETPLACE}&select=*&order=product_id`),
       sb("product_snapshots", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=5000`).catch(()=>[]),
-      sb("positions", `marketplace=eq.${MARKETPLACE}&select=*&order=date.asc&limit=5000`).catch(()=>[]),
+      sb("positions", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=5000`).catch(()=>[]),
       sb("seller_stats", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=2000`).catch(()=>[]),
       sb("revenue_entries", `marketplace=eq.${MARKETPLACE}&select=*&order=week_start_date.asc`).catch(()=>[]),
       sb("tracked_sellers", `marketplace=eq.${MARKETPLACE}&active=eq.true&select=*&order=id.asc`).catch(()=>[]),
