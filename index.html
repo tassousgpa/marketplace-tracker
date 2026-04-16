@@ -1614,22 +1614,26 @@ function renderConfoSparkline(sellerName) {
 function renderAnomalies() {
   const P=STATE.products;
   const notScraped=P.filter(p=>!p._latest);
+  // Pages catégories : available===null en base = l'extension a détecté une page catégorie au lieu d'une fiche produit
+  const catPages=P.filter(p=>p._latest && p._latest.available===null);
   const urlMap={};P.forEach(p=>{if(p.url&&p.url.startsWith("http")){(urlMap[p.url]=urlMap[p.url]||[]).push(p);}});
   const dupeUrls=Object.entries(urlMap).filter(([,ps])=>ps.length>1);
   const brokenUrls=P.filter(p=>!p.url||!p.url.startsWith("http"));
-  const total=notScraped.length+dupeUrls.length+brokenUrls.length;
+  const total=notScraped.length+catPages.length+dupeUrls.length+brokenUrls.length;
   return `
     <div class="metrics">
       <div class="metric"><div class="metric-label">Non scrapés</div><div class="metric-value" style="color:${notScraped.length>0?'var(--rd)':'var(--gn)'}">${notScraped.length}</div><div class="metric-sub">au ${STATE.latestDate}</div></div>
+      <div class="metric"><div class="metric-label">Pages catégories</div><div class="metric-value" style="color:${catPages.length>0?'var(--am)':'var(--gn)'}">${catPages.length}</div><div class="metric-sub">URL à corriger</div></div>
       <div class="metric"><div class="metric-label">URLs en doublon</div><div class="metric-value" style="color:${dupeUrls.length>0?'var(--am)':'var(--gn)'}">${dupeUrls.length}</div></div>
       <div class="metric"><div class="metric-label">URLs cassées</div><div class="metric-value" style="color:${brokenUrls.length>0?'var(--rd)':'var(--gn)'}">${brokenUrls.length}</div></div>
-      <div class="metric"><div class="metric-label">Total anomalies</div><div class="metric-value" style="color:${total>0?'var(--rd)':'var(--gn)'}">${total}</div></div>
     </div>
     ${notScraped.length>0?`<div class="card anomaly-section"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="anomaly-dot" style="background:var(--rd)"></span><span style="font-size:14px;font-weight:600">Produits non scrapés le ${STATE.latestDate} (${notScraped.length})</span></div>${notScraped.map(p=>productRowHTML(p)).join("")}</div>`:''}
+    ${catPages.length>0?`<div class="card anomaly-section"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="anomaly-dot" style="background:var(--am)"></span><span style="font-size:14px;font-weight:600">URLs pointant vers une page catégorie (${catPages.length})</span><span style="font-size:11px;color:var(--txS);margin-left:6px">— à corriger dans Gestion</span></div>${catPages.map(p=>productRowHTML(p)).join("")}</div>`:''}
     ${dupeUrls.length>0?`<div class="card anomaly-section"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="anomaly-dot" style="background:var(--am)"></span><span style="font-size:14px;font-weight:600">URLs en doublon (${dupeUrls.length})</span></div>${dupeUrls.map(([url,prods])=>`<div style="padding:10px 0;border-bottom:1px solid var(--borderL)"><div style="font-size:12px;color:var(--ac);margin-bottom:6px"><a href="${esc(url)}" target="_blank" class="link">${esc(url)} ↗</a></div><div style="display:flex;gap:8px;flex-wrap:wrap">${prods.map(p=>`<div style="background:var(--amBg);border-radius:8px;padding:6px 10px;font-size:11px"><span style="font-weight:600">${esc(p.product_id)}</span> · ${esc(p.sku)}</div>`).join("")}</div></div>`).join("")}</div>`:''}
     ${brokenUrls.length>0?`<div class="card anomaly-section"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="anomaly-dot" style="background:var(--rd)"></span><span style="font-size:14px;font-weight:600">URLs cassées (${brokenUrls.length})</span></div>${brokenUrls.map(p=>productRowHTML(p)).join("")}</div>`:''}
     ${total===0?'<div class="card" style="background:var(--gnBg);text-align:center;padding:30px"><div style="font-size:16px;font-weight:600;color:var(--gn)">Aucune anomalie détectée</div></div>':''}`;
 }
+
 
 // =============================================
 // TAB 6: GESTION
