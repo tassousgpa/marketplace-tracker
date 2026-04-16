@@ -112,8 +112,9 @@ tr.stripe{background:var(--bg)}
       <button class="mp-btn" onclick="switchMarketplace('amazon',this)">Amazon</button>
       <button class="mp-btn" onclick="switchMarketplace('maisonsdumonde',this)">Maisons du Monde</button>
       <button class="mp-btn" onclick="switchMarketplace('conforama',this)">Conforama</button>
-      <button class="mp-btn" onclick="switchMarketplace('laredoute',this)">La Redoute</button>
+      <button class="mp-btn" onclick="switchMarketplace('laredoute',this)" title="Aucun produit actuellement">La Redoute</button>
       <button class="mp-btn" onclick="switchMarketplace('but',this)">BUT</button>
+      <button class="mp-btn" onclick="switchMarketplace('manomano',this)">ManoMano</button>
     </div>
   </div>
   <!-- Indicateurs de scraping par marketplace -->
@@ -147,7 +148,13 @@ const MARKETPLACES = [
   { id: "conforama", label: "Conforama" },
   { id: "laredoute", label: "La Redoute" },
   { id: "but", label: "BUT" },
+  { id: "manomano", label: "ManoMano" },
 ];
+
+// Marketplaces sans onglet Concurrents (pas de seller_stats vendeurs)
+const NO_COMPETITORS_MP = new Set(["but", "manomano"]);
+// Marketplaces sans onglet Positions (pas de scraping positions page 1)
+const NO_POSITIONS_MP = new Set(["but", "manomano"]);
 
 // Cache des derniers timestamps de scraping par marketplace (pour l'indicateur)
 const MP_LAST_SCRAPING = {};
@@ -292,7 +299,8 @@ function normalizeKeyword(kw) {
   return kw;
 }
 
-const TAB_NAMES = ["Synthèse","Produits","Historique","Positions","Concurrents","Anomalies","Gestion"];
+const TAB_NAMES      = ["Synthèse","Produits","Historique","Positions","Concurrents","Anomalies","Gestion"];
+const TAB_NAMES_LIGHT = ["Synthèse","Produits","Historique","Anomalies","Gestion"]; // sans Positions ni Concurrents
 
 function switchMarketplace(mp, btn) {
   MARKETPLACE = mp;
@@ -508,12 +516,29 @@ async function loadData() {
   }
 }
 
+function isLightMp() { return NO_POSITIONS_MP.has(MARKETPLACE); }
+function getTabNames() { return isLightMp() ? TAB_NAMES_LIGHT : TAB_NAMES; }
+// Mapping tab index light → render function (indices diffèrent selon le mode)
+// Light: 0=Synthèse 1=Produits 2=Historique 3=Anomalies 4=Gestion
+// Full:  0=Synthèse 1=Produits 2=Historique 3=Positions 4=Concurrents 5=Anomalies 6=Gestion
 function renderTabs() {
-  document.getElementById("tabs").innerHTML = TAB_NAMES.map((t,i) => `<button class="tab ${i===STATE.tab?'active':''}" onclick="switchTab(${i})">${t}</button>`).join("");
+  const names = getTabNames();
+  document.getElementById("tabs").innerHTML = names.map((t,i) => `<button class="tab ${i===STATE.tab?'active':''}" onclick="switchTab(${i})">${t}</button>`).join("");
 }
 function switchTab(i) { STATE.tab=i; renderTabs(); renderContent(); }
 function renderContent() {
   const el = document.getElementById("content");
+  if (isLightMp()) {
+    switch(STATE.tab) {
+      case 0: el.innerHTML=renderSynthese(); break;
+      case 1: el.innerHTML=renderProduits(); break;
+      case 2: el.innerHTML=renderHistorique(); break;
+      case 3: el.innerHTML=renderAnomalies(); break;
+      case 4: el.innerHTML=renderGestion(); break;
+      default: el.innerHTML='';
+    }
+    return;
+  }
   switch(STATE.tab) {
     case 0: el.innerHTML=renderSynthese(); break;
     case 1: el.innerHTML=renderProduits(); break;
@@ -849,7 +874,7 @@ function renderProduits() {
   return `
     <div class="filters">
       <input placeholder="Rechercher..." value="${esc(f.search)}" oninput="prodFilters.search=this.value;renderContent()"/>
-      <select onchange="prodFilters.type=this.value;renderContent()"><option value="all">Tous types</option><option value="Classe A" ${f.type==='Classe A'?'selected':''}>Classe A</option><option value="Nouveautés Q4+Q1" ${f.type==='Nouveautés Q4+Q1'?'selected':''}>Nouveautés</option><option value="Deals exclus" ${f.type==='Deals exclus'?'selected':''}>Deals exclus</option></select>
+      <select onchange="prodFilters.type=this.value;renderContent()"><option value="all">Tous types</option><option value="Top ref" ${f.type==='Top ref'?'selected':''}>Top ref</option><option value="Nouveautés" ${f.type==='Nouveautés'?'selected':''}>Nouveautés</option><option value="Classe A" ${f.type==='Classe A'?'selected':''}>Classe A</option><option value="Nouveautés Q4+Q1" ${f.type==='Nouveautés Q4+Q1'?'selected':''}>Nouveautés Q4+Q1</option><option value="Deals exclus" ${f.type==='Deals exclus'?'selected':''}>Deals exclus</option></select>
       <select onchange="prodFilters.avail=this.value;renderContent()"><option value="all">Dispo + Indispo</option><option value="dispo" ${f.avail==='dispo'?'selected':''}>Disponible</option><option value="indispo" ${f.avail==='indispo'?'selected':''}>Indisponible</option></select>
       <select onchange="prodFilters.page1=this.value;renderContent()"><option value="all">Toutes positions</option><option value="yes" ${f.page1==='yes'?'selected':''}>En page 1</option><option value="no" ${f.page1==='no'?'selected':''}>Pas en page 1</option></select>
       <select onchange="prodFilters.tag=this.value;renderContent()"><option value="all">Toutes variations</option><option value="prix_up">Prix ↑</option><option value="prix_down">Prix ↓</option><option value="delai_up">Délai ↑</option><option value="delai_down">Délai ↓</option><option value="note_up">Note ↑</option><option value="note_down">Note ↓</option></select>
@@ -1091,6 +1116,7 @@ function resolveSellerNames(displayName) {
 // Type de marketplace : "cumul" (MdM, Conforama) ou "ltm" (Cdiscount, Amazon, La Redoute)
 function mpType(mp) {
   if (mp === "conforama" || mp === "maisonsdumonde") return "cumul";
+  if (mp === "manomano") return "ltm"; // ventes LTM comme Amazon
   return "ltm";
 }
 
@@ -1732,6 +1758,7 @@ const MP_MATCHING = {
   maisonsdumonde: ["maisonsdumonde"],
   laredoute:      ["laredoute"],
   conforama:      ["conforama"],
+  manomano:       ["manomano"],
 };
 
 const MP_LABELS = {
@@ -1740,6 +1767,8 @@ const MP_LABELS = {
   maisonsdumonde: "Maisons du Monde",
   laredoute:      "La Redoute",
   conforama:      "Conforama",
+  manomano:       "ManoMano",
+  but:            "BUT",
 };
 
 const ADMIN_PASSWORD = "sgpa92!";
