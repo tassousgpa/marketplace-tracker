@@ -1294,7 +1294,15 @@ function renderConcurrents() {
 
   function cellFor(r, key) {
     const d = r.data;
-    if (!d) return '<span style="color:var(--txT);font-size:11px">—</span>';
+    if (!d) {
+      // shop_url renseigné mais aucune donnée = erreur de tracking (lien cassé ou produit supprimé)
+      if (r.shopUrl && !r.isBM) {
+        return key === "col1"
+          ? '<span style="color:var(--rd);font-size:11px;font-weight:600">⚠ Erreur tracking</span>'
+          : '<span style="color:var(--txT);font-size:10px">—</span>';
+      }
+      return '<span style="color:var(--txT);font-size:11px">—</span>';
+    }
     switch(key) {
       case "col1": {
         const v = fmtNum(d.salesLatest);
@@ -1361,7 +1369,8 @@ function renderConcurrents() {
                   <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color}"></span>
                   <span style="font-size:13px;font-weight:700;color:${r.isBM?"var(--ac)":"var(--tx)"}">${esc(r.name)}</span>
                   ${r.isBM ? '<span class="pill pill-accent" style="font-size:10px">Vous</span>' : ""}
-                  ${r.shopUrl ? `<a href="${esc(r.shopUrl)}" target="_blank" class="link" style="font-size:10px">Boutique ↗</a>` : (r.data?.sourceUrl ? `<a href="${esc(r.data.sourceUrl)}" target="_blank" class="link" style="font-size:10px">Boutique ↗</a>` : "")}
+                  ${!r.isBM && r.shopUrl && !r.data ? '<span style="font-size:10px;color:var(--rd);font-weight:600" title="URL produit cassée ou vendeur introuvable">⚠ lien cassé</span>' : ""}
+                  ${r.shopUrl ? `<a href="${esc(r.shopUrl)}" target="_blank" class="link" style="font-size:10px">Produit ↗</a>` : (r.data?.sourceUrl ? `<a href="${esc(r.data.sourceUrl)}" target="_blank" class="link" style="font-size:10px">Produit ↗</a>` : "")}
                 </div>
               </th>`;
             }).join("")}
