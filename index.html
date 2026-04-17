@@ -578,8 +578,11 @@ const tagColor=t=>(t.includes("up")&&t!=="note_up")?"red":(t.includes("down")&&t
 function renderSynthese() {
   const P=STATE.products;
   const avail=P.filter(p=>p._available===true).length, unavail=P.filter(p=>p._available===false).length;
-  // Produits distincts BM présents en page 1
-  const page1 = STATE.productsInPage1 ? STATE.productsInPage1.size : 0;
+  // Produits SUIVIS (dans STATE.products) présents en page 1
+  // = même logique que le filtre "En page 1" de l'onglet Produits
+  const page1 = STATE.products.filter(p =>
+    STATE.productsInPage1 && STATE.productsInPage1.has((p.product_id_scraper||"").toLowerCase())
+  ).length;
   const prices=P.filter(p=>p._price!=null).map(p=>p._price);
   const ratings=P.filter(p=>p._rating!=null).map(p=>p._rating);
   const deliveries=P.filter(p=>p._delivery!=null).map(p=>p._delivery);
