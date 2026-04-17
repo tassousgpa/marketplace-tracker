@@ -453,18 +453,29 @@ async function loadData() {
       bmByKeyword[kw] = items.filter(i => isBMPosition(i)).length;
     });
 
-    // productsInPage1 : set des product_ids BM présents en page 1
+    // productsInPage1 : set des product_id_scraper BM présents en page 1
+    // page1Keywords : product_id_scraper → keywords où ce produit est en page 1
+    // On indexe par product_id_scraper (côté products) et non par product_id brut des positions
+    // pour éviter les faux matchings entre marketplaces
     const productsInPage1 = new Set();
-    // page1Keywords : product_id → liste des keywords où il est en page 1
     const page1Keywords = {};
     latestPositions.forEach(p => {
-      if (isBMPosition(p)) {
-        const pid = (p.product_id||"").toLowerCase();
-        productsInPage1.add(pid);
-        const kw = normalizeKeyword(p.keyword);
-        if (!page1Keywords[pid]) page1Keywords[pid] = new Set();
-        page1Keywords[pid].add(kw);
-      }
+      if (!isBMPosition(p)) return;
+      const posId = (p.product_id||"").toLowerCase();
+      const kw = normalizeKeyword(p.keyword);
+
+      // Cherche le produit suivi dont le product_id_scraper correspond à ce product_id de position
+      // C'est le seul matching valide — on n'utilise pas posId directement comme clé
+      const matchedProduct = trackedByScraperId[posId];
+      const indexKey = matchedProduct
+        ? (matchedProduct.product_id_scraper||"").toLowerCase()
+        : (BM_SELLER_NAMES.has(p.seller) ? posId : null); // seller BM sans produit suivi : on garde l'ID position
+
+      if (!indexKey) return;
+
+      productsInPage1.add(indexKey);
+      if (!page1Keywords[indexKey]) page1Keywords[indexKey] = new Set();
+      page1Keywords[indexKey].add(kw);
     });
 
     // =============================================
@@ -567,14 +578,8 @@ const tagColor=t=>(t.includes("up")&&t!=="note_up")?"red":(t.includes("down")&&t
 function renderSynthese() {
   const P=STATE.products;
   const avail=P.filter(p=>p._available===true).length, unavail=P.filter(p=>p._available===false).length;
-  // Produits distincts BM présents en page 1 (= taille de productsInPage1)
+  // Produits distincts BM présents en page 1
   const page1 = STATE.productsInPage1 ? STATE.productsInPage1.size : 0;
-  // Total apparitions (1 produit sur 2 keywords = 2) — affiché en sous-métrique
-  const page1Appearances = STATE.products.reduce((sum, p) => {
-    const pid = (p.product_id_scraper || "").toLowerCase();
-    const kws = STATE.page1Keywords?.[pid];
-    return sum + (kws ? kws.size : 0);
-  }, 0);
   const prices=P.filter(p=>p._price!=null).map(p=>p._price);
   const ratings=P.filter(p=>p._rating!=null).map(p=>p._rating);
   const deliveries=P.filter(p=>p._delivery!=null).map(p=>p._delivery);
@@ -590,7 +595,7 @@ function renderSynthese() {
   return `
     <div class="metrics">
       <div class="metric"><div class="metric-label">Produits suivis</div><div class="metric-value">${P.length}</div></div>
-      <div class="metric"><div class="metric-label">En page 1</div><div class="metric-value" style="color:var(--ac)">${page1}</div><div class="metric-sub">${P.length>0?Math.round(page1/P.length*100):0}% · ${page1Appearances} appari.</div></div>
+      <div class="metric"><div class="metric-label">En page 1</div><div class="metric-value" style="color:var(--ac)">${page1}</div><div class="metric-sub">${P.length>0?Math.round(page1/P.length*100):0}% du catalogue</div></div>
       <div class="metric"><div class="metric-label">Indisponibles</div><div class="metric-value" style="color:var(--rd)">${unavail}</div></div>
       <div class="metric"><div class="metric-label">Délai moyen</div><div class="metric-value" style="color:var(--am)">${avgDelivery}j</div></div>
       <div class="metric"><div class="metric-label">Note moyenne</div><div class="metric-value" style="color:var(--am)">${avgRating}</div></div>
@@ -598,7 +603,7 @@ function renderSynthese() {
 
     <div class="card"><div class="card-title">Indicateurs clés</div><div class="grid-2">${[
       {l:"Prix moyen",v:avgPrice+"€"},{l:"Délai moyen",v:avgDelivery+" jours"},{l:"Note moyenne",v:avgRating+" / 5"},
-      {l:"Taux dispo",v:(P.length>0?Math.round(avail/P.length*100):0)+"%"},{l:"Taux page 1",v:(P.length>0?Math.round(page1/P.length*100):0)+"% ("+page1+" produits, "+page1Appearances+" appari.)"},
+      {l:"Taux dispo",v:(P.length>0?Math.round(avail/P.length*100):0)+"%"},{l:"Taux page 1",v:(P.length>0?Math.round(page1/P.length*100):0)+"%"},
       {l:"Prix en hausse (>10%)",v:`${pctPU}% (${pu.length})`,click:pu.length>0?"showVariation('prix_up')":null,color:pu.length>0?"var(--rd)":""},
       {l:"Délai en hausse (>5j)",v:`${pctDU}% (${du.length})`,click:du.length>0?"showVariation('delai_up')":null,color:du.length>0?"var(--rd)":""},
       {l:"Délai en baisse (>5j)",v:`${pctDD}% (${dd.length})`,click:dd.length>0?"showVariation('delai_down')":null,color:dd.length>0?"var(--gn)":""},
