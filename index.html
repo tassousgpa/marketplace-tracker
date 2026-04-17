@@ -648,7 +648,6 @@ function renderRevenueBlock() {
   };
 
   const btnRow = `<div style="display:flex;gap:8px;flex-wrap:wrap">
-    <button onclick="openRevenueModal()" style="padding:6px 14px;border:.5px solid var(--ac);border-radius:6px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">+ Semaine manuelle</button>
     <button onclick="openImportXLSModal('ytd')" style="padding:6px 14px;border:.5px solid var(--pu);border-radius:6px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">⬆ Import YTD</button>
     <button onclick="openImportXLSModal('week')" style="padding:6px 14px;border:.5px solid var(--am);border-radius:6px;font-size:12px;background:var(--amBg);color:var(--am);cursor:pointer;font-weight:600;font-family:inherit">⬆ Import Semaine</button>
   </div>`;
@@ -659,7 +658,7 @@ function renderRevenueBlock() {
         <div class="card-title" style="margin:0">Chiffre d'affaires</div>
         ${btnRow}
       </div>
-      <div style="padding:30px;text-align:center;color:var(--txT);font-size:13px">Aucune donnée CA. Importez un fichier XLS ou saisissez une semaine manuellement.</div>
+      <div style="padding:30px;text-align:center;color:var(--txT);font-size:13px">Aucune donnée CA. Importez un fichier XLS (Import YTD ou Import Semaine).</div>
     </div>`;
   }
 
@@ -1779,7 +1778,10 @@ const MP_MATCHING = {
   maisonsdumonde: ["maisonsdumonde"],
   laredoute:      ["laredoute"],
   conforama:      ["conforama"],
-  manomano:       ["manomano"],
+  // ManoMano : plusieurs canaux dans le fichier XLS
+  manomano:       ["manomano_de", "manomano_fr", "manomano_fr_b2b", "manomano_fr_mmf", "manomano"],
+  // BUT Mirakl
+  but:            ["but_mirakl", "but"],
 };
 
 const MP_LABELS = {
