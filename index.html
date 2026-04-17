@@ -152,9 +152,9 @@ const MARKETPLACES = [
 ];
 
 // Marketplaces sans onglet Concurrents (pas de seller_stats vendeurs)
-const NO_COMPETITORS_MP = new Set(["but", "manomano"]);
+const NO_COMPETITORS_MP = new Set(["manomano"]);
 // Marketplaces sans onglet Positions (pas de scraping positions page 1)
-const NO_POSITIONS_MP = new Set(["but", "manomano"]);
+const NO_POSITIONS_MP = new Set(["manomano"]);
 
 // Cache des derniers timestamps de scraping par marketplace (pour l'indicateur)
 const MP_LAST_SCRAPING = {};
@@ -434,11 +434,13 @@ async function loadData() {
     const trackedByScraperId = {}; // product_id_scraper → product row
     products.forEach(p => { if (p.product_id_scraper) trackedByScraperId[p.product_id_scraper.toLowerCase()] = p; });
 
-    // Un product est BM si : seller === "BestMobilier" OU son product_id matche un product_id_scraper suivi
-    // Noms de vendeurs reconnus comme appartenant au groupe
+    // Un product est BM si : seller === nom BM reconnu OU (sur Cdiscount uniquement) product_id matche un product_id_scraper suivi
+    // Le matching par product_id_scraper est désactivé sur MdM/BUT/Conforama car les IDs peuvent
+    // coïncider par accident avec des EANs ou IDs d'autres marketplaces
     const BM_SELLER_NAMES = new Set(["BestMobilier", "Best Mobilier", "Lisa Design"]);
+    const USE_SCRAPER_ID_MATCHING = (MARKETPLACE === "cdiscount" || MARKETPLACE === "amazon" || MARKETPLACE === "laredoute");
     function isBMPosition(p) {
-      return BM_SELLER_NAMES.has(p.seller) || bmScraperIds.has((p.product_id||"").toLowerCase());
+      return BM_SELLER_NAMES.has(p.seller) || (USE_SCRAPER_ID_MATCHING && bmScraperIds.has((p.product_id||"").toLowerCase()));
     }
 
     // bmByKeyword : nombre de produits BM en page 1 par keyword
@@ -565,9 +567,10 @@ const tagColor=t=>(t.includes("up")&&t!=="note_up")?"red":(t.includes("down")&&t
 function renderSynthese() {
   const P=STATE.products;
   const avail=P.filter(p=>p._available===true).length, unavail=P.filter(p=>p._available===false).length;
-  // Nombre total d'apparitions page 1 des produits suivis (1 produit sur 2 keywords = 2)
-  // = somme des pills "Page 1" dans l'onglet Produits
-  const page1 = STATE.products.reduce((sum, p) => {
+  // Produits distincts BM présents en page 1 (= taille de productsInPage1)
+  const page1 = STATE.productsInPage1 ? STATE.productsInPage1.size : 0;
+  // Total apparitions (1 produit sur 2 keywords = 2) — affiché en sous-métrique
+  const page1Appearances = STATE.products.reduce((sum, p) => {
     const pid = (p.product_id_scraper || "").toLowerCase();
     const kws = STATE.page1Keywords?.[pid];
     return sum + (kws ? kws.size : 0);
@@ -587,7 +590,7 @@ function renderSynthese() {
   return `
     <div class="metrics">
       <div class="metric"><div class="metric-label">Produits suivis</div><div class="metric-value">${P.length}</div></div>
-      <div class="metric"><div class="metric-label">En page 1</div><div class="metric-value" style="color:var(--ac)">${page1}</div><div class="metric-sub">${P.length>0?Math.round(page1/P.length*100):0}% du catalogue</div></div>
+      <div class="metric"><div class="metric-label">En page 1</div><div class="metric-value" style="color:var(--ac)">${page1}</div><div class="metric-sub">${P.length>0?Math.round(page1/P.length*100):0}% · ${page1Appearances} appari.</div></div>
       <div class="metric"><div class="metric-label">Indisponibles</div><div class="metric-value" style="color:var(--rd)">${unavail}</div></div>
       <div class="metric"><div class="metric-label">Délai moyen</div><div class="metric-value" style="color:var(--am)">${avgDelivery}j</div></div>
       <div class="metric"><div class="metric-label">Note moyenne</div><div class="metric-value" style="color:var(--am)">${avgRating}</div></div>
@@ -595,7 +598,7 @@ function renderSynthese() {
 
     <div class="card"><div class="card-title">Indicateurs clés</div><div class="grid-2">${[
       {l:"Prix moyen",v:avgPrice+"€"},{l:"Délai moyen",v:avgDelivery+" jours"},{l:"Note moyenne",v:avgRating+" / 5"},
-      {l:"Taux dispo",v:(P.length>0?Math.round(avail/P.length*100):0)+"%"},{l:"Taux page 1",v:(P.length>0?Math.round(page1/P.length*100):0)+"%"},
+      {l:"Taux dispo",v:(P.length>0?Math.round(avail/P.length*100):0)+"%"},{l:"Taux page 1",v:(P.length>0?Math.round(page1/P.length*100):0)+"% ("+page1+" produits, "+page1Appearances+" appari.)"},
       {l:"Prix en hausse (>10%)",v:`${pctPU}% (${pu.length})`,click:pu.length>0?"showVariation('prix_up')":null,color:pu.length>0?"var(--rd)":""},
       {l:"Délai en hausse (>5j)",v:`${pctDU}% (${du.length})`,click:du.length>0?"showVariation('delai_up')":null,color:du.length>0?"var(--rd)":""},
       {l:"Délai en baisse (>5j)",v:`${pctDD}% (${dd.length})`,click:dd.length>0?"showVariation('delai_down')":null,color:dd.length>0?"var(--gn)":""},
@@ -1181,7 +1184,7 @@ function getSellerData(displayName) {
     // LTM : Cdiscount, Amazon, La Redoute
     // Amazon : proxy = seller_ratings_count
     let salesLatest, salesFirst12m;
-    if (MARKETPLACE === "amazon") {
+    if (MARKETPLACE === "amazon" || MARKETPLACE === "but") {
       salesLatest = latest.seller_ratings_count || 0;
       // oldest dans les 12 derniers mois
       const cutoff = new Date(); cutoff.setFullYear(cutoff.getFullYear()-1);
@@ -1194,7 +1197,7 @@ function getSellerData(displayName) {
 
     // Tendance vs dernier scrape précédent (court terme) — sur entrées valides uniquement
     const yoyDelta = (() => {
-      if (MARKETPLACE === "amazon") {
+      if (MARKETPLACE === "amazon" || MARKETPLACE === "but") {
         if (!prev || prev.seller_ratings_count == null) return null;
         const prevVal = prev.seller_ratings_count || 0;
         return prevVal > 0 ? (salesLatest - prevVal) / prevVal * 100 : null;
@@ -1206,7 +1209,7 @@ function getSellerData(displayName) {
 
     // Tendance depuis 1er scrape (long terme) — sur entrées valides uniquement
     const yoyDeltaFirst = (() => {
-      if (MARKETPLACE === "amazon") {
+      if (MARKETPLACE === "amazon" || MARKETPLACE === "but") {
         if (!first || first.seller_ratings_count == null || allEntries.length < 2) return null;
         const fVal = first.seller_ratings_count || 0;
         return fVal > 0 ? (salesLatest - fVal) / fVal * 100 : null;
@@ -1239,6 +1242,7 @@ function getSellerData(displayName) {
 function renderConcurrents() {
   const isCumul = mpType(MARKETPLACE) === "cumul";
   const isAmazon = MARKETPLACE === "amazon";
+  const isBut   = MARKETPLACE === "but"; // BUT : seller_ratings_count = proxy ventes (nb avis)
 
   let trackedRows = STATE.trackedSellers || [];
   if (!trackedRows.length) {
@@ -1271,7 +1275,7 @@ function renderConcurrents() {
 
   // Métriques (lignes du tableau transposé)
   const metricRows = [
-    { key:"col1", label: isCumul ? "Ventes totales" : (isAmazon ? "Avis (proxy)" : "Ventes LTM") },
+    { key:"col1", label: isCumul ? "Ventes totales" : (isAmazon || isBut ? "Avis vendeur (proxy)" : "Ventes LTM") },
     { key:"col2", label: isCumul ? "Variation (dernier scraping)" : "Tendance vs préc." },
     ...(!isCumul ? [{ key:"col7", label:"Tendance depuis 1er scrape" }] : []),
     ...(isCumul ? [{ key:"col3", label:"Ventes/jour moy." }] : []),
