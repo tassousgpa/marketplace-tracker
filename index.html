@@ -1110,9 +1110,12 @@ function resolveSellerNames(displayName) {
   if (displayName === "BestMobilier") return ["BestMobilier","Best Mobilier","Lisa Design"];
   // Correspondances entre nom affiché (tracked_sellers) et nom réel en base (seller_stats)
   const SELLER_NAME_MAP = {
-    "Habitat et Jardin": ["Habitat & Jardin", "Habitat et Jardin"],
-    "Gutent (KOMHTOM)":  ["Gutent", "Gutent (KOMHTOM)"],
-    "VidaXL":            ["VidaXL", "vidaXL", "Vida XL", "VidaXl", "VIDAXL"],
+    "Habitat et Jardin":       ["Habitat & Jardin", "Habitat et Jardin", "Habitat et jardin"],
+    "Habitat et jardin":       ["Habitat & Jardin", "Habitat et Jardin", "Habitat et jardin"],
+    "Gutent (KOMHTOM)":        ["Gutent", "Gutent (KOMHTOM)"],
+    "VidaXL":                  ["VidaXL", "vidaXL", "Vida XL", "VidaXl", "VIDAXL"],
+    "vidaXL":                  ["VidaXL", "vidaXL", "Vida XL", "VidaXl", "VIDAXL"],
+    "Happy Garden (allstore)": ["allstore", "Happy Garden (allstore)", "Happy Garden"],
   };
   if (SELLER_NAME_MAP[displayName]) return SELLER_NAME_MAP[displayName];
   // Fallback insensible à la casse pour VidaXL et variantes non listées
