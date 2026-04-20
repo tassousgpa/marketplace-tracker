@@ -1059,38 +1059,38 @@ function renderPositions() {
         return `<div style="padding:8px 12px;border-bottom:1px solid var(--borderL)"><div style="font-size:13px;font-weight:500;margin-bottom:4px">${esc(kw)}</div><div style="display:flex;gap:4px;flex-wrap:wrap">${sorted.map((s,i)=>pill(`${medals[i]} ${s[0]} (${s[1]})`,["BestMobilier","Best Mobilier","Lisa Design"].includes(s[0])?"accent":s[0]==="Conforama"?"purple":"default")).join("")}${bmC>0&&!sorted.find(s=>["BestMobilier","Best Mobilier","Lisa Design"].includes(s[0]))?pill(`BM: ${bmC}`,"accent"):''}</div></div>`;
       }).join("");
     })()}</div></div>
-    ${(()=>{
-      // ── TOP 3 VENDEURS LES PLUS VISIBLES ──
-      // Agrège toutes les positions du jour par vendeur
-      // BestMobilier + Lisa Design + Best Mobilier → cumulés sous "BestMobilier"
-      const BM_NAMES = new Set(["bestmobilier","best mobilier","lisa design"]);
-      const counts = {};
-      const allPos = STATE.positions || [];
-      allPos.forEach(p => {
-        if (!p.seller) return;
-        const raw = p.seller.trim();
-        const key = BM_NAMES.has(raw.toLowerCase()) ? "BestMobilier" : raw;
-        counts[key] = (counts[key] || 0) + 1;
-      });
-      const sorted = Object.entries(counts).sort((a,b) => b[1]-a[1]).slice(0,3);
-      if (!sorted.length) return "";
-      const medals = ["🥇","🥈","🥉"];
-      const colors = ["#c9a227","#9e9e9e","#a0522d"];
-      return \`<div class="card" style="margin-top:16px">
-        <div class="card-title">Top 3 — visibilité page 1 (run du jour)</div>
-        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px">
-          \${sorted.map(([seller, count], i) => {
-            const isBM = seller === "BestMobilier";
-            return \`<div style="flex:1;min-width:140px;background:\${isBM?"var(--acBg)":"var(--bg)"};border:1px solid \${isBM?"var(--ac)":"var(--border)"};border-radius:10px;padding:14px 16px;text-align:center">
-              <div style="font-size:22px;margin-bottom:4px">\${medals[i]}</div>
-              <div style="font-size:13px;font-weight:700;color:\${isBM?"var(--ac)":"var(--tx)"};margin-bottom:6px">\${esc(seller)}</div>
-              <div style="font-size:24px;font-weight:800;color:\${colors[i]}">\${count}</div>
-              <div style="font-size:10px;color:var(--txT);margin-top:2px">apparition\${count>1?"s":""} P1</div>
-            </div>\`;
-          }).join("")}
-        </div>
-      </div>\`;
-    })()}`;
+    ${renderTop3Sellers()}`;
+}
+
+function renderTop3Sellers() {
+  const BM_NAMES = new Set(["bestmobilier","best mobilier","lisa design"]);
+  const counts = {};
+  (STATE.positions || []).forEach(p => {
+    if (!p.seller) return;
+    const raw = p.seller.trim();
+    const key = BM_NAMES.has(raw.toLowerCase()) ? "BestMobilier" : raw;
+    counts[key] = (counts[key] || 0) + 1;
+  });
+  const sorted = Object.entries(counts).sort((a,b) => b[1]-a[1]).slice(0,3);
+  if (!sorted.length) return "";
+  const medals = ["🥇","🥈","🥉"];
+  const colors = ["#c9a227","#9e9e9e","#a0522d"];
+  const cards = sorted.map(([seller, count], i) => {
+    const isBM = seller === "BestMobilier";
+    const bg     = isBM ? "var(--acBg)" : "var(--bg)";
+    const border = isBM ? "var(--ac)"   : "var(--border)";
+    const col    = isBM ? "var(--ac)"   : "var(--tx)";
+    return '<div style="flex:1;min-width:140px;background:'+bg+';border:1px solid '+border+';border-radius:10px;padding:14px 16px;text-align:center">'
+      + '<div style="font-size:22px;margin-bottom:4px">'+medals[i]+'</div>'
+      + '<div style="font-size:13px;font-weight:700;color:'+col+';margin-bottom:6px">'+esc(seller)+'</div>'
+      + '<div style="font-size:24px;font-weight:800;color:'+colors[i]+'">'+count+'</div>'
+      + '<div style="font-size:10px;color:var(--txT);margin-top:2px">apparition'+(count>1?"s":"")+" P1</div>"
+      + '</div>';
+  }).join("");
+  return '<div class="card" style="margin-top:16px">'
+    + '<div class="card-title">Top 3 — visibilité page 1 (run du jour)</div>'
+    + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px">'+cards+'</div>'
+    + '</div>';
 }
 function showPositionDetail(kw) {
   // Tous les items BM de ce keyword : seller=BestMobilier OU product_id_scraper connu
