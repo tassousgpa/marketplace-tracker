@@ -317,7 +317,7 @@ async function loadData() {
     // Évite le problème de la limite 5000 qui tronquerait les premiers keywords.
     // La table positions ne contient que le dernier run (purge côté scraper avant chaque session)
     // → select * sans filtre ni limite, requête simple et fiable
-    const [products, allProducts, snapshots, positions, sellerStats, revenueEntries, trackedSellers, revenueImports] = await Promise.all([
+    const [products, allProducts, snapshots, positions, sellerStats, revenueEntries, trackedSellers, revenueImports, productSalesWeekly] = await Promise.all([
       sb("products", `marketplace=eq.${MARKETPLACE}&active=eq.true&select=*&order=product_id`),
       sb("products", `marketplace=eq.${MARKETPLACE}&select=*&order=product_id`),
       sb("product_snapshots", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=5000`).catch(()=>[]),
@@ -326,6 +326,7 @@ async function loadData() {
       sb("revenue_entries", `marketplace=eq.${MARKETPLACE}&select=*&order=week_start_date.asc`).catch(()=>[]),
       sb("tracked_sellers", `marketplace=eq.${MARKETPLACE}&active=eq.true&select=*&order=id.asc`).catch(()=>[]),
       sb("revenue_imports", `marketplace=eq.${MARKETPLACE}&select=*&order=period_start.asc`).catch(()=>[]),
+      sb("product_sales_weekly", `marketplace=eq.${MARKETPLACE}&select=*&order=week_label.desc`).catch(()=>[]),
     ]);
 
     // Mettre à jour le cache de scraping avec les données fraîchement chargées
@@ -518,7 +519,7 @@ async function loadData() {
     const posDay = latestPosSession ? latestPosSession.slice(0, 10) : null;
     const positionsOutdated = !posDay || !snapshotDay || posDay < snapshotDay;
 
-    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, leaderCounts, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], revenueImports: revenueImports||[], tab:STATE.tab||0 };
+    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, leaderCounts, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], revenueImports: revenueImports||[], productSalesWeekly: productSalesWeekly||[], tab:STATE.tab||0 };
 
     const sessionDisplay = latestDate ? new Date(latestDate + "T12:00:00Z").toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}) : "N/A";
     document.getElementById("header-subtitle").textContent = `${products.length} produits · Relevé du ${sessionDisplay}`;
@@ -611,7 +612,8 @@ function renderSynthese() {
       {l:"Délai en hausse (>5j)",v:`${pctDU}% (${du.length})`,click:du.length>0?"showVariation('delai_up')":null,color:du.length>0?"var(--rd)":""},
       {l:"Délai en baisse (>5j)",v:`${pctDD}% (${dd.length})`,click:dd.length>0?"showVariation('delai_down')":null,color:dd.length>0?"var(--gn)":""},
     ].map(k=>`<div class="kpi-row"><span class="kpi-label">${k.l}</span><div><span class="kpi-value" ${k.color?`style="color:${k.color}"`:''}>${k.v}</span>${k.click?`<button class="btn-see" onclick="${k.click}">voir</button>`:''}</div></div>`).join("")}</div></div>
-    ${renderRevenueBlock()}`;
+    ${renderRevenueBlock()}
+    ${renderProductSalesBlocks()}`;
 }
 
 function showVariation(tag) {
@@ -623,6 +625,99 @@ function showVariation(tag) {
 // =============================================
 // BLOC CA (Synthèse)
 // =============================================
+function renderProductSalesBlocks() {
+  const allSales = STATE.productSalesWeekly || [];
+  if (!allSales.length) return "";
+
+  // Récupérer les semaines disponibles triées desc
+  const weeks = [...new Set(allSales.map(r => r.week_label))].sort((a,b) => b.localeCompare(a));
+  if (!weeks.length) return "";
+
+  const latestWeek = weeks[0];
+  const prev3Week  = weeks[3] || null; // semaine d'il y a 3 semaines
+
+  // Ventes de la semaine courante
+  const latestSales = allSales.filter(r => r.week_label === latestWeek);
+
+  // Top 5 ventes semaine
+  const top5Sales = [...latestSales].sort((a,b) => b.qty - a.qty).slice(0,5);
+
+  // Croissance / décroissance sur 3 semaines
+  let growthRows = [], declineRows = [];
+  if (prev3Week) {
+    const prev3Sales = allSales.filter(r => r.week_label === prev3Week);
+    const prev3Map = {};
+    prev3Sales.forEach(r => { prev3Map[r.ref] = r.qty; });
+
+    const withDelta = latestSales.map(r => ({
+      ...r,
+      prev3: prev3Map[r.ref] || 0,
+      delta: r.qty - (prev3Map[r.ref] || 0),
+      deltaPct: prev3Map[r.ref] > 0 ? Math.round((r.qty - prev3Map[r.ref]) / prev3Map[r.ref] * 100) : null
+    }));
+
+    growthRows  = [...withDelta].filter(r => r.delta > 0).sort((a,b) => b.delta - a.delta).slice(0,5);
+    declineRows = [...withDelta].filter(r => r.delta < 0).sort((a,b) => a.delta - b.delta).slice(0,5);
+  }
+
+  function salesTable(rows, showDelta, deltaPositive) {
+    if (!rows.length) return "<div style='color:var(--txT);font-size:12px;padding:8px'>Aucune donnée</div>";
+    return "<table style='width:100%;border-collapse:collapse;font-size:12px'>"
+      + "<thead><tr style='border-bottom:1px solid var(--border)'>"
+      + "<th style='padding:5px 8px;text-align:left;font-weight:600;color:var(--txS)'>Réf</th>"
+      + "<th style='padding:5px 8px;text-align:left;font-weight:600;color:var(--txS)'>Produit</th>"
+      + "<th style='padding:5px 8px;text-align:right;font-weight:600;color:var(--txS)'>Ventes</th>"
+      + (showDelta ? "<th style='padding:5px 8px;text-align:right;font-weight:600;color:var(--txS)'>vs S-3</th>" : "")
+      + "</tr></thead><tbody>"
+      + rows.map((r,i) => {
+          const deltaHtml = showDelta
+            ? "<td style='padding:5px 8px;text-align:right;font-weight:600;color:"
+              + (r.delta > 0 ? "var(--gn)" : "var(--rd)") + "'>"
+              + (r.delta > 0 ? "+" : "") + r.delta
+              + (r.deltaPct != null ? " (" + (r.deltaPct > 0 ? "+" : "") + r.deltaPct + "%)" : "")
+              + "</td>"
+            : "";
+          const bg = i % 2 ? "background:var(--bg)" : "";
+          return "<tr style='" + bg + ";border-bottom:1px solid var(--borderL)'>"
+            + "<td style='padding:5px 8px;font-weight:600;white-space:nowrap'>" + esc(r.ref) + "</td>"
+            + "<td style='padding:5px 8px;color:var(--txS);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap' title='" + esc(r.name) + "'>" + esc(r.name.slice(0,50)) + "</td>"
+            + "<td style='padding:5px 8px;text-align:right;font-weight:700'>" + r.qty + "</td>"
+            + deltaHtml
+            + "</tr>";
+        }).join("")
+      + "</tbody></table>";
+  }
+
+  const weekInfo = prev3Week
+    ? "<span style='font-size:11px;color:var(--txT)'>Comparaison " + latestWeek + " vs " + prev3Week + "</span>"
+    : "<span style='font-size:11px;color:var(--txT)'>Semaine " + latestWeek + " (données insuffisantes pour tendance)</span>";
+
+  return "<div style='margin-top:20px'>"
+    + "<div style='font-size:13px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:10px'>"
+    + "📦 Ventes produits — " + latestWeek + " " + weekInfo + "</div>"
+    + "<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px'>"
+
+    // Bloc 1 : Top 5 ventes
+    + "<div class='card' style='padding:14px'>"
+    + "<div class='card-title' style='margin-bottom:10px'>🏆 Top 5 ventes " + latestWeek + "</div>"
+    + salesTable(top5Sales, false, false)
+    + "</div>"
+
+    // Bloc 2 : Top 5 croissance
+    + "<div class='card' style='padding:14px'>"
+    + "<div class='card-title' style='margin-bottom:10px'>📈 Top 5 croissance (vs S-3)</div>"
+    + salesTable(growthRows, true, true)
+    + "</div>"
+
+    // Bloc 3 : Top 5 décroissance
+    + "<div class='card' style='padding:14px'>"
+    + "<div class='card-title' style='margin-bottom:10px'>📉 Top 5 décroissance (vs S-3)</div>"
+    + salesTable(declineRows, true, false)
+    + "</div>"
+
+    + "</div></div>";
+}
+
 function renderRevenueBlock() {
   const imports = (STATE.revenueImports || []);
   const entries = (STATE.revenueEntries || []).slice().sort((a,b) => a.week_start_date > b.week_start_date ? 1 : -1);
@@ -909,7 +1004,7 @@ function renderProduits() {
         <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('price')">Prix${si('price')}</th>
         <th style="text-align:center">Dispo</th><th style="cursor:pointer;text-align:right" onclick="toggleProdSort('rating')">Note${si('rating')}</th>
         <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('delivery')">Délai${si('delivery')}</th>
-        <th>Page 1</th><th>Variations</th><th>Lien</th>
+        <th>Page 1</th><th>Ventes</th><th>Variations</th><th>Lien</th>
       </tr></thead><tbody>
       ${list.map((p,i)=>`<tr class="${i%2?'stripe':''}">
         <td style="font-weight:500;max-width:240px"><div style="line-height:1.3">${esc(p.name)}</div></td>
@@ -920,6 +1015,12 @@ function renderProduits() {
         <td style="text-align:right">${p._rating!=null?p._rating:'—'}</td>
         <td style="text-align:right">${p._delivery!=null?p._delivery+'j':'—'}</td>
         <td style="max-width:200px">${(()=>{const pid=(p.product_id_scraper||'').toLowerCase();const kws=STATE.page1Keywords?.[pid];if(!kws||kws.size===0)return'<span style="color:var(--txT);font-size:11px">—</span>';return[...kws].map(k=>`<span style="display:inline-block;margin:1px 2px;padding:2px 7px;background:var(--acBg);color:var(--ac);border-radius:99px;font-size:11px;font-weight:500;white-space:nowrap">${esc(k)}</span>`).join('');})()}</td>
+        <td style="text-align:right;white-space:nowrap">${(()=>{
+          const sales = (STATE.productSalesWeekly||[]).filter(r=>r.ref===p.sku);
+          if(!sales.length) return '<span style="color:var(--txT);font-size:11px">—</span>';
+          const latest = sales.reduce((a,b)=>a.week_label>b.week_label?a:b);
+          return '<span style="font-weight:600">'+latest.qty+'</span><span style="color:var(--txT);font-size:10px;margin-left:3px">('+esc(latest.week_label)+')</span>';
+        })()}</td>
         <td>${p._tags.map(t=>`<span style="margin:1px 2px;display:inline-block">${pill(tagLabel(t),tagColor(t))}</span>`).join('')}</td>
         <td>${p.url?`<a href="${esc(p.url)}" target="_blank" class="link">Voir ↗</a>`:'—'}</td>
       </tr>`).join('')}
@@ -1840,7 +1941,8 @@ function openImportXLSModal(importType = 'ytd') {
 
       <div style="background:var(--puBg);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--pu)">
         Importe les fichiers YTD N et N-1 pour calculer le CA par marketplace.
-        Les données seront stockées dans <b>revenue_imports</b>.
+        Pour l'import Semaine, joindre aussi le fichier Odoo de la semaine pour les ventes produit.
+        Les données seront stockées dans <b>revenue_imports</b> et <b>product_sales_weekly</b>.
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -1928,9 +2030,12 @@ async function parseXLSFile(file) {
         Object.keys(MP_MATCHING).forEach(mp => totals[mp] = 0);
 
         rows.forEach(row => {
-          if (!row || !row[0] || !row[1]) return;
+          if (!row || !row[0]) return;
+          // row[1] peut être 0 pour certaines lignes — on accepte les valeurs numériques nulles
+          const raw1 = row[1] != null ? row[1] : null;
+          if (raw1 == null) return;
           const label = String(row[0]).toLowerCase().replace(/\s/g, "");
-          const val = parseFloat(String(row[1]).replace(",", "."));
+          const val = parseFloat(String(raw1).replace(",", ".").replace(/\s/g,""));
           if (isNaN(val)) return;
 
           for (const [mp, keys] of Object.entries(MP_MATCHING)) {
@@ -1953,6 +2058,64 @@ async function parseXLSFile(file) {
   });
 }
 
+// ── PARSE ODOO XLS — ventes produits hebdomadaires ──────────────
+// Retourne [{ref, name, marketplace, qty}]
+// Mapping canal Odoo → marketplace dashboard
+const ODOO_CHANNEL_MAP = {
+  "amazon_fr": "amazon", "amazon_be": "amazon",
+  "cdiscount_octopia": "cdiscount",
+  "maisonsdumonde": "maisonsdumonde",
+  "laredoute_mirakl": "laredoute",
+  "conforama": "conforama",
+  "manomano_fr": "manomano", "manomano_fr_b2b": "manomano",
+  "but_mirakl": "but",
+};
+const ODOO_SKIP = ["Livraison", "Retrait", "Bon de réduction", "Remise"];
+
+async function parseOdooXLS(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const wb = XLSX.read(data, { type: "array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+
+        let currentChannel = null;
+        const agg = {}; // "ref|marketplace" → {ref, name, marketplace, qty}
+
+        rows.forEach(row => {
+          if (!row || row.length < 3) return;
+          const desc = row[0] != null ? String(row[0]).trim() : "";
+          const qtyRaw = row[2];
+          if (!desc || desc === "Total" || desc.includes("Total HT")) return;
+          if (ODOO_SKIP.some(p => desc.startsWith(p))) return;
+
+          const refMatch = desc.match(/\[([^\]]+)\]/);
+          if (refMatch) {
+            const ref = refMatch[1].trim();
+            const name = desc.replace(/\[[^\]]+\]\s*/, "").trim().slice(0, 100);
+            const qty = parseInt(qtyRaw) || 0;
+            const mp = currentChannel ? ODOO_CHANNEL_MAP[currentChannel] : null;
+            if (mp && qty > 0) {
+              const key = ref + "|" + mp;
+              if (!agg[key]) agg[key] = { ref, name, marketplace: mp, qty: 0 };
+              agg[key].qty += qty;
+            }
+          } else {
+            currentChannel = desc;
+          }
+        });
+
+        resolve(Object.values(agg));
+      } catch(e) { reject(e); }
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 let _importData = null; // cache pour confirmImport
 
 async function previewImport() {
@@ -1960,8 +2123,9 @@ async function previewImport() {
   const previewEl = document.getElementById("imp-preview");
   statusEl.innerHTML = '<span style="color:var(--txS)">Lecture des fichiers…</span>';
 
-  const fileN  = document.getElementById("imp-file-n")?.files[0];
-  const fileN1 = document.getElementById("imp-file-n1")?.files[0];
+  const fileN    = document.getElementById("imp-file-n")?.files[0];
+  const fileN1   = document.getElementById("imp-file-n1")?.files[0];
+  const fileOdoo = document.getElementById("imp-file-odoo")?.files[0];
   const start  = document.getElementById("imp-start")?.value;
   const end    = document.getElementById("imp-end")?.value;
   const label  = document.getElementById("imp-label")?.value?.trim();
@@ -1980,9 +2144,20 @@ async function previewImport() {
     const fmtDate = d => d.toLocaleDateString("fr-FR", {day:"2-digit",month:"2-digit",year:"numeric"});
 
     // Stocker pour confirmImport
+    // Parser le fichier Odoo si fourni
+    let productSales = [];
+    if (fileOdoo) {
+      try {
+        productSales = await parseOdooXLS(fileOdoo);
+        console.log("✅ Odoo parsé :", productSales.length, "lignes produit×marketplace");
+      } catch(e) {
+        console.warn("⚠ Odoo parse error:", e.message);
+      }
+    }
     _importData = { totalsN, totalsN1, start, end, label,
       startN1: startN1.toISOString().slice(0,10),
-      endN1:   endN1.toISOString().slice(0,10) };
+      endN1:   endN1.toISOString().slice(0,10),
+      productSales };
 
     // Construire tableau de prévisualisation
     const fmtCA = v => v.toLocaleString("fr-FR", {minimumFractionDigits:0, maximumFractionDigits:0}) + " €";
@@ -2019,7 +2194,10 @@ async function previewImport() {
         </table>
       </div>`;
 
-    statusEl.innerHTML = '<span style="color:var(--gn)">✓ Prévisualisation prête — vérifiez puis cliquez Importer.</span>';
+    const prodInfo = productSales.length > 0
+      ? ` + ${productSales.length} lignes produit (Odoo)`
+      : "";
+    statusEl.innerHTML = `<span style="color:var(--gn)">✓ Prévisualisation prête${prodInfo} — vérifiez puis cliquez Importer.</span>`;
   } catch(e) {
     statusEl.innerHTML = `<span style="color:var(--rd)">Erreur lecture fichier : ${e.message}</span>`;
   }
@@ -2072,7 +2250,29 @@ async function confirmImport() {
     });
     if (!r.ok) { const t = await r.text(); throw new Error(`${r.status}: ${t}`); }
 
-    statusEl.innerHTML = `<span style="color:var(--gn)">✓ ${rows.length} lignes importées pour "${label}".</span>`;
+    // Insérer les ventes produits si présentes
+    const { productSales } = _importData;
+    if (productSales && productSales.length > 0) {
+      // Supprimer les entrées existantes pour ce label
+      await fetch(`${SB_URL}/rest/v1/product_sales_weekly?week_label=eq.${encodeURIComponent(label)}`, {
+        method: "DELETE",
+        headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` }
+      });
+      // Insérer les nouvelles
+      const salesRows = productSales.map(p => ({
+        ref: p.ref, name: p.name, marketplace: p.marketplace,
+        week_label: label, period_start: start, qty: p.qty
+      }));
+      const r2 = await fetch(`${SB_URL}/rest/v1/product_sales_weekly`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, Prefer: "return=minimal" },
+        body: JSON.stringify(salesRows)
+      });
+      if (!r2.ok) console.warn("⚠ product_sales_weekly insert:", await r2.text());
+      else console.log("✅ product_sales_weekly:", salesRows.length, "lignes");
+    }
+
+    statusEl.innerHTML = `<span style="color:var(--gn)">✓ ${rows.length} lignes CA importées pour "${label}"${productSales?.length ? " + " + productSales.length + " ventes produit" : ""}.</span>`;
     _importData = null;
     setTimeout(() => { closeModal(); loadData(); }, 1200);
   } catch(e) {
