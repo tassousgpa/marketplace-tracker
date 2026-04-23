@@ -1977,6 +1977,14 @@ function openImportXLSModal(importType = 'ytd') {
         </div>
       </div>
 
+      <div style="background:var(--amBg);border:1px solid var(--am);border-radius:8px;padding:10px 12px">
+        <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">
+          📦 Fichier Odoo ventes semaine <span style="color:var(--txT)">(optionnel — uniquement pour Import Semaine)</span>
+        </label>
+        <input id="imp-file-odoo" type="file" accept=".xls,.xlsx" style="width:100%;padding:6px;border:.5px solid var(--border);border-radius:6px;font-size:11px;font-family:inherit;background:var(--card)">
+        <div style="font-size:10px;color:var(--txT);margin-top:4px">Export Odoo détaillé avec lignes produits → alimente le Top 5 ventes dans l'onglet Synthèse</div>
+      </div>
+
       <div>
         <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Label de la période (ex: YTD S15 2026) *</label>
         <input id="imp-label" placeholder="ex: YTD S15 2026" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">
