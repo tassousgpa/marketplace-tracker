@@ -627,7 +627,13 @@ function showVariation(tag) {
 // =============================================
 function renderProductSalesBlocks() {
   const allSales = STATE.productSalesWeekly || [];
-  if (!allSales.length) return "";
+  if (!allSales.length) return `
+    <div style="margin-top:20px">
+      <div style="font-size:13px;font-weight:700;margin-bottom:12px">📦 Ventes produits par semaine</div>
+      <div class="card" style="padding:24px;text-align:center;color:var(--txT);font-size:12px">
+        Aucune donnée produit. Importez un fichier Odoo via <b>Import Semaine</b> (champ optionnel "Fichier Odoo ventes semaine").
+      </div>
+    </div>`;
 
   // Récupérer les semaines disponibles triées desc
   const weeks = [...new Set(allSales.map(r => r.week_label))].sort((a,b) => b.localeCompare(a));
