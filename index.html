@@ -640,7 +640,7 @@ function renderProductSalesBlocks() {
   if (!weeks.length) return "";
 
   const latestWeek = weeks[0];
-  const prev3Week  = weeks[3] || null; // semaine d'il y a 3 semaines
+  const prev3Week  = weeks[2] || null; // semaine d'il y a 2 semaines (S-2)
 
   // Ventes de la semaine courante
   const latestSales = allSales.filter(r => r.week_label === latestWeek);
@@ -711,13 +711,13 @@ function renderProductSalesBlocks() {
 
     // Bloc 2 : Top 5 croissance
     + "<div class='card' style='padding:14px'>"
-    + "<div class='card-title' style='margin-bottom:10px'>📈 Top 5 croissance (vs S-3)</div>"
+    + "<div class='card-title' style='margin-bottom:10px'>📈 Top 5 croissance (vs S-2)</div>"
     + salesTable(growthRows, true, true)
     + "</div>"
 
     // Bloc 3 : Top 5 décroissance
     + "<div class='card' style='padding:14px'>"
-    + "<div class='card-title' style='margin-bottom:10px'>📉 Top 5 décroissance (vs S-3)</div>"
+    + "<div class='card-title' style='margin-bottom:10px'>📉 Top 5 décroissance (vs S-2)</div>"
     + salesTable(declineRows, true, false)
     + "</div>"
 
