@@ -666,14 +666,28 @@ function renderProductSalesBlocks() {
     declineRows = [...withDelta].filter(r => r.delta < 0).sort((a,b) => a.delta - b.delta).slice(0,5);
   }
 
-  // Index précalculé sku → dernier prix (évite O(n²) dans la boucle)
-  const skuToPriceIndex = {};
+  // Index précalculé sku → dernier prix
+  // On cherche dans TOUS les produits (toutes marketplaces) × snapshots de la marketplace courante
+  // + fallback sur allProducts pour les produits vendus sur d'autres marketplaces
+  // Index sku → dernier prix scrapé sur la marketplace courante
+  // Normalisation casse : snapshots Cdiscount ont des IDs minuscules, products en majuscules
+  const scraperIdToSku = {};
   (STATE.products || []).forEach(p => {
-    if (!p.sku || !p.product_id_scraper) return;
-    const snaps = (STATE.snapshots || []).filter(s => s.product_id === p.product_id_scraper);
-    if (!snaps.length) return;
-    const last = snaps.reduce((a,b) => a.date > b.date ? a : b);
-    if (last.price) skuToPriceIndex[p.sku] = last.price;
+    if (p.sku && p.product_id_scraper) {
+      scraperIdToSku[p.product_id_scraper.toLowerCase()] = p.sku;
+    }
+  });
+  const skuToPriceIndex = {};
+  (STATE.snapshots || []).forEach(s => {
+    if (!s.price) return;
+    const sku = scraperIdToSku[(s.product_id || "").toLowerCase()];
+    if (!sku) return;
+    if (!skuToPriceIndex[sku] || s.date > (skuToPriceIndex[sku].date || "")) {
+      skuToPriceIndex[sku] = { price: s.price, date: s.date };
+    }
+  });
+  Object.keys(skuToPriceIndex).forEach(k => {
+    skuToPriceIndex[k] = skuToPriceIndex[k].price;
   });
 
   function salesTable(rows, showDelta) {
@@ -999,14 +1013,18 @@ function renderProduits() {
   const si=col=>f.sort===col?(f.dir==="asc"?" ↑":" ↓"):"";
   return `
     <div class="filters">
-      <input placeholder="Rechercher..." value="${esc(f.search)}" oninput="prodFilters.search=this.value;renderContent()"/>
-      <select onchange="prodFilters.type=this.value;renderContent()"><option value="all">Tous types</option><option value="Top ref" ${f.type==='Top ref'?'selected':''}>Top ref</option><option value="Nouveautés" ${f.type==='Nouveautés'?'selected':''}>Nouveautés</option><option value="Classe A" ${f.type==='Classe A'?'selected':''}>Classe A</option><option value="Nouveautés Q4+Q1" ${f.type==='Nouveautés Q4+Q1'?'selected':''}>Nouveautés Q4+Q1</option><option value="Deals exclus" ${f.type==='Deals exclus'?'selected':''}>Deals exclus</option></select>
-      <select onchange="prodFilters.avail=this.value;renderContent()"><option value="all">Dispo + Indispo</option><option value="dispo" ${f.avail==='dispo'?'selected':''}>Disponible</option><option value="indispo" ${f.avail==='indispo'?'selected':''}>Indisponible</option></select>
-      <select onchange="prodFilters.page1=this.value;renderContent()"><option value="all">Toutes positions</option><option value="yes" ${f.page1==='yes'?'selected':''}>En page 1</option><option value="no" ${f.page1==='no'?'selected':''}>Pas en page 1</option></select>
-      <select onchange="prodFilters.tag=this.value;renderContent()"><option value="all">Toutes variations</option><option value="prix_up">Prix ↑</option><option value="prix_down">Prix ↓</option><option value="delai_up">Délai ↑</option><option value="delai_down">Délai ↓</option><option value="note_up">Note ↑</option><option value="note_down">Note ↓</option></select>
+      <input id="prod-search-input" placeholder="Rechercher..." value="${esc(f.search)}" oninput="prodFilters.search=this.value;renderProduitsTable()"/>
+      <select onchange="prodFilters.type=this.value;renderProduitsTable()"><option value="all">Tous types</option><option value="Top ref" ${f.type==='Top ref'?'selected':''}>Top ref</option><option value="Nouveautés" ${f.type==='Nouveautés'?'selected':''}>Nouveautés</option><option value="Classe A" ${f.type==='Classe A'?'selected':''}>Classe A</option><option value="Nouveautés Q4+Q1" ${f.type==='Nouveautés Q4+Q1'?'selected':''}>Nouveautés Q4+Q1</option><option value="Deals exclus" ${f.type==='Deals exclus'?'selected':''}>Deals exclus</option></select>
+      <select onchange="prodFilters.avail=this.value;renderProduitsTable()"><option value="all">Dispo + Indispo</option><option value="dispo" ${f.avail==='dispo'?'selected':''}>Disponible</option><option value="indispo" ${f.avail==='indispo'?'selected':''}>Indisponible</option></select>
+      <select onchange="prodFilters.page1=this.value;renderProduitsTable()"><option value="all">Toutes positions</option><option value="yes" ${f.page1==='yes'?'selected':''}>En page 1</option><option value="no" ${f.page1==='no'?'selected':''}>Pas en page 1</option></select>
+      <select onchange="prodFilters.tag=this.value;renderProduitsTable()"><option value="all">Toutes variations</option><option value="prix_up">Prix ↑</option><option value="prix_down">Prix ↓</option><option value="delai_up">Délai ↑</option><option value="delai_down">Délai ↓</option><option value="note_up">Note ↑</option><option value="note_down">Note ↓</option></select>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--txS);cursor:pointer;white-space:nowrap">
+        <input type="checkbox" id="filter-sales-cb" ${filterOnlySales?"checked":""} onchange="filterOnlySales=this.checked;renderProduitsTable()" style="cursor:pointer">
+        Avec ventes uniquement
+      </label>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-      <div style="font-size:12px;color:var(--txS)">${list.length} produit${list.length>1?'s':''}</div>
+      <div id="prod-counter" style="font-size:12px;color:var(--txS)">${list.length} produit${list.length>1?'s':''}</div>
       <div style="display:flex;align-items:center;gap:8px">
         <span style="font-size:12px;color:var(--txS)">Historique :</span>
         <select onchange="exportSessions=+this.value" style="padding:5px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;background:var(--card);font-family:inherit">
@@ -1026,7 +1044,7 @@ function renderProduits() {
         <th style="text-align:center">Dispo</th><th style="cursor:pointer;text-align:right" onclick="toggleProdSort('rating')">Note${si('rating')}</th>
         <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('delivery')">Délai${si('delivery')}</th>
         <th>Page 1</th><th>Ventes</th><th>Variations</th><th>Lien</th>
-      </tr></thead><tbody>
+      </tr></thead><tbody id="prod-tbody">
       ${list.map((p,i)=>`<tr class="${i%2?'stripe':''}">
         <td style="font-weight:500;max-width:240px"><div style="line-height:1.3">${esc(p.name)}</div></td>
         <td style="font-size:11px;color:var(--txS);white-space:nowrap"><div style="font-weight:600;color:var(--tx)">${esc(p.product_id)}</div><div>SKU: ${esc(p.sku||'—')}</div>${p.ean?`<div style="color:var(--txT)">EAN: ${esc(p.ean)}</div>`:''}</td>
@@ -1047,7 +1065,68 @@ function renderProduits() {
       </tr>`).join('')}
       </tbody></table></div></div>`;
 }
-function toggleProdSort(col){if(prodFilters.sort===col)prodFilters.dir=prodFilters.dir==="asc"?"desc":"asc";else{prodFilters.sort=col;prodFilters.dir="asc";}renderContent();}
+function toggleProdSort(col){if(prodFilters.sort===col)prodFilters.dir=prodFilters.dir==="asc"?"desc":"asc";else{prodFilters.sort=col;prodFilters.dir="asc";}renderProduitsTable();}
+
+// Partial re-render : ne touche qu'au tbody et au compteur, pas aux inputs/filtres
+function renderProduitsTable() {
+  const tbody = document.getElementById("prod-tbody");
+  if (!tbody) { renderContent(); return; }
+  const f = prodFilters;
+  let list = STATE.products.filter(p => {
+    if (f.search) {
+      const s = f.search.toLowerCase();
+      if (!((p.name||"").toLowerCase().includes(s)||(p.product_id||"").toLowerCase().includes(s)||(p.sku||"").toLowerCase().includes(s)||(p.ean||"").toLowerCase().includes(s))) return false;
+    }
+    if (f.type !== "all" && p.type !== f.type) return false;
+    if (f.avail === "dispo" && p._available !== true) return false;
+    if (f.avail === "indispo" && p._available !== false) return false;
+    if (f.page1 === "yes" && !STATE.productsInPage1?.has((p.product_id_scraper||"").toLowerCase())) return false;
+    if (f.page1 === "no" && STATE.productsInPage1?.has((p.product_id_scraper||"").toLowerCase())) return false;
+    if (f.tag !== "all" && !(p._tags||[]).includes(f.tag)) return false;
+    if (filterOnlySales && !(STATE.productSalesWeekly||[]).some(r=>r.ref===p.sku&&r.qty>0)) return false;
+    return true;
+  });
+  if (f.sort) {
+    const dir = f.dir === "asc" ? 1 : -1;
+    list.sort((a,b) => {
+      const va = a["_"+f.sort] ?? -Infinity;
+      const vb = b["_"+f.sort] ?? -Infinity;
+      return (va>vb?1:va<vb?-1:0)*dir;
+    });
+  }
+  // Update counter
+  const counter = document.getElementById("prod-counter");
+  if (counter) counter.textContent = list.length + " produit" + (list.length>1?"s":"");
+  // Re-render tbody only
+  tbody.innerHTML = list.map((p,i) => {
+    const pid = (p.product_id_scraper||"").toLowerCase();
+    const kws = STATE.page1Keywords?.[pid];
+    const page1Html = (!kws||kws.size===0)
+      ? '<span style="color:var(--txT);font-size:11px">—</span>'
+      : [...kws].map(k=>`<span style="display:inline-block;margin:1px 2px;padding:2px 7px;background:var(--acBg);color:var(--ac);border-radius:99px;font-size:11px;font-weight:500;white-space:nowrap">${esc(k)}</span>`).join("");
+    const sales = (STATE.productSalesWeekly||[]).filter(r=>r.ref===p.sku);
+    const salesHtml = sales.length
+      ? (() => { const l=sales.reduce((a,b)=>a.week_label>b.week_label?a:b); return '<span style="font-weight:600">'+l.qty+'</span><span style="color:var(--txT);font-size:10px;margin-left:3px">('+esc(l.week_label)+')</span>'; })()
+      : '<span style="color:var(--txT);font-size:11px">—</span>';
+    return `<tr class="${i%2?'stripe':''}">
+      <td style="font-weight:500;max-width:240px"><div style="line-height:1.3">${esc(p.name)}</div></td>
+      <td style="font-size:11px;color:var(--txS);white-space:nowrap"><div style="font-weight:600;color:var(--tx)">${esc(p.product_id)}</div><div>SKU: ${esc(p.sku||"—")}</div>${p.ean?`<div style="color:var(--txT)">EAN: ${esc(p.ean)}</div>`:""}</td>
+      <td style="text-align:center">${pill(p.type==="Nouveautés Q4+Q1"?"Nvtés":p.type==="Nouveautés"?"Nvtés":p.type==="Deals exclus"?"Deals":p.type||"—",p.type==="Classe A"?"green":p.type==="Deals exclus"?"amber":p.type==="Top ref"?"accent":"accent")}</td>
+      <td style="text-align:right;font-weight:500">${p._price!=null?Math.round(p._price)+"€":"—"}</td>
+      <td style="text-align:center">${p._available!=null?pill(p._available?"Dispo":"Indispo",p._available?"green":"red"):"—"}</td>
+      <td style="text-align:right">${p._rating!=null?p._rating:"—"}</td>
+      <td style="text-align:right">${p._delivery!=null?p._delivery+"j":"—"}</td>
+      <td style="max-width:200px">${page1Html}</td>
+      <td style="text-align:right;white-space:nowrap">${salesHtml}</td>
+      <td>${(p._tags||[]).map(t=>`<span style="margin:1px 2px;display:inline-block">${pill(tagLabel(t),tagColor(t))}</span>`).join("")}</td>
+      <td>${p.url?`<a href="${esc(p.url)}" target="_blank" class="link">Voir ↗</a>`:"—"}</td>
+    </tr>`;
+  }).join("");
+}
+
+function renderGestionTable() {
+  renderContent(); // gestion tab is simpler, full re-render OK since input has different ID
+}
 
 function exportCSV() {
   const sessions = STATE.dates.slice(-exportSessions);
@@ -1871,7 +1950,7 @@ function renderGestion() {
     </div>
     <div class="card">
       <div class="card-title">Gérer les produits</div>
-      <div class="filters"><input placeholder="Rechercher par nom, ID produit, SKU ou EAN..." value="${esc(gestionSearch)}" oninput="gestionSearch=this.value;renderContent()"/></div>
+      <div class="filters"><input id="gestion-search-input" placeholder="Rechercher par nom, ID produit, SKU ou EAN..." value="${esc(gestionSearch)}" oninput="gestionSearch=this.value;renderGestionTable()"/></div>
       <div style="font-size:12px;color:var(--txS);margin-bottom:8px">${list.length} produit${list.length>1?'s':''}</div>
       <div class="scroll-table"><table style="min-width:960px">
         <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)"><th style="width:30%">Produit</th><th>IDs</th><th>Type</th><th>Statut</th><th>URL</th><th style="text-align:center">Actions</th></tr></thead>
