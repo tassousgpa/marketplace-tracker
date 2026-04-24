@@ -666,15 +666,15 @@ function renderProductSalesBlocks() {
     declineRows = [...withDelta].filter(r => r.delta < 0).sort((a,b) => a.delta - b.delta).slice(0,5);
   }
 
-  // Dernier prix scrapé pour une réf (via sku → product_id_scraper → snapshots)
-  function getLastPrice(ref) {
-    const prod = (STATE.products || []).find(p => p.sku === ref);
-    if (!prod || !prod.product_id_scraper) return null;
-    const snaps = (STATE.snapshots || []).filter(s => s.product_id === prod.product_id_scraper);
-    if (!snaps.length) return null;
+  // Index précalculé sku → dernier prix (évite O(n²) dans la boucle)
+  const skuToPriceIndex = {};
+  (STATE.products || []).forEach(p => {
+    if (!p.sku || !p.product_id_scraper) return;
+    const snaps = (STATE.snapshots || []).filter(s => s.product_id === p.product_id_scraper);
+    if (!snaps.length) return;
     const last = snaps.reduce((a,b) => a.date > b.date ? a : b);
-    return last.price || null;
-  }
+    if (last.price) skuToPriceIndex[p.sku] = last.price;
+  });
 
   function salesTable(rows, showDelta) {
     if (!rows.length) return "<div style='color:var(--txT);font-size:12px;padding:8px'>Aucune donnée</div>";
@@ -688,7 +688,7 @@ function renderProductSalesBlocks() {
       + (showDelta ? "<th style='padding:5px 8px;text-align:right;font-weight:600;color:var(--txS)'>vs S-2</th>" : "")
       + "</tr></thead><tbody>"
       + rows.map((r,i) => {
-          const lastPrice = getLastPrice(r.ref);
+          const lastPrice = skuToPriceIndex[r.ref] || null;
           const basket = (r.ca_ht && r.qty) ? Math.round(r.ca_ht / r.qty * 1.2) + "€" : "—";
           const priceCell = lastPrice ? Math.round(lastPrice) + "€" : "—";
           const deltaHtml = showDelta
