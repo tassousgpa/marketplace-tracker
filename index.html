@@ -666,28 +666,43 @@ function renderProductSalesBlocks() {
     declineRows = [...withDelta].filter(r => r.delta < 0).sort((a,b) => a.delta - b.delta).slice(0,5);
   }
 
-  function salesTable(rows, showDelta, deltaPositive) {
+  // Dernier prix scrapé pour une réf (via sku → product_id_scraper → snapshots)
+  function getLastPrice(ref) {
+    const prod = (STATE.products || []).find(p => p.sku === ref);
+    if (!prod || !prod.product_id_scraper) return null;
+    const snaps = (STATE.snapshots || []).filter(s => s.product_id === prod.product_id_scraper);
+    if (!snaps.length) return null;
+    const last = snaps.reduce((a,b) => a.date > b.date ? a : b);
+    return last.price || null;
+  }
+
+  function salesTable(rows, showDelta) {
     if (!rows.length) return "<div style='color:var(--txT);font-size:12px;padding:8px'>Aucune donnée</div>";
     return "<table style='width:100%;border-collapse:collapse;font-size:12px'>"
       + "<thead><tr style='border-bottom:1px solid var(--border)'>"
       + "<th style='padding:5px 8px;text-align:left;font-weight:600;color:var(--txS)'>Réf</th>"
       + "<th style='padding:5px 8px;text-align:left;font-weight:600;color:var(--txS)'>Produit</th>"
       + "<th style='padding:5px 8px;text-align:right;font-weight:600;color:var(--txS)'>Ventes</th>"
-      + (showDelta ? "<th style='padding:5px 8px;text-align:right;font-weight:600;color:var(--txS)'>vs S-3</th>" : "")
+      + "<th style='padding:5px 8px;text-align:right;font-weight:600;color:var(--txS)'>PM TTC</th>"
+      + "<th style='padding:5px 8px;text-align:right;font-weight:600;color:var(--txS)'>Prix affiché</th>"
+      + (showDelta ? "<th style='padding:5px 8px;text-align:right;font-weight:600;color:var(--txS)'>vs S-2</th>" : "")
       + "</tr></thead><tbody>"
       + rows.map((r,i) => {
+          const lastPrice = getLastPrice(r.ref);
+          const basket = (r.ca_ht && r.qty) ? Math.round(r.ca_ht / r.qty * 1.2) + "€" : "—";
+          const priceCell = lastPrice ? Math.round(lastPrice) + "€" : "—";
           const deltaHtml = showDelta
             ? "<td style='padding:5px 8px;text-align:right;font-weight:600;color:"
               + (r.delta > 0 ? "var(--gn)" : "var(--rd)") + "'>"
-              + (r.delta > 0 ? "+" : "") + r.delta
-              + (r.deltaPct != null ? " (" + (r.deltaPct > 0 ? "+" : "") + r.deltaPct + "%)" : "")
-              + "</td>"
+              + (r.delta > 0 ? "+" : "") + r.delta + "</td>"
             : "";
           const bg = i % 2 ? "background:var(--bg)" : "";
           return "<tr style='" + bg + ";border-bottom:1px solid var(--borderL)'>"
             + "<td style='padding:5px 8px;font-weight:600;white-space:nowrap'>" + esc(r.ref) + "</td>"
-            + "<td style='padding:5px 8px;color:var(--txS);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap' title='" + esc(r.name) + "'>" + esc(r.name.slice(0,50)) + "</td>"
+            + "<td style='padding:5px 8px;color:var(--txS);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap' title='" + esc(r.name) + "'>" + esc(r.name.slice(0,40)) + "</td>"
             + "<td style='padding:5px 8px;text-align:right;font-weight:700'>" + r.qty + "</td>"
+            + "<td style='padding:5px 8px;text-align:right;color:var(--txS)'>" + basket + "</td>"
+            + "<td style='padding:5px 8px;text-align:right;color:var(--txS)'>" + priceCell + "</td>"
             + deltaHtml
             + "</tr>";
         }).join("")
@@ -706,19 +721,19 @@ function renderProductSalesBlocks() {
     // Bloc 1 : Top 5 ventes
     + "<div class='card' style='padding:14px'>"
     + "<div class='card-title' style='margin-bottom:10px'>🏆 Top 5 ventes " + latestWeek + "</div>"
-    + salesTable(top5Sales, false, false)
+    + salesTable(top5Sales, false)
     + "</div>"
 
     // Bloc 2 : Top 5 croissance
     + "<div class='card' style='padding:14px'>"
     + "<div class='card-title' style='margin-bottom:10px'>📈 Top 5 croissance (vs S-2)</div>"
-    + salesTable(growthRows, true, true)
+    + salesTable(growthRows, true)
     + "</div>"
 
     // Bloc 3 : Top 5 décroissance
     + "<div class='card' style='padding:14px'>"
     + "<div class='card-title' style='margin-bottom:10px'>📉 Top 5 décroissance (vs S-2)</div>"
-    + salesTable(declineRows, true, false)
+    + salesTable(declineRows, true)
     + "</div>"
 
     + "</div></div>";
@@ -2111,11 +2126,13 @@ async function parseOdooXLS(file) {
             const ref = refMatch[1].trim();
             const name = desc.replace(/\[[^\]]+\]\s*/, "").trim().slice(0, 100);
             const qty = parseInt(qtyRaw) || 0;
+            const caHt = parseFloat(String(row[1] || 0).replace(",", ".")) || 0;
             const mp = currentChannel ? ODOO_CHANNEL_MAP[currentChannel] : null;
             if (mp && qty > 0) {
               const key = ref + "|" + mp;
-              if (!agg[key]) agg[key] = { ref, name, marketplace: mp, qty: 0 };
+              if (!agg[key]) agg[key] = { ref, name, marketplace: mp, qty: 0, ca_ht: 0 };
               agg[key].qty += qty;
+              agg[key].ca_ht += caHt;
             }
           } else {
             currentChannel = desc;
@@ -2275,7 +2292,9 @@ async function confirmImport() {
       // Insérer les nouvelles
       const salesRows = productSales.map(p => ({
         ref: p.ref, name: p.name, marketplace: p.marketplace,
-        week_label: label, period_start: start, qty: p.qty
+        week_label: label, period_start: start, qty: p.qty,
+        ca_ht: p.ca_ht ? Math.round(p.ca_ht * 100) / 100 : null,
+        avg_basket_ttc: (p.ca_ht && p.qty) ? Math.round(p.ca_ht / p.qty * 1.2 * 100) / 100 : null
       }));
       const r2 = await fetch(`${SB_URL}/rest/v1/product_sales_weekly`, {
         method: "POST",
