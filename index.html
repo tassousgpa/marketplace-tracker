@@ -1000,6 +1000,7 @@ async function deleteRevenue(label) {
 // =============================================
 let prodFilters={search:"",type:"all",avail:"all",page1:"all",tag:"all",sort:"name",dir:"asc"};
 let exportSessions = 4;
+let filterOnlySales = false;
 function renderProduits() {
   const f=prodFilters; let list=[...STATE.products];
   if(f.search){const s=f.search.toLowerCase();list=list.filter(p=>p.name.toLowerCase().includes(s)||p.product_id.includes(s)||(p.sku||"").toLowerCase().includes(s));}
