@@ -324,7 +324,7 @@ async function loadData() {
     const [products, allProducts, snapshots, positions, sellerStats, revenueEntries, trackedSellers, revenueImports, productSalesWeekly] = await Promise.all([
       sb("products", `marketplace=eq.${MARKETPLACE}&active=eq.true&select=*&order=product_id`),
       sb("products", `marketplace=eq.${MARKETPLACE}&select=*&order=product_id`),
-      sb("product_snapshots", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=5000`),
+      sb("product_snapshots", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=10000`),
       sb("positions", `marketplace=eq.${MARKETPLACE}&select=*&order=date.asc&limit=5000`),
       sb("seller_stats", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=2000`),
       sb("revenue_entries", `marketplace=eq.${MARKETPLACE}&select=*&order=week_start_date.asc`).catch(()=>[]),
@@ -465,7 +465,6 @@ async function loadData() {
     const pid = (p.product_id||"").toLowerCase();
     productsInPage1.add(pid);
     const kw = normalizeKeyword(p.keyword);
-    // Indexer aussi par product_id_scraper pour le lookup dans renderSynthese/renderProduits
     const trackedProd = trackedByScraperId[pid];
     const scraperPid = trackedProd ? (trackedProd.product_id_scraper||"").toLowerCase() : pid;
     if (!page1Keywords[scraperPid]) page1Keywords[scraperPid] = new Set();
@@ -2328,7 +2327,6 @@ if (MAINTENANCE_MODE) {
       else document.getElementById("admin-err").textContent = "Code incorrect.";
     };
     document.getElementById("admin-input").addEventListener("keydown", e => { if(e.key==="Enter") checkAdmin(); });
-    // Stop tout — ne pas charger le dashboard
     throw new Error("MAINTENANCE");
   }
 }
