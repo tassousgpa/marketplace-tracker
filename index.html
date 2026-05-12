@@ -443,7 +443,8 @@ async function loadData() {
     // Noms de vendeurs reconnus comme appartenant au groupe
     const BM_SELLER_NAMES = new Set(["BestMobilier", "Best Mobilier", "Lisa Design"]);
     function isBMPosition(p) {
-      return BM_SELLER_NAMES.has(p.seller) || bmScraperIds.has((p.product_id||"").toLowerCase());
+      const useScraperId = (MARKETPLACE === "cdiscount" || MARKETPLACE === "amazon" || MARKETPLACE === "laredoute" || MARKETPLACE === "maisonsdumonde");
+      return BM_SELLER_NAMES.has(p.seller) || (useScraperId && bmScraperIds.has((p.product_id||"").toLowerCase()));
     }
 
     // bmByKeyword : nombre de produits BM en page 1 par keyword
@@ -466,7 +467,8 @@ async function loadData() {
     productsInPage1.add(pid);
     const kw = normalizeKeyword(p.keyword);
     const trackedProd = trackedByScraperId[pid];
-    const scraperPid = trackedProd ? (trackedProd.product_id_scraper||"").toLowerCase() : pid;
+    if (!trackedProd) return;
+    const scraperPid = (trackedProd.product_id_scraper||"").toLowerCase();
     if (!page1Keywords[scraperPid]) page1Keywords[scraperPid] = new Set();
     page1Keywords[scraperPid].add(kw);
   }
@@ -510,7 +512,7 @@ async function loadData() {
     // On compare uniquement la date (YYYY-MM-DD), pas l'heure.
     const snapshotDay = latestDate ? latestDate.slice(0, 10) : null;
     const posDay = latestPosSession ? latestPosSession.slice(0, 10) : null;
-    const positionsOutdated = !posDay || !snapshotDay || posDay < snapshotDay.slice(0,10);
+    const positionsOutdated = !posDay || (snapshotDay && posDay < snapshotDay);
 
     STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, leaderCounts, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], revenueImports: revenueImports||[], productSalesWeekly: productSalesWeekly||[], tab:STATE.tab||0 };
 
