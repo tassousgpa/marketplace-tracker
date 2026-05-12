@@ -1285,12 +1285,11 @@ function getSellerData(displayName) {
       latestDate: latest.date,
     };
   } else {
-    // LTM : Cdiscount, Amazon, La Redoute
-    // Amazon : proxy = seller_ratings_count
+    // LTM : Cdiscount, Amazon, La Redoute, BUT
+    // Amazon + BUT : proxy = seller_ratings_count (seller_sales = null)
     let salesLatest, salesFirst12m;
-    if (MARKETPLACE === "amazon") {
+    if (MARKETPLACE === "amazon" || MARKETPLACE === "but") {
       salesLatest = latest.seller_ratings_count || 0;
-      // oldest dans les 12 derniers mois
       const cutoff = new Date(); cutoff.setFullYear(cutoff.getFullYear()-1);
       const in12m = allEntries.filter(e => new Date(e.date) >= cutoff);
       salesFirst12m = in12m.length ? (in12m[0].seller_ratings_count || 0) : null;
@@ -1299,9 +1298,9 @@ function getSellerData(displayName) {
       salesFirst12m = firstValid?.seller_sales || 0;
     }
 
-    // Tendance vs dernier scrape précédent (court terme) — sur entrées valides uniquement
+    // Tendance vs dernier scrape précédent
     const yoyDelta = (() => {
-      if (MARKETPLACE === "amazon") {
+      if (MARKETPLACE === "amazon" || MARKETPLACE === "but") {
         if (!prev || prev.seller_ratings_count == null) return null;
         const prevVal = prev.seller_ratings_count || 0;
         return prevVal > 0 ? (salesLatest - prevVal) / prevVal * 100 : null;
@@ -1311,9 +1310,9 @@ function getSellerData(displayName) {
       return prevVal > 0 ? (salesLatest - prevVal) / prevVal * 100 : null;
     })();
 
-    // Tendance depuis 1er scrape (long terme) — sur entrées valides uniquement
+    // Tendance depuis 1er scrape
     const yoyDeltaFirst = (() => {
-      if (MARKETPLACE === "amazon") {
+      if (MARKETPLACE === "amazon" || MARKETPLACE === "but") {
         if (!first || first.seller_ratings_count == null || allEntries.length < 2) return null;
         const fVal = first.seller_ratings_count || 0;
         return fVal > 0 ? (salesLatest - fVal) / fVal * 100 : null;
@@ -1346,6 +1345,8 @@ function getSellerData(displayName) {
 function renderConcurrents() {
   const isCumul = mpType(MARKETPLACE) === "cumul";
   const isAmazon = MARKETPLACE === "amazon";
+  const isBut    = MARKETPLACE === "but";
+  const isAmazonOrBut = isAmazon || isBut;
 
   let trackedRows = STATE.trackedSellers || [];
   if (!trackedRows.length) {
@@ -1381,7 +1382,7 @@ function renderConcurrents() {
 
   // Métriques (lignes du tableau transposé)
   const metricRows = [
-    { key:"col1", label: isCumul ? "Ventes totales" : (isAmazon ? "Avis (proxy)" : "Ventes LTM") },
+    { key:"col1", label: isCumul ? "Ventes totales" : (isAmazonOrBut ? "Avis vendeur (proxy)" : "Ventes LTM") },
     { key:"col2", label: isCumul ? "Variation (dernier scraping)" : "Tendance vs préc." },
     ...(!isCumul ? [{ key:"col7", label:"Tendance depuis 1er scrape" }] : []),
     ...(isCumul ? [{ key:"col3", label:"Ventes/jour moy." }] : []),
@@ -1396,7 +1397,7 @@ function renderConcurrents() {
     switch(key) {
       case "col1": {
         const v = fmtNum(d.salesLatest);
-        const sub = isCumul ? "depuis inscr." : (isAmazon ? "avis" : "ventes LTM");
+        const sub = isCumul ? "depuis inscr." : (isAmazonOrBut ? "avis" : "ventes LTM");
         return `<div style="font-size:16px;font-weight:700">${v}</div><div style="font-size:10px;color:var(--txT)">${sub}</div>`;
       }
       case "col2": {
