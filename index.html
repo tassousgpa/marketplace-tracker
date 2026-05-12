@@ -1164,9 +1164,89 @@ function renderPositions() {
         const bmC = STATE.bmByKeyword[kw] || 0;
         return `<div style="padding:8px 12px;border-bottom:1px solid var(--borderL)"><div style="font-size:13px;font-weight:500;margin-bottom:4px">${esc(kw)}</div><div style="display:flex;gap:4px;flex-wrap:wrap">${sorted.map((s,i)=>pill(`${medals[i]} ${s[0]} (${s[1]})`,["BestMobilier","Best Mobilier","Lisa Design"].includes(s[0])?"accent":s[0]==="Conforama"?"purple":"default")).join("")}${bmC>0&&!sorted.find(s=>["BestMobilier","Best Mobilier","Lisa Design"].includes(s[0]))?pill(`BM: ${bmC}`,"accent"):''}</div></div>`;
       }).join("");
-    })()}</div></div>`;
+    })()}</div></div>
+    ${renderMarketplaceDominance()}`;
 }
-function showPositionDetail(kw) {
+  function renderMarketplaceDominance() {
+  const MP_SELF_SELLERS = {
+    cdiscount:      ["Cdiscount","Cdiscount Pro"],
+    amazon:         ["Amazon","Amazon EU","Amazon France"],
+    maisonsdumonde: ["Maisons du Monde","Maisons du Monde Pro"],
+    conforama:      ["Conforama"],
+    laredoute:      ["La Redoute","AMPM","La Redoute Intérieurs","La Redoute Interieurs"],
+    but:            ["BUT"],
+    manomano:       ["ManoMano"],
+  };
+  const selfSellers = new Set((MP_SELF_SELLERS[MARKETPLACE]||[]).map(s=>s.toLowerCase()));
+  const allPos = STATE.positions || [];
+  if (!allPos.length) return "";
+  const total = allPos.length;
+  const selfCount = allPos.filter(p => selfSellers.has((p.seller||"").toLowerCase())).length;
+  const pct = total > 0 ? Math.round(selfCount / total * 100) : 0;
+  const pctColor = pct > 60 ? "var(--rd)" : pct > 30 ? "var(--am)" : "var(--gn)";
+  const countsBySellerTotal = {};
+  const countsBySellerCats = {};
+  allPos.forEach(p => {
+    const s = p.seller||"";
+    if (!s || selfSellers.has(s.toLowerCase())) return;
+    countsBySellerTotal[s] = (countsBySellerTotal[s]||0) + 1;
+    if (!countsBySellerCats[s]) countsBySellerCats[s] = new Set();
+    countsBySellerCats[s].add(normalizeKeyword(p.keyword));
+  });
+  const top3Total = Object.entries(countsBySellerTotal).sort((a,b)=>b[1]-a[1]).slice(0,3);
+  const top3Cats  = Object.entries(countsBySellerCats).sort((a,b)=>b[1].size-a[1].size).slice(0,3);
+  const medals = ["🥇","🥈","🥉"];
+  const colors  = ["#c9a227","#9e9e9e","#a0522d"];
+  function podiumCard(entries, valueGetter, sublabel) {
+    return entries.map(([seller, val], i) => {
+      const isBM = ["bestmobilier","best mobilier","lisa design"].includes(seller.toLowerCase());
+      const bg     = isBM ? "var(--acBg)" : "var(--bg)";
+      const border = isBM ? "var(--ac)"   : "var(--border)";
+      const col    = isBM ? "var(--ac)"   : "var(--tx)";
+      return `<div style="flex:1;min-width:140px;background:${bg};border:1px solid ${border};border-radius:10px;padding:14px 16px;text-align:center">
+        <div style="font-size:22px;margin-bottom:4px">${medals[i]}</div>
+        <div style="font-size:12px;font-weight:700;color:${col};margin-bottom:6px;word-break:break-word">${esc(seller)}</div>
+        <div style="font-size:24px;font-weight:800;color:${colors[i]}">${valueGetter(val)}</div>
+        <div style="font-size:10px;color:var(--txT);margin-top:2px">${sublabel}</div>
+      </div>`;
+    }).join("");
+  }
+  return `
+  <div class="card" style="margin-top:16px">
+    <div class="card-title">Poids de la marketplace — produits propres en page 1</div>
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+          <span style="font-size:12px;color:var(--txS)">Produits marketplace</span>
+          <span style="font-size:13px;font-weight:700;color:${pctColor}">${pct}%</span>
+        </div>
+        <div style="height:10px;background:var(--borderL);border-radius:5px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:${pctColor};border-radius:5px"></div>
+        </div>
+        <div style="font-size:11px;color:var(--txT);margin-top:4px">${selfCount} produits marketplace sur ${total} en page 1</div>
+      </div>
+      <div style="text-align:center;min-width:80px">
+        <div style="font-size:32px;font-weight:800;color:${pctColor}">${pct}%</div>
+        <div style="font-size:10px;color:var(--txT)">dominance</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div>
+        <div style="font-size:12px;font-weight:600;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">Top 3 — apparitions P1</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${top3Total.length ? podiumCard(top3Total, v=>v, "apparitions P1") : '<span style="color:var(--txT);font-size:12px">Aucune donnée</span>'}
+        </div>
+      </div>
+      <div>
+        <div style="font-size:12px;font-weight:600;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">Top 3 — catégories couvertes</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${top3Cats.length ? podiumCard(top3Cats, v=>v.size, "catégories") : '<span style="color:var(--txT);font-size:12px">Aucune donnée</span>'}
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+  function showPositionDetail(kw) {
   // Tous les items BM de ce keyword : seller=BestMobilier OU product_id_scraper connu
   const allItems = STATE.keywordData[kw] || [];
   const BM_SELLERS = new Set(["BestMobilier", "Best Mobilier", "Lisa Design"]);
