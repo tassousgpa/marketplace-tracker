@@ -513,6 +513,7 @@ async function loadData() {
     // On compare uniquement la date (YYYY-MM-DD), pas l'heure.
     const snapshotDay = latestDate ? latestDate.slice(0, 10) : null;
     const posDay = latestPosSession ? latestPosSession.slice(0, 10) : null;
+    console.log("DEBUG positions:", MARKETPLACE, "snapshotDay=", snapshotDay, "posDay=", posDay, "latestDate=", latestDate, "latestPosDay=", latestPosDay);
     const positionsOutdated = !posDay || (snapshotDay && posDay < snapshotDay);
 
     STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, leaderCounts, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], revenueImports: revenueImports||[], productSalesWeekly: productSalesWeekly||[], tab:STATE.tab||0 };
