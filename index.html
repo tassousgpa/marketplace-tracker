@@ -112,9 +112,7 @@ tr.stripe{background:var(--bg)}
       <button class="mp-btn" onclick="switchMarketplace('amazon',this)">Amazon</button>
       <button class="mp-btn" onclick="switchMarketplace('maisonsdumonde',this)">Maisons du Monde</button>
       <button class="mp-btn" onclick="switchMarketplace('conforama',this)">Conforama</button>
-      <button class="mp-btn" onclick="switchMarketplace('laredoute',this)" title="Aucun produit actuellement">La Redoute</button>
-      <button class="mp-btn" onclick="switchMarketplace('but',this)">BUT</button>
-      <button class="mp-btn" onclick="switchMarketplace('manomano',this)">ManoMano</button>
+      <button class="mp-btn" onclick="switchMarketplace('laredoute',this)">La Redoute</button>
     </div>
   </div>
   <!-- Indicateurs de scraping par marketplace -->
@@ -147,14 +145,7 @@ const MARKETPLACES = [
   { id: "maisonsdumonde", label: "Maisons du Monde" },
   { id: "conforama", label: "Conforama" },
   { id: "laredoute", label: "La Redoute" },
-  { id: "but", label: "BUT" },
-  { id: "manomano", label: "ManoMano" },
 ];
-
-// Marketplaces sans onglet Concurrents (pas de seller_stats vendeurs)
-const NO_COMPETITORS_MP = new Set(["manomano"]);
-// Marketplaces sans onglet Positions (pas de scraping positions page 1)
-const NO_POSITIONS_MP = new Set(["manomano"]);
 
 // Cache des derniers timestamps de scraping par marketplace (pour l'indicateur)
 const MP_LAST_SCRAPING = {};
@@ -299,8 +290,7 @@ function normalizeKeyword(kw) {
   return kw;
 }
 
-const TAB_NAMES      = ["Synthèse","Produits","Historique","Positions","Concurrents","Anomalies","Gestion"];
-const TAB_NAMES_LIGHT = ["Synthèse","Produits","Historique","Anomalies","Gestion"]; // sans Positions ni Concurrents
+const TAB_NAMES = ["Synthèse","Produits","Historique","Positions","Concurrents","Anomalies","Gestion"];
 
 function switchMarketplace(mp, btn) {
   MARKETPLACE = mp;
@@ -317,16 +307,15 @@ async function loadData() {
     // Évite le problème de la limite 5000 qui tronquerait les premiers keywords.
     // La table positions ne contient que le dernier run (purge côté scraper avant chaque session)
     // → select * sans filtre ni limite, requête simple et fiable
-    const [products, allProducts, snapshots, positions, sellerStats, revenueEntries, trackedSellers, revenueImports, productSalesWeekly] = await Promise.all([
+    const [products, allProducts, snapshots, positions, sellerStats, revenueEntries, trackedSellers, revenueImports] = await Promise.all([
       sb("products", `marketplace=eq.${MARKETPLACE}&active=eq.true&select=*&order=product_id`),
       sb("products", `marketplace=eq.${MARKETPLACE}&select=*&order=product_id`),
-      sb("product_snapshots", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=5000`).catch(()=>[]),
-      sb("positions", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=5000`).catch(()=>[]),
-      sb("seller_stats", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=2000`).catch(()=>[]),
+      sb("product_snapshots", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=5000`),
+      sb("positions", `marketplace=eq.${MARKETPLACE}&select=*&order=date.asc&limit=5000`),
+      sb("seller_stats", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=2000`),
       sb("revenue_entries", `marketplace=eq.${MARKETPLACE}&select=*&order=week_start_date.asc`).catch(()=>[]),
       sb("tracked_sellers", `marketplace=eq.${MARKETPLACE}&active=eq.true&select=*&order=id.asc`).catch(()=>[]),
       sb("revenue_imports", `marketplace=eq.${MARKETPLACE}&select=*&order=period_start.asc`).catch(()=>[]),
-      sb("product_sales_weekly", `marketplace=eq.${MARKETPLACE}&select=*&order=week_label.desc`).catch(()=>[]),
     ]);
 
     // Mettre à jour le cache de scraping avec les données fraîchement chargées
@@ -435,13 +424,11 @@ async function loadData() {
     const trackedByScraperId = {}; // product_id_scraper → product row
     products.forEach(p => { if (p.product_id_scraper) trackedByScraperId[p.product_id_scraper.toLowerCase()] = p; });
 
-    // Un product est BM si : seller === nom BM reconnu OU (sur Cdiscount uniquement) product_id matche un product_id_scraper suivi
-    // Le matching par product_id_scraper est désactivé sur MdM/BUT/Conforama car les IDs peuvent
-    // coïncider par accident avec des EANs ou IDs d'autres marketplaces
+    // Un product est BM si : seller === "BestMobilier" OU son product_id matche un product_id_scraper suivi
+    // Noms de vendeurs reconnus comme appartenant au groupe
     const BM_SELLER_NAMES = new Set(["BestMobilier", "Best Mobilier", "Lisa Design"]);
-    const USE_SCRAPER_ID_MATCHING = (MARKETPLACE === "cdiscount" || MARKETPLACE === "amazon" || MARKETPLACE === "laredoute");
     function isBMPosition(p) {
-      return BM_SELLER_NAMES.has(p.seller) || (USE_SCRAPER_ID_MATCHING && bmScraperIds.has((p.product_id||"").toLowerCase()));
+      return BM_SELLER_NAMES.has(p.seller) || bmScraperIds.has((p.product_id||"").toLowerCase());
     }
 
     // bmByKeyword : nombre de produits BM en page 1 par keyword
@@ -454,29 +441,18 @@ async function loadData() {
       bmByKeyword[kw] = items.filter(i => isBMPosition(i)).length;
     });
 
-    // productsInPage1 : set des product_id_scraper BM présents en page 1
-    // page1Keywords : product_id_scraper → keywords où ce produit est en page 1
-    // On indexe par product_id_scraper (côté products) et non par product_id brut des positions
-    // pour éviter les faux matchings entre marketplaces
+    // productsInPage1 : set des product_ids BM présents en page 1
     const productsInPage1 = new Set();
+    // page1Keywords : product_id → liste des keywords où il est en page 1
     const page1Keywords = {};
     latestPositions.forEach(p => {
-      if (!isBMPosition(p)) return;
-      const posId = (p.product_id||"").toLowerCase();
-      const kw = normalizeKeyword(p.keyword);
-
-      // Cherche le produit suivi dont le product_id_scraper correspond à ce product_id de position
-      // C'est le seul matching valide — on n'utilise pas posId directement comme clé
-      const matchedProduct = trackedByScraperId[posId];
-      const indexKey = matchedProduct
-        ? (matchedProduct.product_id_scraper||"").toLowerCase()
-        : (BM_SELLER_NAMES.has(p.seller) ? posId : null); // seller BM sans produit suivi : on garde l'ID position
-
-      if (!indexKey) return;
-
-      productsInPage1.add(indexKey);
-      if (!page1Keywords[indexKey]) page1Keywords[indexKey] = new Set();
-      page1Keywords[indexKey].add(kw);
+      if (isBMPosition(p)) {
+        const pid = (p.product_id||"").toLowerCase();
+        productsInPage1.add(pid);
+        const kw = normalizeKeyword(p.keyword);
+        if (!page1Keywords[pid]) page1Keywords[pid] = new Set();
+        page1Keywords[pid].add(kw);
+      }
     });
 
     // =============================================
@@ -519,7 +495,7 @@ async function loadData() {
     const posDay = latestPosSession ? latestPosSession.slice(0, 10) : null;
     const positionsOutdated = !posDay || !snapshotDay || posDay < snapshotDay;
 
-    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, leaderCounts, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], revenueImports: revenueImports||[], productSalesWeekly: productSalesWeekly||[], tab:STATE.tab||0 };
+    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, leaderCounts, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], revenueImports: revenueImports||[], tab:STATE.tab||0 };
 
     const sessionDisplay = latestDate ? new Date(latestDate + "T12:00:00Z").toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}) : "N/A";
     document.getElementById("header-subtitle").textContent = `${products.length} produits · Relevé du ${sessionDisplay}`;
@@ -530,29 +506,12 @@ async function loadData() {
   }
 }
 
-function isLightMp() { return NO_POSITIONS_MP.has(MARKETPLACE); }
-function getTabNames() { return isLightMp() ? TAB_NAMES_LIGHT : TAB_NAMES; }
-// Mapping tab index light → render function (indices diffèrent selon le mode)
-// Light: 0=Synthèse 1=Produits 2=Historique 3=Anomalies 4=Gestion
-// Full:  0=Synthèse 1=Produits 2=Historique 3=Positions 4=Concurrents 5=Anomalies 6=Gestion
 function renderTabs() {
-  const names = getTabNames();
-  document.getElementById("tabs").innerHTML = names.map((t,i) => `<button class="tab ${i===STATE.tab?'active':''}" onclick="switchTab(${i})">${t}</button>`).join("");
+  document.getElementById("tabs").innerHTML = TAB_NAMES.map((t,i) => `<button class="tab ${i===STATE.tab?'active':''}" onclick="switchTab(${i})">${t}</button>`).join("");
 }
 function switchTab(i) { STATE.tab=i; renderTabs(); renderContent(); }
 function renderContent() {
   const el = document.getElementById("content");
-  if (isLightMp()) {
-    switch(STATE.tab) {
-      case 0: el.innerHTML=renderSynthese(); break;
-      case 1: el.innerHTML=renderProduits(); break;
-      case 2: el.innerHTML=renderHistorique(); break;
-      case 3: el.innerHTML=renderAnomalies(); break;
-      case 4: el.innerHTML=renderGestion(); break;
-      default: el.innerHTML='';
-    }
-    return;
-  }
   switch(STATE.tab) {
     case 0: el.innerHTML=renderSynthese(); break;
     case 1: el.innerHTML=renderProduits(); break;
@@ -567,7 +526,7 @@ function renderContent() {
 function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
 function pill(text,color="default"){return `<span class="pill pill-${color}">${text}</span>`}
 function bar(label,value,max,color="var(--ac)",sub){const pct=max>0?Math.min(Math.round(value/max*100),100):0;return `<div class="bar-row"><div class="bar-header"><span class="bar-label">${label}</span><span class="bar-sub">${sub||value}</span></div><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div></div>`}
-function productRowHTML(p){return `<div class="product-row"><div class="product-row-name">${esc(p.name)}</div><div class="product-row-refs"><span>ID: ${esc(p.product_id)}</span><span>SKU: ${esc(p.sku||'—')}</span>${p.ean?`<span style="color:var(--txT)">EAN: ${esc(p.ean)}</span>`:''}<span style="color:var(--txT)">Scraper: ${esc(p.product_id_scraper||'—')}</span>${p.url?`<a href="${esc(p.url)}" target="_blank" class="link">Voir ↗</a>`:'<span style="color:var(--rd)">Pas d\'URL</span>'}</div></div>`}
+function productRowHTML(p){return `<div class="product-row"><div class="product-row-name">${esc(p.name)}</div><div class="product-row-refs"><span>ID: ${esc(p.product_id)}</span><span>SKU: ${esc(p.sku)}</span><span>SKU MP: ${esc(p.sku_marketplace)}</span>${p.url?`<a href="${esc(p.url)}" target="_blank" class="link">Voir ↗</a>`:'<span style="color:var(--rd)">Pas d\'URL</span>'}</div></div>`}
 function openModal(title,html){document.getElementById("modal-title").textContent=title;document.getElementById("modal-body").innerHTML=html;document.getElementById("modal-overlay").classList.remove("hidden")}
 function closeModal(){document.getElementById("modal-overlay").classList.add("hidden")}
 const tagLabel=t=>({prix_up:"Prix ↑",prix_down:"Prix ↓",delai_up:"Délai ↑",delai_down:"Délai ↓",note_up:"Note ↑",note_down:"Note ↓"}[t]||t);
@@ -579,11 +538,13 @@ const tagColor=t=>(t.includes("up")&&t!=="note_up")?"red":(t.includes("down")&&t
 function renderSynthese() {
   const P=STATE.products;
   const avail=P.filter(p=>p._available===true).length, unavail=P.filter(p=>p._available===false).length;
-  // Produits SUIVIS (dans STATE.products) présents en page 1
-  // = même logique que le filtre "En page 1" de l'onglet Produits
-  const page1 = STATE.products.filter(p =>
-    STATE.productsInPage1 && STATE.productsInPage1.has((p.product_id_scraper||"").toLowerCase())
-  ).length;
+  // Nombre total d'apparitions page 1 des produits suivis (1 produit sur 2 keywords = 2)
+  // = somme des pills "Page 1" dans l'onglet Produits
+  const page1 = STATE.products.reduce((sum, p) => {
+    const pid = (p.product_id_scraper || "").toLowerCase();
+    const kws = STATE.page1Keywords?.[pid];
+    return sum + (kws ? kws.size : 0);
+  }, 0);
   const prices=P.filter(p=>p._price!=null).map(p=>p._price);
   const ratings=P.filter(p=>p._rating!=null).map(p=>p._rating);
   const deliveries=P.filter(p=>p._delivery!=null).map(p=>p._delivery);
@@ -612,8 +573,7 @@ function renderSynthese() {
       {l:"Délai en hausse (>5j)",v:`${pctDU}% (${du.length})`,click:du.length>0?"showVariation('delai_up')":null,color:du.length>0?"var(--rd)":""},
       {l:"Délai en baisse (>5j)",v:`${pctDD}% (${dd.length})`,click:dd.length>0?"showVariation('delai_down')":null,color:dd.length>0?"var(--gn)":""},
     ].map(k=>`<div class="kpi-row"><span class="kpi-label">${k.l}</span><div><span class="kpi-value" ${k.color?`style="color:${k.color}"`:''}>${k.v}</span>${k.click?`<button class="btn-see" onclick="${k.click}">voir</button>`:''}</div></div>`).join("")}</div></div>
-    ${renderRevenueBlock()}
-    ${renderProductSalesBlocks()}`;
+    ${renderRevenueBlock()}`;
 }
 
 function showVariation(tag) {
@@ -625,134 +585,6 @@ function showVariation(tag) {
 // =============================================
 // BLOC CA (Synthèse)
 // =============================================
-function renderProductSalesBlocks() {
-  const allSales = STATE.productSalesWeekly || [];
-  if (!allSales.length) return `
-    <div style="margin-top:20px">
-      <div style="font-size:13px;font-weight:700;margin-bottom:12px">📦 Ventes produits par semaine</div>
-      <div class="card" style="padding:24px;text-align:center;color:var(--txT);font-size:12px">
-        Aucune donnée produit. Importez un fichier Odoo via <b>Import Semaine</b> (champ optionnel "Fichier Odoo ventes semaine").
-      </div>
-    </div>`;
-
-  // Récupérer les semaines disponibles triées desc
-  const weeks = [...new Set(allSales.map(r => r.week_label))].sort((a,b) => b.localeCompare(a));
-  if (!weeks.length) return "";
-
-  const latestWeek = weeks[0];
-  const prev3Week  = weeks[2] || null; // semaine d'il y a 2 semaines (S-2)
-
-  // Ventes de la semaine courante
-  const latestSales = allSales.filter(r => r.week_label === latestWeek);
-
-  // Top 5 ventes semaine
-  const top5Sales = [...latestSales].sort((a,b) => b.qty - a.qty).slice(0,5);
-
-  // Croissance / décroissance sur 3 semaines
-  let growthRows = [], declineRows = [];
-  if (prev3Week) {
-    const prev3Sales = allSales.filter(r => r.week_label === prev3Week);
-    const prev3Map = {};
-    prev3Sales.forEach(r => { prev3Map[r.ref] = r.qty; });
-
-    const withDelta = latestSales.map(r => ({
-      ...r,
-      prev3: prev3Map[r.ref] || 0,
-      delta: r.qty - (prev3Map[r.ref] || 0),
-      deltaPct: prev3Map[r.ref] > 0 ? Math.round((r.qty - prev3Map[r.ref]) / prev3Map[r.ref] * 100) : null
-    }));
-
-    growthRows  = [...withDelta].filter(r => r.delta > 0).sort((a,b) => b.delta - a.delta).slice(0,5);
-    declineRows = [...withDelta].filter(r => r.delta < 0).sort((a,b) => a.delta - b.delta).slice(0,5);
-  }
-
-  // Index précalculé sku → dernier prix
-  // On cherche dans TOUS les produits (toutes marketplaces) × snapshots de la marketplace courante
-  // + fallback sur allProducts pour les produits vendus sur d'autres marketplaces
-  // Index sku → dernier prix scrapé sur la marketplace courante
-  // Normalisation casse : snapshots Cdiscount ont des IDs minuscules, products en majuscules
-  const scraperIdToSku = {};
-  (STATE.products || []).forEach(p => {
-    if (p.sku && p.product_id_scraper) {
-      scraperIdToSku[p.product_id_scraper.toLowerCase()] = p.sku;
-    }
-  });
-  const skuToPriceIndex = {};
-  (STATE.snapshots || []).forEach(s => {
-    if (!s.price) return;
-    const sku = scraperIdToSku[(s.product_id || "").toLowerCase()];
-    if (!sku) return;
-    if (!skuToPriceIndex[sku] || s.date > (skuToPriceIndex[sku].date || "")) {
-      skuToPriceIndex[sku] = { price: s.price, date: s.date };
-    }
-  });
-  Object.keys(skuToPriceIndex).forEach(k => {
-    skuToPriceIndex[k] = skuToPriceIndex[k].price;
-  });
-
-  function salesTable(rows, showDelta) {
-    if (!rows.length) return "<div style='color:var(--txT);font-size:12px;padding:8px'>Aucune donnée</div>";
-    return "<table style='width:100%;border-collapse:collapse;font-size:12px'>"
-      + "<thead><tr style='border-bottom:1px solid var(--border)'>"
-      + "<th style='padding:5px 8px;text-align:left;font-weight:600;color:var(--txS)'>Réf</th>"
-      + "<th style='padding:5px 8px;text-align:left;font-weight:600;color:var(--txS)'>Produit</th>"
-      + "<th style='padding:5px 8px;text-align:right;font-weight:600;color:var(--txS)'>Ventes</th>"
-      + "<th style='padding:5px 8px;text-align:right;font-weight:600;color:var(--txS)'>PM TTC</th>"
-      + "<th style='padding:5px 8px;text-align:right;font-weight:600;color:var(--txS)'>Prix affiché</th>"
-      + (showDelta ? "<th style='padding:5px 8px;text-align:right;font-weight:600;color:var(--txS)'>vs S-2</th>" : "")
-      + "</tr></thead><tbody>"
-      + rows.map((r,i) => {
-          const lastPrice = skuToPriceIndex[r.ref] || null;
-          const basket = (r.ca_ht && r.qty) ? Math.round(r.ca_ht / r.qty * 1.2) + "€" : "—";
-          const priceCell = lastPrice ? Math.round(lastPrice) + "€" : "—";
-          const deltaHtml = showDelta
-            ? "<td style='padding:5px 8px;text-align:right;font-weight:600;color:"
-              + (r.delta > 0 ? "var(--gn)" : "var(--rd)") + "'>"
-              + (r.delta > 0 ? "+" : "") + r.delta + "</td>"
-            : "";
-          const bg = i % 2 ? "background:var(--bg)" : "";
-          return "<tr style='" + bg + ";border-bottom:1px solid var(--borderL)'>"
-            + "<td style='padding:5px 8px;font-weight:600;white-space:nowrap'>" + esc(r.ref) + "</td>"
-            + "<td style='padding:5px 8px;color:var(--txS);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap' title='" + esc(r.name) + "'>" + esc(r.name.slice(0,40)) + "</td>"
-            + "<td style='padding:5px 8px;text-align:right;font-weight:700'>" + r.qty + "</td>"
-            + "<td style='padding:5px 8px;text-align:right;color:var(--txS)'>" + basket + "</td>"
-            + "<td style='padding:5px 8px;text-align:right;color:var(--txS)'>" + priceCell + "</td>"
-            + deltaHtml
-            + "</tr>";
-        }).join("")
-      + "</tbody></table>";
-  }
-
-  const weekInfo = prev3Week
-    ? "<span style='font-size:11px;color:var(--txT)'>Comparaison " + latestWeek + " vs " + prev3Week + "</span>"
-    : "<span style='font-size:11px;color:var(--txT)'>Semaine " + latestWeek + " (données insuffisantes pour tendance)</span>";
-
-  return "<div style='margin-top:20px'>"
-    + "<div style='font-size:13px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:10px'>"
-    + "📦 Ventes produits — " + latestWeek + " " + weekInfo + "</div>"
-    + "<div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px'>"
-
-    // Bloc 1 : Top 5 ventes
-    + "<div class='card' style='padding:14px'>"
-    + "<div class='card-title' style='margin-bottom:10px'>🏆 Top 5 ventes " + latestWeek + "</div>"
-    + salesTable(top5Sales, false)
-    + "</div>"
-
-    // Bloc 2 : Top 5 croissance
-    + "<div class='card' style='padding:14px'>"
-    + "<div class='card-title' style='margin-bottom:10px'>📈 Top 5 croissance (vs S-2)</div>"
-    + salesTable(growthRows, true)
-    + "</div>"
-
-    // Bloc 3 : Top 5 décroissance
-    + "<div class='card' style='padding:14px'>"
-    + "<div class='card-title' style='margin-bottom:10px'>📉 Top 5 décroissance (vs S-2)</div>"
-    + salesTable(declineRows, true)
-    + "</div>"
-
-    + "</div></div>";
-}
-
 function renderRevenueBlock() {
   const imports = (STATE.revenueImports || []);
   const entries = (STATE.revenueEntries || []).slice().sort((a,b) => a.week_start_date > b.week_start_date ? 1 : -1);
@@ -778,6 +610,7 @@ function renderRevenueBlock() {
   };
 
   const btnRow = `<div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button onclick="openRevenueModal()" style="padding:6px 14px;border:.5px solid var(--ac);border-radius:6px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">+ Semaine manuelle</button>
     <button onclick="openImportXLSModal('ytd')" style="padding:6px 14px;border:.5px solid var(--pu);border-radius:6px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">⬆ Import YTD</button>
     <button onclick="openImportXLSModal('week')" style="padding:6px 14px;border:.5px solid var(--am);border-radius:6px;font-size:12px;background:var(--amBg);color:var(--am);cursor:pointer;font-weight:600;font-family:inherit">⬆ Import Semaine</button>
   </div>`;
@@ -788,7 +621,7 @@ function renderRevenueBlock() {
         <div class="card-title" style="margin:0">Chiffre d'affaires</div>
         ${btnRow}
       </div>
-      <div style="padding:30px;text-align:center;color:var(--txT);font-size:13px">Aucune donnée CA. Importez un fichier XLS (Import YTD ou Import Semaine).</div>
+      <div style="padding:30px;text-align:center;color:var(--txT);font-size:13px">Aucune donnée CA. Importez un fichier XLS ou saisissez une semaine manuellement.</div>
     </div>`;
   }
 
@@ -1000,7 +833,6 @@ async function deleteRevenue(label) {
 // =============================================
 let prodFilters={search:"",type:"all",avail:"all",page1:"all",tag:"all",sort:"name",dir:"asc"};
 let exportSessions = 4;
-let filterOnlySales = false;
 function renderProduits() {
   const f=prodFilters; let list=[...STATE.products];
   if(f.search){const s=f.search.toLowerCase();list=list.filter(p=>p.name.toLowerCase().includes(s)||p.product_id.includes(s)||(p.sku||"").toLowerCase().includes(s));}
@@ -1014,18 +846,14 @@ function renderProduits() {
   const si=col=>f.sort===col?(f.dir==="asc"?" ↑":" ↓"):"";
   return `
     <div class="filters">
-      <input id="prod-search-input" placeholder="Rechercher..." value="${esc(f.search)}" oninput="prodFilters.search=this.value;renderProduitsTable()"/>
-      <select onchange="prodFilters.type=this.value;renderProduitsTable()"><option value="all">Tous types</option><option value="Top ref" ${f.type==='Top ref'?'selected':''}>Top ref</option><option value="Nouveautés" ${f.type==='Nouveautés'?'selected':''}>Nouveautés</option><option value="Classe A" ${f.type==='Classe A'?'selected':''}>Classe A</option><option value="Nouveautés Q4+Q1" ${f.type==='Nouveautés Q4+Q1'?'selected':''}>Nouveautés Q4+Q1</option><option value="Deals exclus" ${f.type==='Deals exclus'?'selected':''}>Deals exclus</option></select>
-      <select onchange="prodFilters.avail=this.value;renderProduitsTable()"><option value="all">Dispo + Indispo</option><option value="dispo" ${f.avail==='dispo'?'selected':''}>Disponible</option><option value="indispo" ${f.avail==='indispo'?'selected':''}>Indisponible</option></select>
-      <select onchange="prodFilters.page1=this.value;renderProduitsTable()"><option value="all">Toutes positions</option><option value="yes" ${f.page1==='yes'?'selected':''}>En page 1</option><option value="no" ${f.page1==='no'?'selected':''}>Pas en page 1</option></select>
-      <select onchange="prodFilters.tag=this.value;renderProduitsTable()"><option value="all">Toutes variations</option><option value="prix_up">Prix ↑</option><option value="prix_down">Prix ↓</option><option value="delai_up">Délai ↑</option><option value="delai_down">Délai ↓</option><option value="note_up">Note ↑</option><option value="note_down">Note ↓</option></select>
-      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--txS);cursor:pointer;white-space:nowrap">
-        <input type="checkbox" id="filter-sales-cb" ${filterOnlySales?"checked":""} onchange="filterOnlySales=this.checked;renderProduitsTable()" style="cursor:pointer">
-        Avec ventes uniquement
-      </label>
+      <input placeholder="Rechercher..." value="${esc(f.search)}" oninput="prodFilters.search=this.value;renderContent()"/>
+      <select onchange="prodFilters.type=this.value;renderContent()"><option value="all">Tous types</option><option value="Classe A" ${f.type==='Classe A'?'selected':''}>Classe A</option><option value="Nouveautés Q4+Q1" ${f.type==='Nouveautés Q4+Q1'?'selected':''}>Nouveautés</option><option value="Deals exclus" ${f.type==='Deals exclus'?'selected':''}>Deals exclus</option></select>
+      <select onchange="prodFilters.avail=this.value;renderContent()"><option value="all">Dispo + Indispo</option><option value="dispo" ${f.avail==='dispo'?'selected':''}>Disponible</option><option value="indispo" ${f.avail==='indispo'?'selected':''}>Indisponible</option></select>
+      <select onchange="prodFilters.page1=this.value;renderContent()"><option value="all">Toutes positions</option><option value="yes" ${f.page1==='yes'?'selected':''}>En page 1</option><option value="no" ${f.page1==='no'?'selected':''}>Pas en page 1</option></select>
+      <select onchange="prodFilters.tag=this.value;renderContent()"><option value="all">Toutes variations</option><option value="prix_up">Prix ↑</option><option value="prix_down">Prix ↓</option><option value="delai_up">Délai ↑</option><option value="delai_down">Délai ↓</option><option value="note_up">Note ↑</option><option value="note_down">Note ↓</option></select>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-      <div id="prod-counter" style="font-size:12px;color:var(--txS)">${list.length} produit${list.length>1?'s':''}</div>
+      <div style="font-size:12px;color:var(--txS)">${list.length} produit${list.length>1?'s':''}</div>
       <div style="display:flex;align-items:center;gap:8px">
         <span style="font-size:12px;color:var(--txS)">Historique :</span>
         <select onchange="exportSessions=+this.value" style="padding:5px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;background:var(--card);font-family:inherit">
@@ -1044,90 +872,23 @@ function renderProduits() {
         <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('price')">Prix${si('price')}</th>
         <th style="text-align:center">Dispo</th><th style="cursor:pointer;text-align:right" onclick="toggleProdSort('rating')">Note${si('rating')}</th>
         <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('delivery')">Délai${si('delivery')}</th>
-        <th>Page 1</th><th>Ventes</th><th>Variations</th><th>Lien</th>
-      </tr></thead><tbody id="prod-tbody">
+        <th>Page 1</th><th>Variations</th><th>Lien</th>
+      </tr></thead><tbody>
       ${list.map((p,i)=>`<tr class="${i%2?'stripe':''}">
         <td style="font-weight:500;max-width:240px"><div style="line-height:1.3">${esc(p.name)}</div></td>
-        <td style="font-size:11px;color:var(--txS);white-space:nowrap"><div style="font-weight:600;color:var(--tx)">${esc(p.product_id)}</div><div>SKU: ${esc(p.sku||'—')}</div>${p.ean?`<div style="color:var(--txT)">EAN: ${esc(p.ean)}</div>`:''}</td>
-        <td style="text-align:center">${pill(p.type==="Nouveautés Q4+Q1"?"Nvtés":p.type==="Nouveautés"?"Nvtés":p.type==="Deals exclus"?"Deals":p.type||'—',p.type==="Classe A"?"green":p.type==="Deals exclus"?"amber":p.type==="Top ref"?"accent":"accent")}</td>
+        <td style="font-size:11px;color:var(--txS);white-space:nowrap"><div>${esc(p.product_id)}</div><div>${esc(p.sku)}</div><div style="color:var(--txT)">${esc(p.sku_marketplace)}</div></td>
+        <td style="text-align:center">${pill(p.type==="Nouveautés Q4+Q1"?"Nvtés":p.type==="Deals exclus"?"Deals":p.type,p.type==="Classe A"?"green":p.type==="Deals exclus"?"amber":"accent")}</td>
         <td style="text-align:right;font-weight:500">${p._price!=null?Math.round(p._price)+'€':'—'}</td>
         <td style="text-align:center">${p._available!=null?pill(p._available?'Dispo':'Indispo',p._available?'green':'red'):'—'}</td>
         <td style="text-align:right">${p._rating!=null?p._rating:'—'}</td>
         <td style="text-align:right">${p._delivery!=null?p._delivery+'j':'—'}</td>
         <td style="max-width:200px">${(()=>{const pid=(p.product_id_scraper||'').toLowerCase();const kws=STATE.page1Keywords?.[pid];if(!kws||kws.size===0)return'<span style="color:var(--txT);font-size:11px">—</span>';return[...kws].map(k=>`<span style="display:inline-block;margin:1px 2px;padding:2px 7px;background:var(--acBg);color:var(--ac);border-radius:99px;font-size:11px;font-weight:500;white-space:nowrap">${esc(k)}</span>`).join('');})()}</td>
-        <td style="text-align:right;white-space:nowrap">${(()=>{
-          const sales = (STATE.productSalesWeekly||[]).filter(r=>r.ref===p.sku);
-          if(!sales.length) return '<span style="color:var(--txT);font-size:11px">—</span>';
-          const latest = sales.reduce((a,b)=>a.week_label>b.week_label?a:b);
-          return '<span style="font-weight:600">'+latest.qty+'</span><span style="color:var(--txT);font-size:10px;margin-left:3px">('+esc(latest.week_label)+')</span>';
-        })()}</td>
         <td>${p._tags.map(t=>`<span style="margin:1px 2px;display:inline-block">${pill(tagLabel(t),tagColor(t))}</span>`).join('')}</td>
         <td>${p.url?`<a href="${esc(p.url)}" target="_blank" class="link">Voir ↗</a>`:'—'}</td>
       </tr>`).join('')}
       </tbody></table></div></div>`;
 }
-function toggleProdSort(col){if(prodFilters.sort===col)prodFilters.dir=prodFilters.dir==="asc"?"desc":"asc";else{prodFilters.sort=col;prodFilters.dir="asc";}renderProduitsTable();}
-
-// Partial re-render : ne touche qu'au tbody et au compteur, pas aux inputs/filtres
-function renderProduitsTable() {
-  const tbody = document.getElementById("prod-tbody");
-  if (!tbody) { renderContent(); return; }
-  const f = prodFilters;
-  let list = STATE.products.filter(p => {
-    if (f.search) {
-      const s = f.search.toLowerCase();
-      if (!((p.name||"").toLowerCase().includes(s)||(p.product_id||"").toLowerCase().includes(s)||(p.sku||"").toLowerCase().includes(s)||(p.ean||"").toLowerCase().includes(s))) return false;
-    }
-    if (f.type !== "all" && p.type !== f.type) return false;
-    if (f.avail === "dispo" && p._available !== true) return false;
-    if (f.avail === "indispo" && p._available !== false) return false;
-    if (f.page1 === "yes" && !STATE.productsInPage1?.has((p.product_id_scraper||"").toLowerCase())) return false;
-    if (f.page1 === "no" && STATE.productsInPage1?.has((p.product_id_scraper||"").toLowerCase())) return false;
-    if (f.tag !== "all" && !(p._tags||[]).includes(f.tag)) return false;
-    if (filterOnlySales && !(STATE.productSalesWeekly||[]).some(r=>r.ref===p.sku&&r.qty>0)) return false;
-    return true;
-  });
-  if (f.sort) {
-    const dir = f.dir === "asc" ? 1 : -1;
-    list.sort((a,b) => {
-      const va = a["_"+f.sort] ?? -Infinity;
-      const vb = b["_"+f.sort] ?? -Infinity;
-      return (va>vb?1:va<vb?-1:0)*dir;
-    });
-  }
-  // Update counter
-  const counter = document.getElementById("prod-counter");
-  if (counter) counter.textContent = list.length + " produit" + (list.length>1?"s":"");
-  // Re-render tbody only
-  tbody.innerHTML = list.map((p,i) => {
-    const pid = (p.product_id_scraper||"").toLowerCase();
-    const kws = STATE.page1Keywords?.[pid];
-    const page1Html = (!kws||kws.size===0)
-      ? '<span style="color:var(--txT);font-size:11px">—</span>'
-      : [...kws].map(k=>`<span style="display:inline-block;margin:1px 2px;padding:2px 7px;background:var(--acBg);color:var(--ac);border-radius:99px;font-size:11px;font-weight:500;white-space:nowrap">${esc(k)}</span>`).join("");
-    const sales = (STATE.productSalesWeekly||[]).filter(r=>r.ref===p.sku);
-    const salesHtml = sales.length
-      ? (() => { const l=sales.reduce((a,b)=>a.week_label>b.week_label?a:b); return '<span style="font-weight:600">'+l.qty+'</span><span style="color:var(--txT);font-size:10px;margin-left:3px">('+esc(l.week_label)+')</span>'; })()
-      : '<span style="color:var(--txT);font-size:11px">—</span>';
-    return `<tr class="${i%2?'stripe':''}">
-      <td style="font-weight:500;max-width:240px"><div style="line-height:1.3">${esc(p.name)}</div></td>
-      <td style="font-size:11px;color:var(--txS);white-space:nowrap"><div style="font-weight:600;color:var(--tx)">${esc(p.product_id)}</div><div>SKU: ${esc(p.sku||"—")}</div>${p.ean?`<div style="color:var(--txT)">EAN: ${esc(p.ean)}</div>`:""}</td>
-      <td style="text-align:center">${pill(p.type==="Nouveautés Q4+Q1"?"Nvtés":p.type==="Nouveautés"?"Nvtés":p.type==="Deals exclus"?"Deals":p.type||"—",p.type==="Classe A"?"green":p.type==="Deals exclus"?"amber":p.type==="Top ref"?"accent":"accent")}</td>
-      <td style="text-align:right;font-weight:500">${p._price!=null?Math.round(p._price)+"€":"—"}</td>
-      <td style="text-align:center">${p._available!=null?pill(p._available?"Dispo":"Indispo",p._available?"green":"red"):"—"}</td>
-      <td style="text-align:right">${p._rating!=null?p._rating:"—"}</td>
-      <td style="text-align:right">${p._delivery!=null?p._delivery+"j":"—"}</td>
-      <td style="max-width:200px">${page1Html}</td>
-      <td style="text-align:right;white-space:nowrap">${salesHtml}</td>
-      <td>${(p._tags||[]).map(t=>`<span style="margin:1px 2px;display:inline-block">${pill(tagLabel(t),tagColor(t))}</span>`).join("")}</td>
-      <td>${p.url?`<a href="${esc(p.url)}" target="_blank" class="link">Voir ↗</a>`:"—"}</td>
-    </tr>`;
-  }).join("");
-}
-
-function renderGestionTable() {
-  renderContent(); // gestion tab is simpler, full re-render OK since input has different ID
-}
+function toggleProdSort(col){if(prodFilters.sort===col)prodFilters.dir=prodFilters.dir==="asc"?"desc":"asc";else{prodFilters.sort=col;prodFilters.dir="asc";}renderContent();}
 
 function exportCSV() {
   const sessions = STATE.dates.slice(-exportSessions);
@@ -1136,7 +897,7 @@ function exportCSV() {
     return dt.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "2-digit" });
   };
   const sessionHeaders = sessions.flatMap(s => [`Dispo ${fmtSession(s)}`,`Prix ${fmtSession(s)}`,`Note ${fmtSession(s)}`,`Délai ${fmtSession(s)}`]);
-  const headers = ["Produit", "ID produit", "SKU", "EAN", "Lien", ...sessionHeaders];
+  const headers = ["Produit", "ID produit", "SKU", "SKU Marketplace", "Lien", ...sessionHeaders];
   const rows = STATE.products.map(p => {
     const key = (p.product_id_scraper || "").toLowerCase();
     const h = STATE.history[key] || {};
@@ -1144,7 +905,7 @@ function exportCSV() {
       const snap = h[sess];
       return [snap?.available!=null?(snap.available?"Dispo":"Indispo"):"",snap?.price!=null?snap.price:"",snap?.rating!=null?snap.rating:"",snap?.delivery_days!=null?snap.delivery_days:""];
     });
-    return [p.name, p.product_id, p.sku||"", p.ean||"", p.url||"", ...sessionCells];
+    return [p.name, p.product_id, p.sku||"", p.sku_marketplace||"", p.url||"", ...sessionCells];
   });
   const csvCell = v => { const s=String(v??""); return s.includes(";")||s.includes('"')||s.includes("\n")?`"${s.replace(/"/g,'""')}"`:`${s}`; };
   const csv = [headers, ...rows].map(row => row.map(csvCell).join(";")).join("\n");
@@ -1164,8 +925,7 @@ function exportCSV() {
 let histMetric="price";
 function renderHistorique() {
   const dates=STATE.dates.slice(-5);
-  const prods=STATE.products; // tous les produits suivis actifs, avec ou sans historique
-  const withData=prods.filter(p=>Object.keys(p._history).length>0).length;
+  const prods=STATE.products.filter(p=>Object.keys(p._history).length>0);
   const getVal=(p,d)=>{const e=p._history[d];if(!e)return null;if(histMetric==="price")return e.price;if(histMetric==="rating")return e.rating;if(histMetric==="delivery")return e.delivery_days;if(histMetric==="dispo")return e.available;return null;};
   const fmtVal=v=>{if(v==null)return"—";if(histMetric==="price")return Math.round(v)+"€";if(histMetric==="rating")return v;if(histMetric==="delivery")return v+"j";if(histMetric==="dispo")return v?"✓":"✗";return v;};
   const hasVar=(p,d,di)=>{if(di===0)return null;const prev=getVal(p,dates[di-1]),curr=getVal(p,d);if(prev==null||curr==null)return null;if(histMetric==="price"&&prev>0){const pct=(curr-prev)/prev;if(pct>.10)return"up";if(pct<-.15)return"down";}if(histMetric==="delivery"){const diff=curr-prev;if(diff>5)return"up";if(diff<-5)return"down";}if(histMetric==="rating"){const diff=curr-prev;if(diff>=.2)return"good";if(diff<=-.2)return"bad";}if(histMetric==="dispo"&&prev!==curr)return curr?"good":"bad";return null;};
@@ -1177,7 +937,7 @@ function renderHistorique() {
         ${histMetric==="delivery"?`<button onclick="exportDeliveryCSV()" style="padding:6px 14px;border:.5px solid var(--ac);border-radius:6px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">⬇ Export délais (tout l'historique)</button>`:''}
       </div>
     </div>
-    <div style="font-size:12px;color:var(--txS);margin-bottom:8px">${prods.length} produits suivis · ${withData} avec données · ${dates.length} dates affichées · <span style="color:var(--txT)">${STATE.dates.length} total en base</span></div>
+    <div style="font-size:12px;color:var(--txS);margin-bottom:8px">${prods.length} produits · ${dates.length} dates affichées · <span style="color:var(--txT)">${STATE.dates.length} total en base</span></div>
     <div class="card" style="padding:0;overflow:hidden"><div class="scroll-table"><table style="min-width:700px">
       <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)"><th style="min-width:200px">Produit</th><th>Réfs</th>${dates.map(d=>{const dt=new Date(d+"T12:00:00Z");return`<th style="text-align:center;white-space:nowrap">${dt.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit"})}</th>`;}).join("")}</tr></thead>
       <tbody>${prods.map((p,i)=>`<tr class="${i%2?'stripe':''}"><td style="font-weight:500;font-size:12px;max-width:200px">${esc(p.name)}</td><td style="font-size:10px;color:var(--txT);white-space:nowrap">${esc(p.product_id)}<br>${esc(p.sku)}</td>${dates.map((d,di)=>{const v=getVal(p,d),vr=hasVar(p,d,di);return`<td style="text-align:center;${vr?`background:${varBg(vr)};font-weight:600`:''}">${fmtVal(v)}</td>`;}).join("")}</tr>`).join("")}</tbody>
@@ -1187,7 +947,7 @@ function renderHistorique() {
 // Export délais : toutes les refs, tout l'historique, une colonne par date
 function exportDeliveryCSV() {
   const allDates = STATE.dates; // toutes les dates dispo en base (triées ASC)
-  const prods = STATE.products; // tous les produits suivis actifs
+  const prods = STATE.products.filter(p => Object.keys(p._history).length > 0);
   if (!allDates.length || !prods.length) { alert("Aucune donnée à exporter."); return; }
 
   const fmtDate = d => {
@@ -1260,39 +1020,7 @@ function renderPositions() {
         const bmC = STATE.bmByKeyword[kw] || 0;
         return `<div style="padding:8px 12px;border-bottom:1px solid var(--borderL)"><div style="font-size:13px;font-weight:500;margin-bottom:4px">${esc(kw)}</div><div style="display:flex;gap:4px;flex-wrap:wrap">${sorted.map((s,i)=>pill(`${medals[i]} ${s[0]} (${s[1]})`,["BestMobilier","Best Mobilier","Lisa Design"].includes(s[0])?"accent":s[0]==="Conforama"?"purple":"default")).join("")}${bmC>0&&!sorted.find(s=>["BestMobilier","Best Mobilier","Lisa Design"].includes(s[0]))?pill(`BM: ${bmC}`,"accent"):''}</div></div>`;
       }).join("");
-    })()}</div></div>
-    ${renderTop3Sellers()}`;
-}
-
-function renderTop3Sellers() {
-  const BM_NAMES = new Set(["bestmobilier","best mobilier","lisa design"]);
-  const counts = {};
-  (STATE.positions || []).forEach(p => {
-    if (!p.seller) return;
-    const raw = p.seller.trim();
-    const key = BM_NAMES.has(raw.toLowerCase()) ? "BestMobilier" : raw;
-    counts[key] = (counts[key] || 0) + 1;
-  });
-  const sorted = Object.entries(counts).sort((a,b) => b[1]-a[1]).slice(0,3);
-  if (!sorted.length) return "";
-  const medals = ["🥇","🥈","🥉"];
-  const colors = ["#c9a227","#9e9e9e","#a0522d"];
-  const cards = sorted.map(([seller, count], i) => {
-    const isBM = seller === "BestMobilier";
-    const bg     = isBM ? "var(--acBg)" : "var(--bg)";
-    const border = isBM ? "var(--ac)"   : "var(--border)";
-    const col    = isBM ? "var(--ac)"   : "var(--tx)";
-    return '<div style="flex:1;min-width:140px;background:'+bg+';border:1px solid '+border+';border-radius:10px;padding:14px 16px;text-align:center">'
-      + '<div style="font-size:22px;margin-bottom:4px">'+medals[i]+'</div>'
-      + '<div style="font-size:13px;font-weight:700;color:'+col+';margin-bottom:6px">'+esc(seller)+'</div>'
-      + '<div style="font-size:24px;font-weight:800;color:'+colors[i]+'">'+count+'</div>'
-      + '<div style="font-size:10px;color:var(--txT);margin-top:2px">apparition'+(count>1?"s":"")+" P1</div>"
-      + '</div>';
-  }).join("");
-  return '<div class="card" style="margin-top:16px">'
-    + '<div class="card-title">Top 3 — visibilité page 1 (run du jour)</div>'
-    + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px">'+cards+'</div>'
-    + '</div>';
+    })()}</div></div>`;
 }
 function showPositionDetail(kw) {
   // Tous les items BM de ce keyword : seller=BestMobilier OU product_id_scraper connu
@@ -1344,14 +1072,9 @@ function resolveSellerNames(displayName) {
   if (displayName === "BestMobilier") return ["BestMobilier","Best Mobilier","Lisa Design"];
   // Correspondances entre nom affiché (tracked_sellers) et nom réel en base (seller_stats)
   const SELLER_NAME_MAP = {
-    "Habitat et Jardin":       ["Habitat & Jardin", "Habitat et Jardin", "Habitat et jardin"],
-    "Habitat et jardin":       ["Habitat & Jardin", "Habitat et Jardin", "Habitat et jardin"],
-    "Gutent (KOMHTOM)":        ["Gutent", "Gutent (KOMHTOM)"],
-    "VidaXL":                  ["VidaXL", "vidaXL", "Vida XL", "VidaXl", "VIDAXL", "VidaXL FR", "vidaXL FR"],
-    "vidaXL":                  ["VidaXL", "vidaXL", "Vida XL", "VidaXl", "VIDAXL", "VidaXL FR", "vidaXL FR"],
-    "sweeek":                  ["sweeek", "Sweeek", "sweeek France", "Sweeek France"],
-    "Sweeek":                  ["sweeek", "Sweeek", "sweeek France", "Sweeek France"],
-    "Happy Garden (allstore)": ["allstore", "Happy Garden (allstore)", "Happy Garden"],
+    "Habitat et Jardin": ["Habitat & Jardin", "Habitat et Jardin"],
+    "Gutent (KOMHTOM)":  ["Gutent", "Gutent (KOMHTOM)"],
+    "VidaXL":            ["VidaXL", "vidaXL", "Vida XL", "VidaXl", "VIDAXL"],
   };
   if (SELLER_NAME_MAP[displayName]) return SELLER_NAME_MAP[displayName];
   // Fallback insensible à la casse pour VidaXL et variantes non listées
@@ -1365,7 +1088,6 @@ function resolveSellerNames(displayName) {
 // Type de marketplace : "cumul" (MdM, Conforama) ou "ltm" (Cdiscount, Amazon, La Redoute)
 function mpType(mp) {
   if (mp === "conforama" || mp === "maisonsdumonde") return "cumul";
-  if (mp === "manomano") return "ltm"; // ventes LTM comme Amazon
   return "ltm";
 }
 
@@ -1430,7 +1152,7 @@ function getSellerData(displayName) {
     // LTM : Cdiscount, Amazon, La Redoute
     // Amazon : proxy = seller_ratings_count
     let salesLatest, salesFirst12m;
-    if (MARKETPLACE === "amazon" || MARKETPLACE === "but") {
+    if (MARKETPLACE === "amazon") {
       salesLatest = latest.seller_ratings_count || 0;
       // oldest dans les 12 derniers mois
       const cutoff = new Date(); cutoff.setFullYear(cutoff.getFullYear()-1);
@@ -1443,7 +1165,7 @@ function getSellerData(displayName) {
 
     // Tendance vs dernier scrape précédent (court terme) — sur entrées valides uniquement
     const yoyDelta = (() => {
-      if (MARKETPLACE === "amazon" || MARKETPLACE === "but") {
+      if (MARKETPLACE === "amazon") {
         if (!prev || prev.seller_ratings_count == null) return null;
         const prevVal = prev.seller_ratings_count || 0;
         return prevVal > 0 ? (salesLatest - prevVal) / prevVal * 100 : null;
@@ -1455,7 +1177,7 @@ function getSellerData(displayName) {
 
     // Tendance depuis 1er scrape (long terme) — sur entrées valides uniquement
     const yoyDeltaFirst = (() => {
-      if (MARKETPLACE === "amazon" || MARKETPLACE === "but") {
+      if (MARKETPLACE === "amazon") {
         if (!first || first.seller_ratings_count == null || allEntries.length < 2) return null;
         const fVal = first.seller_ratings_count || 0;
         return fVal > 0 ? (salesLatest - fVal) / fVal * 100 : null;
@@ -1488,7 +1210,6 @@ function getSellerData(displayName) {
 function renderConcurrents() {
   const isCumul = mpType(MARKETPLACE) === "cumul";
   const isAmazon = MARKETPLACE === "amazon";
-  const isBut   = MARKETPLACE === "but"; // BUT : seller_ratings_count = proxy ventes (nb avis)
 
   let trackedRows = STATE.trackedSellers || [];
   if (!trackedRows.length) {
@@ -1497,15 +1218,18 @@ function renderConcurrents() {
   }
 
   const fmtNum = v => v != null ? Number(v).toLocaleString("fr-FR") : "—";
-  const fmtDelta = (v, unit="") => {
+  // fmtDelta : toujours en valeur absolue, % en italique en dessous si dispo
+  // absVal = valeur absolue de la variation (ex: +153 ventes)
+  // pctVal = variation en % optionnelle (null = pas affichée)
+  const fmtDelta = (v, unit="", pctVal=null) => {
     if (v == null) return '<span style="color:var(--txT);font-size:11px">—</span>';
     const color = v > 0 ? "var(--gn)" : v < 0 ? "var(--rd)" : "var(--txT)";
     const rounded = Math.round(v);
-    // Variation non nulle mais < 0.5% en valeur absolue → afficher "<1%" ou ">-1%"
-    const display = (rounded === 0 && v !== 0)
-      ? (v > 0 ? "<+1" : ">-1")
-      : (rounded > 0 ? "+" : "") + rounded;
-    return `<span style="color:${color};font-size:15px;font-weight:700">${display}${unit}</span>`;
+    const display = (rounded > 0 ? "+" : "") + rounded.toLocaleString("fr-FR") + unit;
+    const pctHtml = pctVal != null
+      ? `<div style="font-size:10px;color:${color};font-style:italic;margin-top:1px">(${pctVal > 0 ? "+" : ""}${Math.round(pctVal)}%)</div>`
+      : "";
+    return `<div style="font-size:15px;font-weight:700;color:${color}">${display}</div>${pctHtml}`;
   };
 
   const rows = trackedRows.map(ts => {
@@ -1521,7 +1245,7 @@ function renderConcurrents() {
 
   // Métriques (lignes du tableau transposé)
   const metricRows = [
-    { key:"col1", label: isCumul ? "Ventes totales" : (isAmazon || isBut ? "Avis vendeur (proxy)" : "Ventes LTM") },
+    { key:"col1", label: isCumul ? "Ventes totales" : (isAmazon ? "Avis (proxy)" : "Ventes LTM") },
     { key:"col2", label: isCumul ? "Variation (dernier scraping)" : "Tendance vs préc." },
     ...(!isCumul ? [{ key:"col7", label:"Tendance depuis 1er scrape" }] : []),
     ...(isCumul ? [{ key:"col3", label:"Ventes/jour moy." }] : []),
@@ -1532,15 +1256,7 @@ function renderConcurrents() {
 
   function cellFor(r, key) {
     const d = r.data;
-    if (!d) {
-      // shop_url renseigné mais aucune donnée = erreur de tracking (lien cassé ou produit supprimé)
-      if (r.shopUrl && !r.isBM) {
-        return key === "col1"
-          ? '<span style="color:var(--rd);font-size:11px;font-weight:600">⚠ Erreur tracking</span>'
-          : '<span style="color:var(--txT);font-size:10px">—</span>';
-      }
-      return '<span style="color:var(--txT);font-size:11px">—</span>';
-    }
+    if (!d) return '<span style="color:var(--txT);font-size:11px">—</span>';
     switch(key) {
       case "col1": {
         const v = fmtNum(d.salesLatest);
@@ -1550,19 +1266,29 @@ function renderConcurrents() {
       case "col2": {
         if (isCumul) {
           if (d.salesVarSincePrev == null) return '<span style="color:var(--txT);font-size:11px">1ère mesure</span>';
-          return `${fmtDelta(d.salesVarSincePrev," ventes")}<div style="font-size:10px;color:var(--txT);margin-top:1px">en ${d.daysSincePrev}j</div>`;
+          // Calcul % par rapport à la valeur précédente
+          const prevVal = d.salesLatest - d.salesVarSincePrev;
+          const pct2 = prevVal > 0 ? d.salesVarSincePrev / prevVal * 100 : null;
+          return fmtDelta(d.salesVarSincePrev, " ventes", pct2)
+            + `<div style="font-size:10px;color:var(--txT);margin-top:1px">en ${d.daysSincePrev}j</div>`;
         } else {
           if (d.yoyDelta == null) return '<span style="color:var(--txT);font-size:11px">1ère mesure</span>';
-          return `${fmtDelta(d.yoyDelta,"%")}<div style="font-size:10px;color:var(--txT);margin-top:1px">vs préc.</div>`;
+          // Pour LTM : variation absolue des ventes + % en italique
+          const absVar = d.salesLatest - Math.round(d.salesLatest / (1 + d.yoyDelta/100));
+          return fmtDelta(absVar, "", d.yoyDelta)
+            + `<div style="font-size:10px;color:var(--txT);margin-top:1px">vs préc.</div>`;
         }
       }
       case "col3":
         return d.dailyAvg != null
           ? `<div style="font-size:16px;font-weight:700">${d.dailyAvg.toLocaleString("fr-FR")}</div><div style="font-size:10px;color:var(--txT)">/j moy.</div>`
           : '<span style="color:var(--txT);font-size:11px">—</span>';
-      case "col7":
+      case "col7": {
         if (d.yoyDeltaFirst == null) return '<span style="color:var(--txT);font-size:11px">1ère mesure</span>';
-        return `${fmtDelta(d.yoyDeltaFirst,"%")}<div style="font-size:10px;color:var(--txT);margin-top:1px">depuis 1er scrape</div>`;
+        const absFirst = d.salesLatest - Math.round(d.salesLatest / (1 + d.yoyDeltaFirst/100));
+        return fmtDelta(absFirst, "", d.yoyDeltaFirst)
+          + '<div style="font-size:10px;color:var(--txT);margin-top:1px">depuis 1er scrape</div>';
+      }
       case "col4":
         return `<div style="font-size:16px;font-weight:700">${d.p1Avg.toLocaleString("fr-FR")}</div><div style="font-size:10px;color:var(--txT)">app. moy.</div>`;
       case "col5": {
@@ -1607,8 +1333,8 @@ function renderConcurrents() {
                   <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color}"></span>
                   <span style="font-size:13px;font-weight:700;color:${r.isBM?"var(--ac)":"var(--tx)"}">${esc(r.name)}</span>
                   ${r.isBM ? '<span class="pill pill-accent" style="font-size:10px">Vous</span>' : ""}
-                  ${!r.isBM && r.shopUrl && !r.data ? '<span style="font-size:10px;color:var(--rd);font-weight:600" title="URL produit cassée ou vendeur introuvable">⚠ lien cassé</span>' : ""}
-                  ${r.shopUrl ? `<a href="${esc(r.shopUrl)}" target="_blank" class="link" style="font-size:10px">Produit ↗</a>` : (r.data?.sourceUrl ? `<a href="${esc(r.data.sourceUrl)}" target="_blank" class="link" style="font-size:10px">Produit ↗</a>` : "")}
+                  ${r.shopUrl ? `<a href="${esc(r.shopUrl)}" target="_blank" class="link" style="font-size:10px">Boutique ↗</a>` : (r.data?.sourceUrl ? `<a href="${esc(r.data.sourceUrl)}" target="_blank" class="link" style="font-size:10px">Boutique ↗</a>` : "")}
+                  <button onclick="showSellerHistory('${esc(r.name)}')" title="Voir l'historique des ventes" style="background:var(--bg);border:.5px solid var(--border);border-radius:5px;padding:2px 6px;font-size:11px;cursor:pointer;margin-top:2px;font-family:inherit">📈</button>
                 </div>
               </th>`;
             }).join("")}
@@ -1629,6 +1355,105 @@ function renderConcurrents() {
   </div>
 
   ${isCumul ? renderCombinedSalesChart(trackedRows, CHART_COLORS) : ""}`}`;
+}
+
+// ─── Historique ventes par vendeur (popup) ─────────────────────────────────
+function showSellerHistory(displayName) {
+  const rawNames = resolveSellerNames(displayName);
+  const allStats = (STATE.sellerStats || [])
+    .filter(s => rawNames.includes(s.seller))
+    .sort((a, b) => a.date > b.date ? 1 : -1);
+
+  if (!allStats.length) {
+    openModal("Historique — " + displayName, '<div style="padding:20px;text-align:center;color:var(--txT)">Aucune donnée disponible pour ce vendeur.</div>');
+    return;
+  }
+
+  const isCumul = mpType(MARKETPLACE) === "cumul";
+  const isAmazonOrBut = MARKETPLACE === "amazon" || MARKETPLACE === "but";
+  const fmtDate = d => new Date(d).toLocaleDateString("fr-FR", { day:"2-digit", month:"2-digit", year:"2-digit" });
+  const fmtNum = v => v != null ? Number(v).toLocaleString("fr-FR") : "—";
+
+  // Construire les lignes de l'historique
+  // Dédupliquer par jour (garder le plus récent du jour)
+  const byDay = {};
+  allStats.forEach(s => {
+    const day = s.date.slice(0, 10);
+    if (!byDay[day] || s.date > byDay[day].date) byDay[day] = s;
+  });
+  const points = Object.values(byDay).sort((a, b) => a.date > b.date ? 1 : -1);
+
+  let rows = "";
+  if (isCumul) {
+    // Cumul : variation entre chaque point consécutif
+    rows = points.map((p, i) => {
+      const prev = i > 0 ? points[i-1] : null;
+      const sales = p.seller_sales;
+      const prevSales = prev?.seller_sales;
+      const delta = (sales != null && prevSales != null) ? sales - prevSales : null;
+      const days = prev ? Math.max(1, Math.round((new Date(p.date) - new Date(prev.date)) / 86400000)) : null;
+      const color = delta > 0 ? "var(--gn)" : delta < 0 ? "var(--rd)" : "var(--txT)";
+      const period = prev
+        ? `${fmtDate(prev.date)} → ${fmtDate(p.date)}`
+        : `${fmtDate(p.date)} (1er scrape)`;
+      return `<tr style="border-bottom:1px solid var(--borderL)">
+        <td style="padding:7px 10px;font-size:12px;color:var(--txS)">${period}</td>
+        <td style="padding:7px 10px;font-size:12px;text-align:right">${fmtNum(sales)}</td>
+        <td style="padding:7px 10px;text-align:right">
+          ${delta != null
+            ? `<span style="font-weight:700;color:${color};font-size:13px">${delta > 0 ? "+" : ""}${fmtNum(delta)}</span>`
+              + (days ? `<span style="font-size:10px;color:var(--txT);margin-left:4px">en ${days}j</span>` : "")
+            : '<span style="color:var(--txT)">—</span>'}
+        </td>
+      </tr>`;
+    }).join("");
+  } else {
+    // LTM : afficher la valeur brute + variation vs point précédent
+    const metric = isAmazonOrBut ? "seller_ratings_count" : "seller_sales";
+    const metricLabel = isAmazonOrBut ? "Avis (proxy ventes)" : "Ventes LTM";
+    rows = points.map((p, i) => {
+      const prev = i > 0 ? points[i-1] : null;
+      const val = p[metric];
+      const prevVal = prev?.[metric];
+      const delta = (val != null && prevVal != null) ? val - prevVal : null;
+      const pct = (delta != null && prevVal > 0) ? delta / prevVal * 100 : null;
+      const color = delta > 0 ? "var(--gn)" : delta < 0 ? "var(--rd)" : "var(--txT)";
+      const period = prev
+        ? `${fmtDate(prev.date)} → ${fmtDate(p.date)}`
+        : `${fmtDate(p.date)} (1er scrape)`;
+      return `<tr style="border-bottom:1px solid var(--borderL)">
+        <td style="padding:7px 10px;font-size:12px;color:var(--txS)">${period}</td>
+        <td style="padding:7px 10px;font-size:12px;text-align:right">${fmtNum(val)}</td>
+        <td style="padding:7px 10px;text-align:right">
+          ${delta != null
+            ? `<span style="font-weight:700;color:${color};font-size:13px">${delta > 0 ? "+" : ""}${fmtNum(delta)}</span>`
+              + (pct != null ? `<span style="font-size:10px;color:${color};font-style:italic;margin-left:4px">(${pct > 0 ? "+" : ""}${Math.round(pct)}%)</span>` : "")
+            : '<span style="color:var(--txT)">—</span>'}
+        </td>
+      </tr>`;
+    }).join("");
+  }
+
+  const metricLabel = isCumul ? "Ventes cumulées" : (isAmazonOrBut ? "Avis vendeur (proxy)" : "Ventes LTM");
+  const html = `
+    <div style="font-size:12px;color:var(--txS);margin-bottom:12px">
+      ${points.length} points · ${fmtDate(points[0].date)} → ${fmtDate(points[points.length-1].date)}
+      <span style="margin-left:8px;background:var(--amBg);color:var(--am);padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600">
+        ${isCumul ? "Cumul depuis inscription" : "Valeur glissante 12 mois"}
+      </span>
+    </div>
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:var(--bg);border-bottom:1px solid var(--border)">
+          <th style="padding:7px 10px;text-align:left;color:var(--txS);font-size:11px;text-transform:uppercase;letter-spacing:.04em">Période</th>
+          <th style="padding:7px 10px;text-align:right;color:var(--txS);font-size:11px;text-transform:uppercase;letter-spacing:.04em">${metricLabel}</th>
+          <th style="padding:7px 10px;text-align:right;color:var(--txS);font-size:11px;text-transform:uppercase;letter-spacing:.04em">Variation</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+
+  openModal("📈 Historique — " + displayName, html);
 }
 
 function renderCombinedSalesChart(trackedRows, CHART_COLORS) {
@@ -1899,26 +1724,22 @@ function renderConfoSparkline(sellerName) {
 function renderAnomalies() {
   const P=STATE.products;
   const notScraped=P.filter(p=>!p._latest);
-  // Pages catégories : available===null en base = l'extension a détecté une page catégorie au lieu d'une fiche produit
-  const catPages=P.filter(p=>p._latest && p._latest.available===null);
   const urlMap={};P.forEach(p=>{if(p.url&&p.url.startsWith("http")){(urlMap[p.url]=urlMap[p.url]||[]).push(p);}});
   const dupeUrls=Object.entries(urlMap).filter(([,ps])=>ps.length>1);
   const brokenUrls=P.filter(p=>!p.url||!p.url.startsWith("http"));
-  const total=notScraped.length+catPages.length+dupeUrls.length+brokenUrls.length;
+  const total=notScraped.length+dupeUrls.length+brokenUrls.length;
   return `
     <div class="metrics">
       <div class="metric"><div class="metric-label">Non scrapés</div><div class="metric-value" style="color:${notScraped.length>0?'var(--rd)':'var(--gn)'}">${notScraped.length}</div><div class="metric-sub">au ${STATE.latestDate}</div></div>
-      <div class="metric"><div class="metric-label">Pages catégories</div><div class="metric-value" style="color:${catPages.length>0?'var(--am)':'var(--gn)'}">${catPages.length}</div><div class="metric-sub">URL à corriger</div></div>
       <div class="metric"><div class="metric-label">URLs en doublon</div><div class="metric-value" style="color:${dupeUrls.length>0?'var(--am)':'var(--gn)'}">${dupeUrls.length}</div></div>
       <div class="metric"><div class="metric-label">URLs cassées</div><div class="metric-value" style="color:${brokenUrls.length>0?'var(--rd)':'var(--gn)'}">${brokenUrls.length}</div></div>
+      <div class="metric"><div class="metric-label">Total anomalies</div><div class="metric-value" style="color:${total>0?'var(--rd)':'var(--gn)'}">${total}</div></div>
     </div>
     ${notScraped.length>0?`<div class="card anomaly-section"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="anomaly-dot" style="background:var(--rd)"></span><span style="font-size:14px;font-weight:600">Produits non scrapés le ${STATE.latestDate} (${notScraped.length})</span></div>${notScraped.map(p=>productRowHTML(p)).join("")}</div>`:''}
-    ${catPages.length>0?`<div class="card anomaly-section"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="anomaly-dot" style="background:var(--am)"></span><span style="font-size:14px;font-weight:600">URLs pointant vers une page catégorie (${catPages.length})</span><span style="font-size:11px;color:var(--txS);margin-left:6px">— à corriger dans Gestion</span></div>${catPages.map(p=>productRowHTML(p)).join("")}</div>`:''}
     ${dupeUrls.length>0?`<div class="card anomaly-section"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="anomaly-dot" style="background:var(--am)"></span><span style="font-size:14px;font-weight:600">URLs en doublon (${dupeUrls.length})</span></div>${dupeUrls.map(([url,prods])=>`<div style="padding:10px 0;border-bottom:1px solid var(--borderL)"><div style="font-size:12px;color:var(--ac);margin-bottom:6px"><a href="${esc(url)}" target="_blank" class="link">${esc(url)} ↗</a></div><div style="display:flex;gap:8px;flex-wrap:wrap">${prods.map(p=>`<div style="background:var(--amBg);border-radius:8px;padding:6px 10px;font-size:11px"><span style="font-weight:600">${esc(p.product_id)}</span> · ${esc(p.sku)}</div>`).join("")}</div></div>`).join("")}</div>`:''}
     ${brokenUrls.length>0?`<div class="card anomaly-section"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span class="anomaly-dot" style="background:var(--rd)"></span><span style="font-size:14px;font-weight:600">URLs cassées (${brokenUrls.length})</span></div>${brokenUrls.map(p=>productRowHTML(p)).join("")}</div>`:''}
     ${total===0?'<div class="card" style="background:var(--gnBg);text-align:center;padding:30px"><div style="font-size:16px;font-weight:600;color:var(--gn)">Aucune anomalie détectée</div></div>':''}`;
 }
-
 
 // =============================================
 // TAB 6: GESTION
@@ -1926,7 +1747,7 @@ function renderAnomalies() {
 let gestionSearch="";
 function renderGestion() {
   let list=STATE.allProducts||STATE.products;
-  if(gestionSearch){const s=gestionSearch.toLowerCase();list=list.filter(p=>p.name.toLowerCase().includes(s)||p.product_id.includes(s)||(p.sku||"").toLowerCase().includes(s)||(p.ean||"").includes(s));}
+  if(gestionSearch){const s=gestionSearch.toLowerCase();list=list.filter(p=>p.name.toLowerCase().includes(s)||p.product_id.includes(s)||(p.sku||"").toLowerCase().includes(s));}
   return `
     <div class="metrics">
       <div class="metric"><div class="metric-label">Produits actifs</div><div class="metric-value" style="color:var(--ac)">${(STATE.allProducts||[]).filter(p=>p.active!==false).length}</div></div>
@@ -1935,12 +1756,12 @@ function renderGestion() {
     </div>
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div class="card-title" style="margin:0">Ajouter un produit</div></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr;gap:8px;align-items:end;margin-bottom:8px">
-        <div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">ID produit * <span style="color:var(--txT)">(ex: 1261_7190)</span></label><input id="add-id" placeholder="ex: 1261_7190" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>
-        <div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">SKU <span style="color:var(--txT)">(ex: 1261BEI)</span></label><input id="add-sku" placeholder="ex: 1261BEI" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>
-        <div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">EAN</label><input id="add-ean" placeholder="ex: 3701061732790" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>
-        <div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">ID scraper MP</label><input id="add-skump" placeholder="ex: BES168..." style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>
-        <div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Type</label><select id="add-type" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"><option value="Top ref">Top ref</option><option value="Nouveautés">Nouveautés</option><option value="Classe A">Classe A</option><option value="Deals exclus">Deals exclus</option></select></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:8px;align-items:end;margin-bottom:8px">
+        <div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">ID produit *</label><input id="add-id" placeholder="ex: 1261_7190" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>
+        <div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">SKU</label><input id="add-sku" placeholder="ex: 1261BEI" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>
+        <div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">SKU Marketplace</label><input id="add-skump" placeholder="ex: BES168..." style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>
+        <div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Type</label><select id="add-type" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"><option value="Nouveautés Q4+Q1">Nouveautés Q4+Q1</option><option value="Classe A">Classe A</option><option value="Deals exclus">Deals exclus</option></select></div>
+        <div></div>
       </div>
       <div style="display:grid;grid-template-columns:2fr 3fr auto;gap:8px;align-items:end">
         <div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Nom du produit *</label><input id="add-name" placeholder="Nom complet" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>
@@ -1951,26 +1772,16 @@ function renderGestion() {
     </div>
     <div class="card">
       <div class="card-title">Gérer les produits</div>
-      <div class="filters"><input id="gestion-search-input" placeholder="Rechercher par nom, ID produit, SKU ou EAN..." value="${esc(gestionSearch)}" oninput="gestionSearch=this.value;renderGestionTable()"/></div>
+      <div class="filters"><input placeholder="Rechercher..." value="${esc(gestionSearch)}" oninput="gestionSearch=this.value;renderContent()"/></div>
       <div style="font-size:12px;color:var(--txS);margin-bottom:8px">${list.length} produit${list.length>1?'s':''}</div>
-      <div class="scroll-table"><table style="min-width:960px">
-        <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)"><th style="width:30%">Produit</th><th>IDs</th><th>Type</th><th>Statut</th><th>URL</th><th style="text-align:center">Actions</th></tr></thead>
+      <div class="scroll-table"><table style="min-width:900px">
+        <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)"><th style="width:30%">Produit</th><th>Réfs</th><th>Type</th><th>Statut</th><th>URL</th><th style="text-align:center">Actions</th></tr></thead>
         <tbody>${list.map((p,i)=>`<tr class="${i%2?'stripe':''}" id="row-${p.id}">
           <td style="font-weight:500;font-size:12px"><div style="line-height:1.3">${esc(p.name)}</div></td>
-          <td style="font-size:11px;color:var(--txS);white-space:nowrap">
-            <div style="font-weight:600;color:var(--tx)">${esc(p.product_id)}</div>
-            <div>SKU: ${esc(p.sku||'—')}</div>
-            ${p.ean?`<div style="color:var(--txT)">EAN: ${esc(p.ean)}</div>`:''}
-            ${p.product_id_scraper?`<div style="color:var(--txT)">Scraper: ${esc(p.product_id_scraper)}</div>`:''}
-          </td>
-          <td><select onchange="updateType(${p.id},this.value)" style="font-size:11px;padding:3px 6px;border-radius:4px;border:1px solid var(--border);font-family:inherit">
-            <option value="Top ref" ${p.type==='Top ref'?'selected':''}>Top ref</option>
-            <option value="Nouveautés" ${p.type==='Nouveautés'?'selected':''}>Nouveautés</option>
-            <option value="Classe A" ${p.type==='Classe A'?'selected':''}>Classe A</option>
-            <option value="Deals exclus" ${p.type==='Deals exclus'?'selected':''}>Deals exclus</option>
-          </select></td>
+          <td style="font-size:11px;color:var(--txS);white-space:nowrap"><div>${esc(p.product_id)}</div><div>${esc(p.sku)}</div><div style="color:var(--txT)">${esc(p.sku_marketplace)}</div></td>
+          <td><select onchange="updateType(${p.id},this.value)" style="font-size:11px;padding:3px 6px;border-radius:4px;border:1px solid var(--border);font-family:inherit"><option value="Classe A" ${p.type==='Classe A'?'selected':''}>Classe A</option><option value="Nouveautés Q4+Q1" ${p.type==='Nouveautés Q4+Q1'?'selected':''}>Nouveautés</option><option value="Deals exclus" ${p.type==='Deals exclus'?'selected':''}>Deals exclus</option></select></td>
           <td>${p.active!==false?pill("Actif","green"):pill("Inactif","default")}</td>
-          <td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.url?`<a href="${esc(p.url)}" target="_blank" class="link" title="${esc(p.url)}">${esc(p.url).slice(0,45)}…</a>`:'<span style="color:var(--txT)">—</span>'}</td>
+          <td style="font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.url?`<a href="${esc(p.url)}" target="_blank" class="link" title="${esc(p.url)}">${esc(p.url).slice(0,45)}…</a>`:'—'}</td>
           <td style="text-align:center;white-space:nowrap">
             ${p.active!==false?`<button onclick="toggleActive(${p.id},false)" style="padding:3px 8px;border-radius:6px;border:.5px solid var(--am);background:var(--amBg);color:var(--am);font-size:11px;cursor:pointer;font-family:inherit;margin-right:4px">Désactiver</button>`:`<button onclick="toggleActive(${p.id},true)" style="padding:3px 8px;border-radius:6px;border:.5px solid var(--gn);background:var(--gnBg);color:var(--gn);font-size:11px;cursor:pointer;font-family:inherit;margin-right:4px">Activer</button>`}
             <button onclick="deleteProduct(${p.id},'${esc(p.name).slice(0,30)}')" style="padding:3px 8px;border-radius:6px;border:.5px solid var(--rd);background:var(--rdBg);color:var(--rd);font-size:11px;cursor:pointer;font-family:inherit">Suppr.</button>
@@ -1983,20 +1794,15 @@ function renderGestion() {
 async function addProduct() {
   const statusEl=document.getElementById("add-status");
   const id=document.getElementById("add-id").value.trim(),name=document.getElementById("add-name").value.trim(),url=document.getElementById("add-url").value.trim();
-  const sku=document.getElementById("add-sku").value.trim(),ean=document.getElementById("add-ean").value.trim();
-  const skuMp=document.getElementById("add-skump").value.trim(),type=document.getElementById("add-type").value;
-  if(!id||!name||!url){statusEl.innerHTML='<span style="color:var(--rd)">ID produit, nom et URL obligatoires.</span>';return;}
-  // Extract scraper id from URL if not filled manually
-  let scraperId = skuMp;
-  if (!scraperId) {
-    const m = url.match(/-(BES[A-Z0-9]+|LIS[A-Z0-9]+|AAA[A-Z0-9]+)/);
-    scraperId = m ? m[1] : "";
-  }
+  const sku=document.getElementById("add-sku").value.trim(),skuMp=document.getElementById("add-skump").value.trim(),type=document.getElementById("add-type").value;
+  if(!id||!name||!url){statusEl.innerHTML='<span style="color:var(--rd)">ID, nom et URL obligatoires.</span>';return;}
+  const match=url.match(/-([a-zA-Z0-9]+)\.html/);
+  const scraperId=match?match[1].toLowerCase():"";
   statusEl.innerHTML='<span style="color:var(--txS)">Ajout en cours...</span>';
   try {
-    await sbInsert("products",{product_id:id,name,sku,ean:ean||null,product_id_scraper:scraperId||null,url,type,marketplace:MARKETPLACE,active:true});
+    await sbInsert("products",{product_id:id,name,sku,sku_marketplace:skuMp,url,product_id_scraper:scraperId,type,marketplace:MARKETPLACE,active:true});
     statusEl.innerHTML='<span style="color:var(--gn)">✓ Produit ajouté.</span>';
-    ["add-id","add-name","add-url","add-sku","add-ean","add-skump"].forEach(id=>document.getElementById(id).value="");
+    ["add-id","add-name","add-url","add-sku","add-skump"].forEach(id=>document.getElementById(id).value="");
     await loadData();
   } catch(e){statusEl.innerHTML=`<span style="color:var(--rd)">Erreur : ${e.message}</span>`;}
 }
@@ -2017,10 +1823,6 @@ const MP_MATCHING = {
   maisonsdumonde: ["maisonsdumonde"],
   laredoute:      ["laredoute"],
   conforama:      ["conforama"],
-  // ManoMano : plusieurs canaux dans le fichier XLS
-  manomano:       ["manomano_de", "manomano_fr", "manomano_fr_b2b", "manomano_fr_mmf", "manomano"],
-  // BUT Mirakl
-  but:            ["but_mirakl", "but"],
 };
 
 const MP_LABELS = {
@@ -2029,8 +1831,6 @@ const MP_LABELS = {
   maisonsdumonde: "Maisons du Monde",
   laredoute:      "La Redoute",
   conforama:      "Conforama",
-  manomano:       "ManoMano",
-  but:            "BUT",
 };
 
 const ADMIN_PASSWORD = "sgpa92!";
@@ -2042,8 +1842,7 @@ function openImportXLSModal(importType = 'ytd') {
 
       <div style="background:var(--puBg);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--pu)">
         Importe les fichiers YTD N et N-1 pour calculer le CA par marketplace.
-        Pour l'import Semaine, joindre aussi le fichier Odoo de la semaine pour les ventes produit.
-        Les données seront stockées dans <b>revenue_imports</b> et <b>product_sales_weekly</b>.
+        Les données seront stockées dans <b>revenue_imports</b>.
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
@@ -2070,14 +1869,6 @@ function openImportXLSModal(importType = 'ytd') {
           <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Fichier N-1 (année précédente) *</label>
           <input id="imp-file-n1" type="file" accept=".xls,.xlsx" style="width:100%;padding:6px;border:.5px solid var(--border);border-radius:6px;font-size:11px;font-family:inherit;background:var(--card)">
         </div>
-      </div>
-
-      <div style="background:var(--amBg);border:1px solid var(--am);border-radius:8px;padding:10px 12px">
-        <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">
-          📦 Fichier Odoo ventes semaine <span style="color:var(--txT)">(optionnel — uniquement pour Import Semaine)</span>
-        </label>
-        <input id="imp-file-odoo" type="file" accept=".xls,.xlsx" style="width:100%;padding:6px;border:.5px solid var(--border);border-radius:6px;font-size:11px;font-family:inherit;background:var(--card)">
-        <div style="font-size:10px;color:var(--txT);margin-top:4px">Export Odoo détaillé avec lignes produits → alimente le Top 5 ventes dans l'onglet Synthèse</div>
       </div>
 
       <div>
@@ -2139,12 +1930,9 @@ async function parseXLSFile(file) {
         Object.keys(MP_MATCHING).forEach(mp => totals[mp] = 0);
 
         rows.forEach(row => {
-          if (!row || !row[0]) return;
-          // row[1] peut être 0 pour certaines lignes — on accepte les valeurs numériques nulles
-          const raw1 = row[1] != null ? row[1] : null;
-          if (raw1 == null) return;
+          if (!row || !row[0] || !row[1]) return;
           const label = String(row[0]).toLowerCase().replace(/\s/g, "");
-          const val = parseFloat(String(raw1).replace(",", ".").replace(/\s/g,""));
+          const val = parseFloat(String(row[1]).replace(",", "."));
           if (isNaN(val)) return;
 
           for (const [mp, keys] of Object.entries(MP_MATCHING)) {
@@ -2167,66 +1955,6 @@ async function parseXLSFile(file) {
   });
 }
 
-// ── PARSE ODOO XLS — ventes produits hebdomadaires ──────────────
-// Retourne [{ref, name, marketplace, qty}]
-// Mapping canal Odoo → marketplace dashboard
-const ODOO_CHANNEL_MAP = {
-  "amazon_fr": "amazon", "amazon_be": "amazon",
-  "cdiscount_octopia": "cdiscount",
-  "maisonsdumonde": "maisonsdumonde",
-  "laredoute_mirakl": "laredoute",
-  "conforama": "conforama",
-  "manomano_fr": "manomano", "manomano_fr_b2b": "manomano",
-  "but_mirakl": "but",
-};
-const ODOO_SKIP = ["Livraison", "Retrait", "Bon de réduction", "Remise"];
-
-async function parseOdooXLS(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target.result);
-        const wb = XLSX.read(data, { type: "array" });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
-
-        let currentChannel = null;
-        const agg = {}; // "ref|marketplace" → {ref, name, marketplace, qty}
-
-        rows.forEach(row => {
-          if (!row || row.length < 3) return;
-          const desc = row[0] != null ? String(row[0]).trim() : "";
-          const qtyRaw = row[2];
-          if (!desc || desc === "Total" || desc.includes("Total HT")) return;
-          if (ODOO_SKIP.some(p => desc.startsWith(p))) return;
-
-          const refMatch = desc.match(/\[([^\]]+)\]/);
-          if (refMatch) {
-            const ref = refMatch[1].trim();
-            const name = desc.replace(/\[[^\]]+\]\s*/, "").trim().slice(0, 100);
-            const qty = parseInt(qtyRaw) || 0;
-            const caHt = parseFloat(String(row[1] || 0).replace(",", ".")) || 0;
-            const mp = currentChannel ? ODOO_CHANNEL_MAP[currentChannel] : null;
-            if (mp && qty > 0) {
-              const key = ref + "|" + mp;
-              if (!agg[key]) agg[key] = { ref, name, marketplace: mp, qty: 0, ca_ht: 0 };
-              agg[key].qty += qty;
-              agg[key].ca_ht += caHt;
-            }
-          } else {
-            currentChannel = desc;
-          }
-        });
-
-        resolve(Object.values(agg));
-      } catch(e) { reject(e); }
-    };
-    reader.onerror = reject;
-    reader.readAsArrayBuffer(file);
-  });
-}
-
 let _importData = null; // cache pour confirmImport
 
 async function previewImport() {
@@ -2234,9 +1962,8 @@ async function previewImport() {
   const previewEl = document.getElementById("imp-preview");
   statusEl.innerHTML = '<span style="color:var(--txS)">Lecture des fichiers…</span>';
 
-  const fileN    = document.getElementById("imp-file-n")?.files[0];
-  const fileN1   = document.getElementById("imp-file-n1")?.files[0];
-  const fileOdoo = document.getElementById("imp-file-odoo")?.files[0];
+  const fileN  = document.getElementById("imp-file-n")?.files[0];
+  const fileN1 = document.getElementById("imp-file-n1")?.files[0];
   const start  = document.getElementById("imp-start")?.value;
   const end    = document.getElementById("imp-end")?.value;
   const label  = document.getElementById("imp-label")?.value?.trim();
@@ -2255,20 +1982,9 @@ async function previewImport() {
     const fmtDate = d => d.toLocaleDateString("fr-FR", {day:"2-digit",month:"2-digit",year:"numeric"});
 
     // Stocker pour confirmImport
-    // Parser le fichier Odoo si fourni
-    let productSales = [];
-    if (fileOdoo) {
-      try {
-        productSales = await parseOdooXLS(fileOdoo);
-        console.log("✅ Odoo parsé :", productSales.length, "lignes produit×marketplace");
-      } catch(e) {
-        console.warn("⚠ Odoo parse error:", e.message);
-      }
-    }
     _importData = { totalsN, totalsN1, start, end, label,
       startN1: startN1.toISOString().slice(0,10),
-      endN1:   endN1.toISOString().slice(0,10),
-      productSales };
+      endN1:   endN1.toISOString().slice(0,10) };
 
     // Construire tableau de prévisualisation
     const fmtCA = v => v.toLocaleString("fr-FR", {minimumFractionDigits:0, maximumFractionDigits:0}) + " €";
@@ -2305,10 +2021,7 @@ async function previewImport() {
         </table>
       </div>`;
 
-    const prodInfo = productSales.length > 0
-      ? ` + ${productSales.length} lignes produit (Odoo)`
-      : "";
-    statusEl.innerHTML = `<span style="color:var(--gn)">✓ Prévisualisation prête${prodInfo} — vérifiez puis cliquez Importer.</span>`;
+    statusEl.innerHTML = '<span style="color:var(--gn)">✓ Prévisualisation prête — vérifiez puis cliquez Importer.</span>';
   } catch(e) {
     statusEl.innerHTML = `<span style="color:var(--rd)">Erreur lecture fichier : ${e.message}</span>`;
   }
@@ -2361,31 +2074,7 @@ async function confirmImport() {
     });
     if (!r.ok) { const t = await r.text(); throw new Error(`${r.status}: ${t}`); }
 
-    // Insérer les ventes produits si présentes
-    const { productSales } = _importData;
-    if (productSales && productSales.length > 0) {
-      // Supprimer les entrées existantes pour ce label
-      await fetch(`${SB_URL}/rest/v1/product_sales_weekly?week_label=eq.${encodeURIComponent(label)}`, {
-        method: "DELETE",
-        headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` }
-      });
-      // Insérer les nouvelles
-      const salesRows = productSales.map(p => ({
-        ref: p.ref, name: p.name, marketplace: p.marketplace,
-        week_label: label, period_start: start, qty: p.qty,
-        ca_ht: p.ca_ht ? Math.round(p.ca_ht * 100) / 100 : null,
-        avg_basket_ttc: (p.ca_ht && p.qty) ? Math.round(p.ca_ht / p.qty * 1.2 * 100) / 100 : null
-      }));
-      const r2 = await fetch(`${SB_URL}/rest/v1/product_sales_weekly`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, Prefer: "return=minimal" },
-        body: JSON.stringify(salesRows)
-      });
-      if (!r2.ok) console.warn("⚠ product_sales_weekly insert:", await r2.text());
-      else console.log("✅ product_sales_weekly:", salesRows.length, "lignes");
-    }
-
-    statusEl.innerHTML = `<span style="color:var(--gn)">✓ ${rows.length} lignes CA importées pour "${label}"${productSales?.length ? " + " + productSales.length + " ventes produit" : ""}.</span>`;
+    statusEl.innerHTML = `<span style="color:var(--gn)">✓ ${rows.length} lignes importées pour "${label}".</span>`;
     _importData = null;
     setTimeout(() => { closeModal(); loadData(); }, 1200);
   } catch(e) {
