@@ -461,14 +461,17 @@ async function loadData() {
     // page1Keywords : product_id → liste des keywords où il est en page 1
     const page1Keywords = {};
     latestPositions.forEach(p => {
-      if (isBMPosition(p)) {
-        const pid = (p.product_id||"").toLowerCase();
-        productsInPage1.add(pid);
-        const kw = normalizeKeyword(p.keyword);
-        if (!page1Keywords[pid]) page1Keywords[pid] = new Set();
-        page1Keywords[pid].add(kw);
-      }
-    });
+  if (isBMPosition(p)) {
+    const pid = (p.product_id||"").toLowerCase();
+    productsInPage1.add(pid);
+    const kw = normalizeKeyword(p.keyword);
+    // Indexer aussi par product_id_scraper pour le lookup dans renderSynthese/renderProduits
+    const trackedProd = trackedByScraperId[pid];
+    const scraperPid = trackedProd ? (trackedProd.product_id_scraper||"").toLowerCase() : pid;
+    if (!page1Keywords[scraperPid]) page1Keywords[scraperPid] = new Set();
+    page1Keywords[scraperPid].add(kw);
+  }
+});
 
     // =============================================
     // CONFORAMA: calcul incrémental des ventes
@@ -508,7 +511,7 @@ async function loadData() {
     // On compare uniquement la date (YYYY-MM-DD), pas l'heure.
     const snapshotDay = latestDate ? latestDate.slice(0, 10) : null;
     const posDay = latestPosSession ? latestPosSession.slice(0, 10) : null;
-    const positionsOutdated = !posDay || !snapshotDay || posDay < snapshotDay;
+    const positionsOutdated = !posDay || !snapshotDay || posDay < snapshotDay.slice(0,10);
 
     STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, leaderCounts, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], revenueImports: revenueImports||[], productSalesWeekly: productSalesWeekly||[], tab:STATE.tab||0 };
 
@@ -2308,6 +2311,27 @@ async function confirmImport() {
 }
 
 // Init
+if (MAINTENANCE_MODE) {
+  const stored = sessionStorage.getItem("admin_access");
+  if (stored !== ADMIN_CODE) {
+    document.body.innerHTML = `
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:'DM Sans',sans-serif;background:#fafaf8;gap:16px">
+        <div style="font-size:20px;font-weight:700;color:#1a1a18">Outil en cours de modification</div>
+        <div style="font-size:14px;color:#6b6a65">Non accessible pour le moment.</div>
+        <input id="admin-input" type="password" placeholder="Code admin" style="padding:8px 14px;border:1px solid #e8e6e1;border-radius:8px;font-size:14px;font-family:inherit;margin-top:8px">
+        <button onclick="checkAdmin()" style="padding:8px 20px;background:#2c5ea0;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Accéder</button>
+        <div id="admin-err" style="font-size:12px;color:#b5312c"></div>
+      </div>`;
+    window.checkAdmin = () => {
+      const val = document.getElementById("admin-input").value;
+      if (val === ADMIN_CODE) { sessionStorage.setItem("admin_access", ADMIN_CODE); location.reload(); }
+      else document.getElementById("admin-err").textContent = "Code incorrect.";
+    };
+    document.getElementById("admin-input").addEventListener("keydown", e => { if(e.key==="Enter") checkAdmin(); });
+    // Stop tout — ne pas charger le dashboard
+    throw new Error("MAINTENANCE");
+  }
+}
 loadScrapingIndicators();
 loadData();
 </script>
