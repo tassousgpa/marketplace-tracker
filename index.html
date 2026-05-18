@@ -2562,6 +2562,7 @@ function buildAuditHTML() {
     <div style="font-size:12px;color:var(--txS)">${list.length} référence${list.length>1?"s":""}</div>
     <button onclick="auditSortByScore()" style="padding:4px 10px;border:.5px solid var(--border);border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;background:var(--bg)" id="audit-sort-btn">Score ↕</button>
   </div>
+  `;
 
   // Colonnes du tableau
   const colGroups = [
@@ -3292,7 +3293,6 @@ if (!accessGranted) {
   throw new Error("ACCESS");
 }
 loadScrapingIndicators();
-loadData();
-</script>
+loadData();</script>
 </body>
 </html>
