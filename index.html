@@ -2869,56 +2869,52 @@ async function showAuditHistory(id, sku) {
     const row = auditData.find(r=>r.id===id);
     const currentScore = row ? AUDIT_SCORE_FORMULA(row).score : null;
     const currentNiveau = row ? AUDIT_NIVEAU(currentScore) : "";
-
     if (!history.length && !currentScore) {
       openModal("Historique — " + sku, '<div style="padding:20px;text-align:center;color:var(--txT)">Aucun historique disponible.</div>');
       return;
     }
-
     const fmtDate = d => new Date(d).toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"});
 
-    // Score actuel toujours en premier
-    const currentRow = currentScore ? `
-      <tr style="background:var(--acBg);border-bottom:1px solid var(--borderL)">
-        <td style="padding:8px 12px;font-weight:600">Actuel</td>
-        <td style="padding:8px 12px;text-align:center;font-size:18px;font-weight:800;color:${AUDIT_NIVEAU_COLOR(currentNiveau)}">${currentScore}</td>
-        <td style="padding:8px 12px;text-align:center"><span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:${AUDIT_NIVEAU_BG(currentNiveau)};color:${AUDIT_NIVEAU_COLOR(currentNiveau)}">${currentNiveau}</span></td>
-        <td style="padding:8px 12px;text-align:center;color:var(--txT)">${row?.semaine||"—"}</td>
-      </tr>` : "";
+    const currentRow = currentScore
+      ? '<tr style="background:var(--acBg);border-bottom:1px solid var(--borderL)">'
+        + '<td style="padding:8px 12px;font-weight:600">Actuel</td>'
+        + '<td style="padding:8px 12px;text-align:center;font-size:18px;font-weight:800;color:'+AUDIT_NIVEAU_COLOR(currentNiveau)+'">'+currentScore+'</td>'
+        + '<td style="padding:8px 12px;text-align:center"><span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:'+AUDIT_NIVEAU_BG(currentNiveau)+';color:'+AUDIT_NIVEAU_COLOR(currentNiveau)+'">'+currentNiveau+'</span></td>'
+        + '<td style="padding:8px 12px;text-align:center;color:var(--txT)">'+(row && row.semaine ? row.semaine : "—")+'</td>'
+        + '</tr>'
+      : "";
 
-    const histRows = history.map((h,i) => {
+    const histRows = history.map(function(h, i) {
       const n = AUDIT_NIVEAU(h.score_idq);
       const prev = history[i+1];
       const delta = prev ? h.score_idq - prev.score_idq : null;
       const deltaHtml = delta !== null
-        ? `<span style="font-size:10px;font-weight:600;color:${delta>0?"var(--gn)":delta<0?"var(--rd)":"var(--txT)"};margin-left:6px">${delta>0?"+":""}${delta}</span>`
+        ? '<span style="font-size:10px;font-weight:600;color:'+(delta>0?"var(--gn)":delta<0?"var(--rd)":"var(--txT)")+'">'+( delta>0?"+":"")+delta+'</span>'
         : "";
-      return `<tr style="border-bottom:1px solid var(--borderL)">
-        <td style="padding:7px 12px;font-size:11px;color:var(--txS)">${fmtDate(h.recorded_at)}</td>
-        <td style="padding:7px 12px;text-align:center;font-size:16px;font-weight:700;color:${AUDIT_NIVEAU_COLOR(n)}">${h.score_idq||"—"}${deltaHtml}</td>
-        <td style="padding:7px 12px;text-align:center"><span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:${AUDIT_NIVEAU_BG(n)};color:${AUDIT_NIVEAU_COLOR(n)}">${n}</span></td>
-        <td style="padding:7px 12px;text-align:center;color:var(--txS)">${h.semaine||"—"}</td>
-      </tr>`;
+      return '<tr style="border-bottom:1px solid var(--borderL)">'
+        + '<td style="padding:7px 12px;font-size:11px;color:var(--txS)">'+fmtDate(h.recorded_at)+'</td>'
+        + '<td style="padding:7px 12px;text-align:center;font-size:16px;font-weight:700;color:'+AUDIT_NIVEAU_COLOR(n)+'">'+(h.score_idq||"—")+deltaHtml+'</td>'
+        + '<td style="padding:7px 12px;text-align:center"><span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:'+AUDIT_NIVEAU_BG(n)+';color:'+AUDIT_NIVEAU_COLOR(n)+'">'+n+'</span></td>'
+        + '<td style="padding:7px 12px;text-align:center;color:var(--txS)">'+(h.semaine||"—")+'</td>'
+        + '</tr>';
     }).join("");
 
-    openModal(`📈 Historique IDQ — ${sku}`, `
-      <div style="font-size:12px;color:var(--txS);margin-bottom:10px">${history.length} entrée${history.length>1?"s":""} dans l'historique</div>
-      <div style="overflow-x:auto">
-        <table style="width:100%;border-collapse:collapse;font-size:12px">
-          <thead><tr style="background:var(--bg);border-bottom:1px solid var(--border)">
-            <th style="padding:7px 12px;text-align:left;color:var(--txS)">Date</th>
-            <th style="padding:7px 12px;text-align:center;color:var(--txS)">Score IDQ</th>
-            <th style="padding:7px 12px;text-align:center;color:var(--txS)">Niveau</th>
-            <th style="padding:7px 12px;text-align:center;color:var(--txS)">Semaine</th>
-          </tr></thead>
-          <tbody>${currentRow}${histRows}</tbody>
-        </table>
-      </div>
-      <button onclick="saveAuditSnapshot(${id},'${esc(sku)}')" style="margin-top:12px;padding:8px 16px;background:var(--ac);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">
-        + Enregistrer le score actuel dans l'historique
-      </button>`);
+    const html = '<div style="font-size:12px;color:var(--txS);margin-bottom:10px">'+history.length+' entrée'+(history.length>1?"s":"")+" dans l'historique</div>"
+      + '<div style="overflow-x:auto">'
+      + '<table style="width:100%;border-collapse:collapse;font-size:12px">'
+      + '<thead><tr style="background:var(--bg);border-bottom:1px solid var(--border)">'
+      + '<th style="padding:7px 12px;text-align:left;color:var(--txS)">Date</th>'
+      + '<th style="padding:7px 12px;text-align:center;color:var(--txS)">Score IDQ</th>'
+      + '<th style="padding:7px 12px;text-align:center;color:var(--txS)">Niveau</th>'
+      + '<th style="padding:7px 12px;text-align:center;color:var(--txS)">Semaine</th>'
+      + '</tr></thead>'
+      + '<tbody>'+currentRow+histRows+'</tbody>'
+      + '</table></div>'
+      + '<button onclick="saveAuditSnapshot('+id+',\''+esc(sku)+'\')" style="margin-top:12px;padding:8px 16px;background:var(--ac);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">+ Enregistrer le score actuel dans l\'historique</button>';
+
+    openModal("Historique IDQ — " + sku, html);
   } catch(e) {
-    openModal(`Historique — ${sku}`, `<div style="color:var(--rd);padding:20px">${e.message}</div>`);
+    openModal("Historique — " + sku, '<div style="color:var(--rd);padding:20px">'+e.message+'</div>');
   }
 }
 
