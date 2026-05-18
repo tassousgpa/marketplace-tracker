@@ -2631,18 +2631,13 @@ function buildAuditHTML() {
   const thRow2 = allCols.map(c=>'<th style="padding:6px 8px;font-size:10px;font-weight:600;color:var(--txS);white-space:nowrap;min-width:'+c.w+'px;text-align:center'+(c.isTotal||c.isScore?';background:var(--borderL)':'')+'">'+(c.label||'')+'</th>').join("");
   const thead = '<thead><tr style="background:var(--bg);border-bottom:1px solid var(--borderL)">'+thRow1+'<th style="padding:6px 10px"></th></tr><tr style="background:var(--bg);border-bottom:2px solid var(--border)">'+thRow2+'<th style="display:none"></th></tr></thead>';
 
-  return synthese + filters + `
-  <div id="audit-scroll-top" style="overflow-x:auto;overflow-y:hidden;height:12px;margin-bottom:2px">
-    <div style="height:1px"></div>
-  </div>
-  <div class="card" style="padding:0;overflow:hidden">
-    <div class="scroll-table">
-      <table id="audit-table" style="min-width:${totalW}px;border-collapse:collapse;font-size:11px">
-        ${thead}
-        <tbody id="audit-tbody">${buildAuditRows(list)}</tbody>
-      </table>
-    </div>
-  </div>`;
+  return synthese + filters +
+    '<div id="audit-scroll-top" style="overflow-x:auto;overflow-y:hidden;height:12px;margin-bottom:2px"><div style="height:1px"></div></div>' +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="scroll-table">' +
+    '<table id="audit-table" style="min-width:'+totalW+'px;border-collapse:collapse;font-size:11px">' +
+    thead +
+    '<tbody id="audit-tbody">'+buildAuditRows(list)+'</tbody>' +
+    '</table></div></div>';
 
   // Appliquer zoom initial après render
   setTimeout(() => {
