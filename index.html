@@ -2403,8 +2403,8 @@ async function confirmImport() {
 
 const AUDIT_SCORE_FORMULA = (r) => {
   const v = val => (val === null || val === undefined || val === "") ? null : parseFloat(val);
-  const t = (val, max) => { const n = v(val); return n === null ? 0 : n; }; // NULL = 0 pour sous-totaux
-  const tScore = (val, max) => { const n = v(val); return n === null ? max : n; }; // NULL = max pour score global
+  const t = (val, max) => { const n = v(val); return n === null ? 0 : n; };
+  const tScore = (val, max) => { const n = v(val); return n === null ? 0 : n; };
 
   const titreTotal = t(r.titre_longueur)+t(r.titre_marque)+t(r.titre_collection)+t(r.titre_couleur)+t(r.titre_matiere)+t(r.titre_fonctions);
   const descTotal  = t(r.desc_bullets_nb)+t(r.desc_bullets_pertinence)+t(r.desc_caract_tech)+t(r.desc_dimensions)+t(r.desc_colis)+t(r.desc_textes_mkt);
@@ -2520,6 +2520,30 @@ function buildAuditHTML() {
   </div>`;
 
   const filters = `
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+    <label style="font-size:12px;color:var(--txS);display:flex;align-items:center;gap:6px">
+      Zoom :
+      <input type="range" min="60" max="100" value="85" id="audit-zoom-slider"
+        oninput="document.getElementById('audit-table').style.fontSize=this.value+'%';document.getElementById('audit-zoom-val').textContent=this.value+'%'"
+        style="width:80px;cursor:pointer">
+      <span id="audit-zoom-val">85%</span>
+    </label>
+    <button onclick="toggleAuditColPanel()" style="padding:5px 12px;border:.5px solid var(--border);border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit;background:var(--bg)">⚙ Colonnes</button>
+    <div id="audit-col-panel" style="display:none;position:absolute;z-index:100;background:var(--card);border:.5px solid var(--border);border-radius:8px;padding:12px;box-shadow:0 4px 16px rgba(0,0,0,.1);display:none">
+      <div style="font-size:11px;font-weight:600;color:var(--txS);margin-bottom:8px;text-transform:uppercase">Masquer/afficher colonnes</div>
+      ${[
+        {id:"col-titre",label:"Titre"},
+        {id:"col-desc",label:"Description"},
+        {id:"col-vis",label:"Visuels"},
+        {id:"col-gdv",label:"GDV"},
+        {id:"col-aplus",label:"Fiche A+"},
+        {id:"col-comments",label:"Commentaires"},
+      ].map(c=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px;cursor:pointer">
+        <input type="checkbox" checked onchange="toggleAuditColGroup('${c.id}',this.checked)" style="cursor:pointer">
+        ${c.label}
+      </label>`).join("")}
+    </div>
+  </div>
   <div class="filters" style="margin-bottom:10px">
     <input placeholder="Rechercher SKU ou produit..." value="${esc(auditFilters.search)}"
       oninput="auditFilters.search=this.value;document.getElementById('audit-tbody').innerHTML=buildAuditRows()"
@@ -2539,7 +2563,10 @@ function buildAuditHTML() {
     ${auditFilters.niveau!=="all"||auditFilters.type!=="all"||auditFilters.categorie!=="all"||auditFilters.search
       ?`<button onclick="auditFilters={type:'all',categorie:'all',niveau:'all',search:''};document.getElementById('content').innerHTML=buildAuditHTML()" style="padding:6px 12px;border:.5px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg);cursor:pointer;font-family:inherit">✕ Reset</button>`:""}
   </div>
-  <div style="font-size:12px;color:var(--txS);margin-bottom:8px">${list.length} référence${list.length>1?"s":""}</div>`;
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
+    <div style="font-size:12px;color:var(--txS)">${list.length} référence${list.length>1?"s":""}</div>
+    <button onclick="auditSortByScore()" style="padding:4px 10px;border:.5px solid var(--border);border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;background:var(--bg)" id="audit-sort-btn">Score ↕</button>
+  </div>
 
   // Colonnes du tableau
   const colGroups = [
@@ -2617,6 +2644,9 @@ function buildAuditHTML() {
   </thead>`;
 
   return synthese + filters + `
+  <div id="audit-scroll-top" style="overflow-x:auto;overflow-y:hidden;height:12px;margin-bottom:2px">
+    <div style="height:1px"></div>
+  </div>
   <div class="card" style="padding:0;overflow:hidden">
     <div class="scroll-table">
       <table id="audit-table" style="min-width:${totalW}px;border-collapse:collapse;font-size:11px">
@@ -2625,6 +2655,21 @@ function buildAuditHTML() {
       </table>
     </div>
   </div>`;
+
+  // Appliquer zoom initial après render
+  setTimeout(() => {
+    const t = document.getElementById('audit-table');
+    if (t) t.style.fontSize = '85%';
+    // Sync scroll haut ↔ bas
+    const scrollWrap = document.querySelector('.scroll-table');
+    const topBar = document.getElementById('audit-scroll-top');
+    if (scrollWrap && topBar) {
+      const inner = topBar.querySelector('div');
+      if (inner) inner.style.width = scrollWrap.scrollWidth + 'px';
+      topBar.addEventListener('scroll', () => { scrollWrap.scrollLeft = topBar.scrollLeft; });
+      scrollWrap.addEventListener('scroll', () => { topBar.scrollLeft = scrollWrap.scrollLeft; });
+    }
+  }, 50);
 }
 
 function buildAuditRows(filteredList) {
@@ -3166,6 +3211,44 @@ async function confirmAuditAddProducts(mp) {
   } catch(e) {
     statusEl.innerHTML = `<span style="color:var(--rd)">Erreur : ${e.message}</span>`;
   }
+}
+
+function toggleAuditColPanel() {
+  const p = document.getElementById('audit-col-panel');
+  if (!p) return;
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
+
+function toggleAuditColGroup(groupId, visible) {
+  const table = document.getElementById('audit-table');
+  if (!table) return;
+  const groupMap = {
+    'col-titre':    [6,7,8,9,10,11,12],
+    'col-desc':     [13,14,15,16,17,18,19],
+    'col-vis':      [20,21,22,23,24,25,26],
+    'col-gdv':      [27,28,29],
+    'col-aplus':    [30,31,32],
+    'col-comments': [35,36,37,38,39,40],
+  };
+  const indices = groupMap[groupId] || [];
+  table.querySelectorAll('tr').forEach(row => {
+    [...row.cells].forEach((cell, i) => {
+      if (indices.includes(i)) cell.style.display = visible ? '' : 'none';
+    });
+  });
+}
+
+let auditSortDir = 'desc';
+function auditSortByScore() {
+  auditSortDir = auditSortDir === 'desc' ? 'asc' : 'desc';
+  auditData.sort((a,b) => {
+    const sa = AUDIT_SCORE_FORMULA(a).score;
+    const sb = AUDIT_SCORE_FORMULA(b).score;
+    return auditSortDir === 'asc' ? sa - sb : sb - sa;
+  });
+  const btn = document.getElementById('audit-sort-btn');
+  if (btn) btn.textContent = `Score ${auditSortDir === 'asc' ? '↑' : '↓'}`;
+  document.getElementById('audit-tbody').innerHTML = buildAuditRows();
 }
   
 // Init
