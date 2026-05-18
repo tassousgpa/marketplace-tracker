@@ -2668,136 +2668,167 @@ function buildAuditRows(filteredList) {
     }
   }
 
-  return list.map((r, i) => {
+  const colGroups = [
+    {cols:[
+      {key:"sku",w:90,editable:false},
+      {key:"nom_produit",w:180,editable:false},
+      {key:"lien_mkp",w:60,editable:true,isLink:true},
+      {key:"categorie",w:80,editable:true,isSelect:true,options:["Canapé","Meubles","Outdoor","Autre"]},
+      {key:"type_ref",w:90,editable:true,isSelect:true,options:["Top Ref","Nouveauté","Autre"]},
+    ]},
+    {cols:[
+      {key:"titre_longueur",w:60,editable:true,max:2},
+      {key:"titre_marque",w:60,editable:true,max:1},
+      {key:"titre_collection",w:60,editable:true,max:1},
+      {key:"titre_couleur",w:60,editable:true,max:1},
+      {key:"titre_matiere",w:60,editable:true,max:1},
+      {key:"titre_fonctions",w:60,editable:true,max:2},
+      {key:"_titre_total",w:55,editable:false,isTotal:true},
+    ]},
+    {cols:[
+      {key:"desc_bullets_nb",w:70,editable:true,max:4},
+      {key:"desc_bullets_pertinence",w:70,editable:true,max:4},
+      {key:"desc_caract_tech",w:65,editable:true,max:1},
+      {key:"desc_dimensions",w:60,editable:true,max:1},
+      {key:"desc_colis",w:55,editable:true,max:1},
+      {key:"desc_textes_mkt",w:70,editable:true,max:1},
+      {key:"_desc_total",w:55,editable:false,isTotal:true},
+    ]},
+    {cols:[
+      {key:"visuels_fond_blanc",w:70,editable:true,max:1},
+      {key:"visuels_dimensions",w:55,editable:true,max:1},
+      {key:"visuels_lifestyle",w:65,editable:true,max:1},
+      {key:"visuels_zoom_matiere",w:70,editable:true,max:1},
+      {key:"visuels_fonction",w:65,editable:true,max:1},
+      {key:"visuels_qualite_carrousel",w:70,editable:true,max:5},
+      {key:"_vis_total",w:55,editable:false,isTotal:true},
+    ]},
+    {cols:[
+      {key:"gdv_couleur",w:65,editable:true,max:1},
+      {key:"gdv_autre",w:60,editable:true,max:1},
+      {key:"_gdv_total",w:55,editable:false,isTotal:true},
+    ]},
+    {cols:[
+      {key:"aplus_fiche",w:70,editable:true,max:2},
+      {key:"aplus_video",w:60,editable:true,max:1},
+      {key:"_aplus_total",w:55,editable:false,isTotal:true},
+    ]},
+    {cols:[
+      {key:"_score",w:70,editable:false,isScore:true},
+      {key:"_niveau",w:100,editable:false,isNiveau:true},
+      {key:"plan_action",w:160,editable:false,isPlan:true},
+    ]},
+    {cols:[
+      {key:"commentaire_1",w:160,editable:true,isTextarea:true},
+      {key:"commentaire_2",w:160,editable:true,isTextarea:true},
+      {key:"commentaire_3",w:160,editable:true,isTextarea:true},
+      {key:"commentaire_4",w:160,editable:true,isTextarea:true},
+      {key:"commentaire_5",w:160,editable:true,isTextarea:true},
+      {key:"commentaire_6",w:160,editable:true,isTextarea:true},
+    ]},
+  ];
+  const allCols = colGroups.flatMap(g=>g.cols);
+
+  if (!list.length) {
+    return '<tr><td colspan="50" style="padding:30px;text-align:center;color:var(--txT)">Aucune donnée — importez un fichier XLS ou ajoutez des références.</td></tr>';
+  }
+
+  return list.map(function(r, i) {
     const calc = AUDIT_SCORE_FORMULA(r);
     const niveau = AUDIT_NIVEAU(calc.score);
-    const totals = {_titre_total:calc.titreTotal,_desc_total:calc.descTotal,_vis_total:calc.visTotal,_gdv_total:calc.gdvTotal,_aplus_total:calc.aplusTotal,_score:calc.score,_niveau:niveau};
+    const totals = {
+      _titre_total: calc.titreTotal,
+      _desc_total:  calc.descTotal,
+      _vis_total:   calc.visTotal,
+      _gdv_total:   calc.gdvTotal,
+      _aplus_total: calc.aplusTotal,
+      _score:       calc.score,
+      _niveau:      niveau
+    };
     const bg = i%2 ? "background:var(--bg)" : "";
 
-    const colGroups = [
-  {label:"",cols:[
-    {key:"sku",w:90,editable:false},
-    {key:"nom_produit",w:180,editable:false},
-    {key:"lien_mkp",w:60,editable:true,isLink:true},
-    {key:"categorie",w:80,editable:true,isSelect:true,options:["Canapé","Meubles","Outdoor","Autre"]},
-    {key:"type_ref",w:90,editable:true,isSelect:true,options:["Top Ref","Nouveauté","Autre"]},
-  ]},
-  {label:"",cols:[
-    {key:"titre_longueur",w:60,editable:true,max:2},
-    {key:"titre_marque",w:60,editable:true,max:1},
-    {key:"titre_collection",w:60,editable:true,max:1},
-    {key:"titre_couleur",w:60,editable:true,max:1},
-    {key:"titre_matiere",w:60,editable:true,max:1},
-    {key:"titre_fonctions",w:60,editable:true,max:2},
-    {key:"_titre_total",w:55,editable:false,isTotal:true},
-  ]},
-  {label:"",cols:[
-    {key:"desc_bullets_nb",w:70,editable:true,max:4},
-    {key:"desc_bullets_pertinence",w:70,editable:true,max:4},
-    {key:"desc_caract_tech",w:65,editable:true,max:1},
-    {key:"desc_dimensions",w:60,editable:true,max:1},
-    {key:"desc_colis",w:55,editable:true,max:1},
-    {key:"desc_textes_mkt",w:70,editable:true,max:1},
-    {key:"_desc_total",w:55,editable:false,isTotal:true},
-  ]},
-  {label:"",cols:[
-    {key:"visuels_fond_blanc",w:70,editable:true,max:1},
-    {key:"visuels_dimensions",w:55,editable:true,max:1},
-    {key:"visuels_lifestyle",w:65,editable:true,max:1},
-    {key:"visuels_zoom_matiere",w:70,editable:true,max:1},
-    {key:"visuels_fonction",w:65,editable:true,max:1},
-    {key:"visuels_qualite_carrousel",w:70,editable:true,max:5},
-    {key:"_vis_total",w:55,editable:false,isTotal:true},
-  ]},
-  {label:"",cols:[
-    {key:"gdv_couleur",w:65,editable:true,max:1},
-    {key:"gdv_autre",w:60,editable:true,max:1},
-    {key:"_gdv_total",w:55,editable:false,isTotal:true},
-  ]},
-  {label:"",cols:[
-    {key:"aplus_fiche",w:70,editable:true,max:2},
-    {key:"aplus_video",w:60,editable:true,max:1},
-    {key:"_aplus_total",w:55,editable:false,isTotal:true},
-  ]},
-  {label:"",cols:[
-    {key:"_score",w:70,editable:false,isScore:true},
-    {key:"_niveau",w:100,editable:false,isNiveau:true},
-    {key:"plan_action",w:160,editable:false,isPlan:true},
-  ]},
-  {label:"",cols:[
-    {key:"commentaire_1",w:160,editable:true,isTextarea:true},
-    {key:"commentaire_2",w:160,editable:true,isTextarea:true},
-    {key:"commentaire_3",w:160,editable:true,isTextarea:true},
-    {key:"commentaire_4",w:160,editable:true,isTextarea:true},
-    {key:"commentaire_5",w:160,editable:true,isTextarea:true},
-    {key:"commentaire_6",w:160,editable:true,isTextarea:true},
-  ]},
-];
-const allCols = colGroups.flatMap(g=>g.cols);
+    const cells = allCols.map(function(c) {
 
-    const cells = allCols.map(c => {
-  if (c.isTotal) {
-    const v = totals[c.key] ?? "—";
-    return '<td style="text-align:center;font-weight:700;background:var(--borderL);padding:4px 6px">'+v+'</td>';
-  }
-  if (c.isScore) {
-    const s = totals._score;
-    const col = AUDIT_NIVEAU_COLOR(AUDIT_NIVEAU(s));
-    return '<td style="text-align:center;background:var(--borderL);padding:4px 6px;white-space:nowrap">'
-      + '<span style="font-weight:800;font-size:14px;color:'+col+'">'+(s||"—")+'</span>'
-      + '<button onclick="showAuditHistory('+r.id+',\''+esc(r.sku)+'\')" title="Historique" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;vertical-align:middle">📈</button>'
-      + '</td>';
-  }
-  if (c.isNiveau) {
-    const n = totals._niveau;
-    return `<td style="text-align:center;padding:4px 6px"><span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:${AUDIT_NIVEAU_BG(n)};color:${AUDIT_NIVEAU_COLOR(n)}">${n||"—"}</span></td>`;
-  }
-  if (c.isPlan) {
-    const n = totals._niveau;
-    const pa = totals._score >= 90 ? "OK — Surveiller" : totals._score >= 75 ? "Ajustements mineurs" : totals._score >= 50 ? "Optimisation contenu + visuels" : "Refonte complète urgente";
-    return `<td style="padding:4px 8px;font-size:11px;color:${AUDIT_NIVEAU_COLOR(n)};font-weight:600;white-space:nowrap">${pa}</td>`;
-  }
-  if (c.isLink) {
-    const v = r[c.key] || "";
-    const isReal = v && v !== "Pas en ligne" && v.startsWith("http");
-    return `<td style="text-align:center;padding:4px 6px">
-      ${isReal ? `<a href="${esc(v)}" target="_blank" class="link">Voir ↗</a>` : '<span style="color:var(--txT);font-size:10px">—</span>'}
-    </td>`;
-  }
-  if (!c.editable) {
-    return `<td style="padding:4px 8px;font-size:12px;font-weight:500">${esc(String(r[c.key]||""))}</td>`;
-  }
-  if (c.isSelect) {
-    const v = r[c.key] || "";
-    const isOther = v && !c.options.slice(0,-1).includes(v);
-    return `<td style="padding:2px 4px;min-width:${c.w}px">
-      <select onchange="auditHandleSelect(${r.id},'${c.key}',this.value,this)" style="width:100%;padding:3px 4px;border:.5px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:transparent">
-        ${c.options.map(o=>`<option value="${esc(o)}" ${(isOther&&o==='Autre')||v===o?'selected':''}>${esc(o)}</option>`).join("")}
-      </select>
-      ${isOther ? `<input value="${esc(v)}" style="width:100%;margin-top:2px;padding:2px 4px;border:.5px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit" onblur="auditSaveCell(${r.id},'${c.key}',this.value)" onkeydown="if(event.key==='Enter')this.blur()">` : ""}
-    </td>`;
-  }
-  const v = r[c.key] !== null && r[c.key] !== undefined ? r[c.key] : "";
-  const isNum = c.max !== undefined;
-  if (isNum) {
-    return `<td style="text-align:center;padding:2px 4px">
-      <input type="text" value="${esc(String(v))}" style="width:${c.w-10}px;text-align:center;padding:3px 4px;border:.5px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:transparent"
-        onblur="auditSaveCell(${r.id},'${c.key}',this.value)"
-        onkeydown="if(event.key==='Enter')this.blur()"
-        title="Max: ${c.max}">
-    </td>`;
-  }
-  return `<td style="padding:2px 4px;min-width:${c.w}px">
-    <textarea rows="3" style="width:${c.w-8}px;padding:3px 5px;border:.5px solid var(--border);border-radius:4px;font-size:10px;font-family:inherit;resize:vertical;background:transparent;min-height:52px;overflow:visible"
-      onblur="auditSaveCell(${r.id},'${c.key}',this.value)">${esc(String(v))}</textarea>
-  </td>`;
-}).join("");
+      if (c.isTotal) {
+        const v = totals[c.key] != null ? totals[c.key] : "—";
+        return '<td style="text-align:center;font-weight:700;background:var(--borderL);padding:4px 6px">' + v + '</td>';
+      }
 
-    return `<tr style="${bg};border-bottom:1px solid var(--borderL)" id="audit-row-${r.id}">
-      ${cells}
-      <td style="display:none"></td>
-    </tr>`;
-  }).join("") || `<tr><td colspan="50" style="padding:30px;text-align:center;color:var(--txT)">Aucune donnée — importez un fichier XLS ou ajoutez des références.</td></tr>`;
+      if (c.isScore) {
+        const s = totals._score;
+        const col = AUDIT_NIVEAU_COLOR(AUDIT_NIVEAU(s));
+        return '<td style="text-align:center;background:var(--borderL);padding:4px 6px;white-space:nowrap">'
+          + '<span style="font-weight:800;font-size:14px;color:' + col + '">' + (s || "—") + '</span>'
+          + '<button onclick="showAuditHistory(' + r.id + ',\'' + esc(r.sku) + '\')" title="Historique" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;vertical-align:middle">📈</button>'
+          + '</td>';
+      }
+
+      if (c.isNiveau) {
+        const n = totals._niveau;
+        return '<td style="text-align:center;padding:4px 6px">'
+          + '<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:' + AUDIT_NIVEAU_BG(n) + ';color:' + AUDIT_NIVEAU_COLOR(n) + '">' + (n || "—") + '</span>'
+          + '</td>';
+      }
+
+      if (c.isPlan) {
+        const n = totals._niveau;
+        const sc = totals._score;
+        const pa = sc >= 90 ? "OK — Surveiller" : sc >= 75 ? "Ajustements mineurs" : sc >= 50 ? "Optimisation contenu + visuels" : "Refonte complète urgente";
+        return '<td style="padding:4px 8px;font-size:11px;color:' + AUDIT_NIVEAU_COLOR(n) + ';font-weight:600;white-space:nowrap">' + pa + '</td>';
+      }
+
+      if (c.isLink) {
+        const v = r[c.key] || "";
+        const isReal = v && v !== "Pas en ligne" && v.startsWith("http");
+        return '<td style="text-align:center;padding:4px 6px">'
+          + (isReal ? '<a href="' + esc(v) + '" target="_blank" class="link">Voir ↗</a>' : '<span style="color:var(--txT);font-size:10px">—</span>')
+          + '</td>';
+      }
+
+      if (!c.editable) {
+        return '<td style="padding:4px 8px;font-size:12px;font-weight:500">' + esc(String(r[c.key] || "")) + '</td>';
+      }
+
+      if (c.isSelect) {
+        const v = r[c.key] || "";
+        const isOther = v && !c.options.slice(0, -1).includes(v);
+        const opts = c.options.map(function(o) {
+          const sel = ((isOther && o === 'Autre') || v === o) ? ' selected' : '';
+          return '<option value="' + esc(o) + '"' + sel + '>' + esc(o) + '</option>';
+        }).join("");
+        return '<td style="padding:2px 4px;min-width:' + c.w + 'px">'
+          + '<select onchange="auditHandleSelect(' + r.id + ',\'' + c.key + '\',this.value,this)" style="width:100%;padding:3px 4px;border:.5px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:transparent">'
+          + opts
+          + '</select>'
+          + (isOther ? '<input value="' + esc(v) + '" style="width:100%;margin-top:2px;padding:2px 4px;border:.5px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit" onblur="auditSaveCell(' + r.id + ',\'' + c.key + '\',this.value)" onkeydown="if(event.key===\'Enter\')this.blur()">' : "")
+          + '</td>';
+      }
+
+      const v = (r[c.key] !== null && r[c.key] !== undefined) ? r[c.key] : "";
+
+      if (c.max !== undefined) {
+        return '<td style="text-align:center;padding:2px 4px">'
+          + '<input type="text" value="' + esc(String(v)) + '" style="width:' + (c.w - 10) + 'px;text-align:center;padding:3px 4px;border:.5px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:transparent" title="Max: ' + c.max + '"'
+          + ' onblur="auditSaveCell(' + r.id + ',\'' + c.key + '\',this.value)"'
+          + ' onkeydown="if(event.key===\'Enter\')this.blur()">'
+          + '</td>';
+      }
+
+      // textarea commentaire
+      return '<td style="padding:2px 4px;min-width:' + c.w + 'px">'
+        + '<textarea rows="3" style="width:' + (c.w - 8) + 'px;padding:3px 5px;border:.5px solid var(--border);border-radius:4px;font-size:10px;font-family:inherit;resize:vertical;background:transparent;min-height:52px"'
+        + ' onblur="auditSaveCell(' + r.id + ',\'' + c.key + '\',this.value)">'
+        + esc(String(v))
+        + '</textarea></td>';
+
+    }).join("");
+
+    return '<tr style="' + bg + ';border-bottom:1px solid var(--borderL)" id="audit-row-' + r.id + '">'
+      + cells
+      + '<td style="display:none"></td>'
+      + '</tr>';
+
+  }).join("");
 }
 
 async function auditSaveCell(id, field, value) {
