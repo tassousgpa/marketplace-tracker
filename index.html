@@ -2865,13 +2865,13 @@ async function auditSaveCell(id, field, value) {
 
 async function showAuditHistory(id, sku) {
   try {
-    const history = await sb("audit_idq_history", `audit_idq_id=eq.${id}&select=*&order=recorded_at.desc&limit=20`);
+    const history = await sb("audit_idq_history", "audit_idq_id=eq."+id+"&select=*&order=recorded_at.desc&limit=20");
     const row = auditData.find(r=>r.id===id);
     const currentScore = row ? AUDIT_SCORE_FORMULA(row).score : null;
     const currentNiveau = row ? AUDIT_NIVEAU(currentScore) : "";
 
     if (!history.length && !currentScore) {
-      openModal(`Historique — ${sku}`, '<div style="padding:20px;text-align:center;color:var(--txT)">Aucun historique disponible.</div>');
+      openModal("Historique — " + sku, '<div style="padding:20px;text-align:center;color:var(--txT)">Aucun historique disponible.</div>');
       return;
     }
 
