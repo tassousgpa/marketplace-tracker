@@ -538,10 +538,11 @@ function renderContent() {
   if (isLightMp()) {
     switch(STATE.tab) {
       case 0: el.innerHTML=renderSynthese(); break;
-      case 1: el.innerHTML=renderProduits(); break;
-      case 2: el.innerHTML=renderHistorique(); break;
-      case 3: el.innerHTML=renderAnomalies(); break;
-      case 4: el.innerHTML=renderGestion(); break;
+    case 1: el.innerHTML=renderProduits(); break;
+    case 2: el.innerHTML=renderHistorique(); break;
+    case 3: el.innerHTML=renderAnomalies(); break;
+    case 4: renderAudit(); break;
+    case 5: el.innerHTML=renderGestion(); break;
       default: el.innerHTML='';
     }
     return;
@@ -550,8 +551,8 @@ function renderContent() {
     case 0: el.innerHTML=renderSynthese(); break;
     case 1: el.innerHTML=renderProduits(); break;
     case 2: el.innerHTML=renderHistorique(); break;
-    case 3: el.innerHTML=renderAnomalies(); break;
-    case 4: renderAudit(); break;
+    case 3: el.innerHTML=renderPositions(); break;
+    case 4: el.innerHTML=renderConcurrents(); break;
     case 5: el.innerHTML=renderAnomalies(); break;
     case 6: renderAudit(); break;
     case 7: el.innerHTML=renderGestion(); break;
@@ -2401,14 +2402,24 @@ async function confirmImport() {
 // =============================================
 
 const AUDIT_SCORE_FORMULA = (r) => {
-  const na = v => (v === "N/A" || v === null || v === undefined || v === "") ? null : parseFloat(v);
-  const t = (v, max) => { const n = na(v); return n === null ? max : n; };
-  const titreTotal = t(r.titre_longueur,2)+t(r.titre_marque,1)+t(r.titre_collection,1)+t(r.titre_couleur,1)+t(r.titre_matiere,1)+t(r.titre_fonctions,2);
-  const descTotal  = t(r.desc_bullets_nb,4)+t(r.desc_bullets_pertinence,4)+t(r.desc_caract_tech,1)+t(r.desc_dimensions,1)+t(r.desc_colis,1)+t(r.desc_textes_mkt,1);
-  const visTotal   = t(r.visuels_fond_blanc,1)+t(r.visuels_dimensions,1)+t(r.visuels_lifestyle,1)+t(r.visuels_zoom_matiere,1)+t(r.visuels_fonction,1)+t(r.visuels_qualite_carrousel,5);
-  const gdvTotal   = t(r.gdv_couleur,1)+t(r.gdv_autre,1);
-  const aplusTotal = t(r.aplus_fiche,2)+t(r.aplus_video,1);
-  const score = Math.round((titreTotal + descTotal + visTotal + gdvTotal + aplusTotal) / 35 * 100);
+  const v = val => (val === null || val === undefined || val === "") ? null : parseFloat(val);
+  const t = (val, max) => { const n = v(val); return n === null ? 0 : n; }; // NULL = 0 pour sous-totaux
+  const tScore = (val, max) => { const n = v(val); return n === null ? max : n; }; // NULL = max pour score global
+
+  const titreTotal = t(r.titre_longueur)+t(r.titre_marque)+t(r.titre_collection)+t(r.titre_couleur)+t(r.titre_matiere)+t(r.titre_fonctions);
+  const descTotal  = t(r.desc_bullets_nb)+t(r.desc_bullets_pertinence)+t(r.desc_caract_tech)+t(r.desc_dimensions)+t(r.desc_colis)+t(r.desc_textes_mkt);
+  const visTotal   = t(r.visuels_fond_blanc)+t(r.visuels_dimensions)+t(r.visuels_lifestyle)+t(r.visuels_zoom_matiere)+t(r.visuels_fonction)+t(r.visuels_qualite_carrousel);
+  const gdvTotal   = t(r.gdv_couleur)+t(r.gdv_autre);
+  const aplusTotal = t(r.aplus_fiche)+t(r.aplus_video);
+
+  // Score global : NULL = max (convention Excel — case non auditée = meilleur score)
+  const titreScore = tScore(r.titre_longueur,2)+tScore(r.titre_marque,1)+tScore(r.titre_collection,1)+tScore(r.titre_couleur,1)+tScore(r.titre_matiere,1)+tScore(r.titre_fonctions,2);
+  const descScore  = tScore(r.desc_bullets_nb,4)+tScore(r.desc_bullets_pertinence,4)+tScore(r.desc_caract_tech,1)+tScore(r.desc_dimensions,1)+tScore(r.desc_colis,1)+tScore(r.desc_textes_mkt,1);
+  const visScore   = tScore(r.visuels_fond_blanc,1)+tScore(r.visuels_dimensions,1)+tScore(r.visuels_lifestyle,1)+tScore(r.visuels_zoom_matiere,1)+tScore(r.visuels_fonction,1)+tScore(r.visuels_qualite_carrousel,5);
+  const gdvScore   = tScore(r.gdv_couleur,1)+tScore(r.gdv_autre,1);
+  const aplusScore = tScore(r.aplus_fiche,2)+tScore(r.aplus_video,1);
+
+  const score = Math.round((titreScore + descScore + visScore + gdvScore + aplusScore) / 35 * 100);
   return { titreTotal, descTotal, visTotal, gdvTotal, aplusTotal, score };
 };
 
