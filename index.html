@@ -2627,16 +2627,9 @@ function buildAuditHTML() {
   const allCols = colGroups.flatMap(g=>g.cols);
   const totalW = allCols.reduce((s,c)=>s+c.w,0)+60;
 
-  const thead = `<thead>
-    <tr style="background:var(--bg);border-bottom:1px solid var(--borderL)">
-      ${colGroups.map(g=>`<th colspan="${g.cols.length}" style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;text-align:center;border-right:1px solid var(--border)">${g.label}</th>`).join("")}
-      <th style="padding:6px 10px"></th>
-    </tr>
-    <tr style="background:var(--bg);border-bottom:2px solid var(--border)">
-      ${allCols.map(c=>`<th style="padding:6px 8px;font-size:10px;font-weight:600;color:var(--txS);white-space:nowrap;min-width:${c.w}px;text-align:center${c.isTotal||c.isScore?';background:var(--borderL)':''}">${c.label}</th>`).join("")}
-      <th style="display:none"></th>
-    </tr>
-  </thead>`;
+  const thRow1 = colGroups.map(g=>'<th colspan="'+g.cols.length+'" style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;text-align:center;border-right:1px solid var(--border)">'+g.label+'</th>').join("");
+  const thRow2 = allCols.map(c=>'<th style="padding:6px 8px;font-size:10px;font-weight:600;color:var(--txS);white-space:nowrap;min-width:'+c.w+'px;text-align:center'+(c.isTotal||c.isScore?';background:var(--borderL)':'')+'">'+(c.label||'')+'</th>').join("");
+  const thead = '<thead><tr style="background:var(--bg);border-bottom:1px solid var(--borderL)">'+thRow1+'<th style="padding:6px 10px"></th></tr><tr style="background:var(--bg);border-bottom:2px solid var(--border)">'+thRow2+'<th style="display:none"></th></tr></thead>';
 
   return synthese + filters + `
   <div id="audit-scroll-top" style="overflow-x:auto;overflow-y:hidden;height:12px;margin-bottom:2px">
