@@ -265,7 +265,7 @@ function formatRelativeDate(dateStr) {
 // Rafraîchir les indicateurs toutes les 20s (pour détecter un scraping en cours)
 setInterval(() => {
   loadScrapingIndicators();
-}, 20000);
+}, 60000);
 
 let STATE = { products:[], snapshots:[], positions:[], dates:[], sellerStats:[], tab:0 };
 
