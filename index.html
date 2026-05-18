@@ -2531,17 +2531,12 @@ function buildAuditHTML() {
     <button onclick="toggleAuditColPanel()" style="padding:5px 12px;border:.5px solid var(--border);border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit;background:var(--bg)">⚙ Colonnes</button>
     <div id="audit-col-panel" style="display:none;position:absolute;z-index:100;background:var(--card);border:.5px solid var(--border);border-radius:8px;padding:12px;box-shadow:0 4px 16px rgba(0,0,0,.1);display:none">
       <div style="font-size:11px;font-weight:600;color:var(--txS);margin-bottom:8px;text-transform:uppercase">Masquer/afficher colonnes</div>
-      ${[
-        {id:"col-titre",label:"Titre"},
-        {id:"col-desc",label:"Description"},
-        {id:"col-vis",label:"Visuels"},
-        {id:"col-gdv",label:"GDV"},
-        {id:"col-aplus",label:"Fiche A+"},
-        {id:"col-comments",label:"Commentaires"},
-      ].map(c=>`<label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px;cursor:pointer">
-        <input type="checkbox" checked onchange="toggleAuditColGroup('${c.id}',this.checked)" style="cursor:pointer">
-        ${c.label}
-      </label>`).join("")}
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px;cursor:pointer"><input type="checkbox" checked onchange="toggleAuditColGroup('col-titre',this.checked)" style="cursor:pointer"> Titre</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px;cursor:pointer"><input type="checkbox" checked onchange="toggleAuditColGroup('col-desc',this.checked)" style="cursor:pointer"> Description</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px;cursor:pointer"><input type="checkbox" checked onchange="toggleAuditColGroup('col-vis',this.checked)" style="cursor:pointer"> Visuels</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px;cursor:pointer"><input type="checkbox" checked onchange="toggleAuditColGroup('col-gdv',this.checked)" style="cursor:pointer"> GDV</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px;cursor:pointer"><input type="checkbox" checked onchange="toggleAuditColGroup('col-aplus',this.checked)" style="cursor:pointer"> Fiche A+</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:4px;cursor:pointer"><input type="checkbox" checked onchange="toggleAuditColGroup('col-comments',this.checked)" style="cursor:pointer"> Commentaires</label>
     </div>
   </div>
   <div class="filters" style="margin-bottom:10px">
