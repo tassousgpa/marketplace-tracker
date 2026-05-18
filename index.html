@@ -300,8 +300,8 @@ function normalizeKeyword(kw) {
   return kw;
 }
 
-const TAB_NAMES       = ["Synthèse","Produits","Historique","Positions","Concurrents","Anomalies","Gestion"];
-const TAB_NAMES_LIGHT = ["Synthèse","Produits","Historique","Anomalies","Gestion"]; // sans Positions ni Concurrents
+const TAB_NAMES = ["Synthèse","Produits","Historique","Positions","Concurrents","Anomalies","Audit","Gestion"];
+const TAB_NAMES_LIGHT = ["Synthèse","Produits","Historique","Anomalies","Audit","Gestion"];
 
 function isLightMp() { return NO_POSITIONS_MP.has(MARKETPLACE); }
 function getTabNames() { return isLightMp() ? TAB_NAMES_LIGHT : TAB_NAMES; }
@@ -549,10 +549,11 @@ function renderContent() {
     case 0: el.innerHTML=renderSynthese(); break;
     case 1: el.innerHTML=renderProduits(); break;
     case 2: el.innerHTML=renderHistorique(); break;
-    case 3: el.innerHTML=renderPositions(); break;
-    case 4: el.innerHTML=renderConcurrents(); break;
+    case 3: el.innerHTML=renderAnomalies(); break;
+    case 4: renderAudit(); break;
     case 5: el.innerHTML=renderAnomalies(); break;
-    case 6: el.innerHTML=renderGestion(); break;
+    case 6: renderAudit(); break;
+    case 7: el.innerHTML=renderGestion(); break;
   }
 }
 
@@ -2393,6 +2394,629 @@ async function confirmImport() {
   }
 }
 
+
+// =============================================
+// TAB AUDIT FICHES PRODUITS
+// =============================================
+
+const AUDIT_SCORE_FORMULA = (r) => {
+  const na = v => (v === "N/A" || v === null || v === undefined || v === "") ? null : parseFloat(v);
+  const t = (v, max) => { const n = na(v); return n === null ? max : n; };
+  const titreTotal = t(r.titre_longueur,2)+t(r.titre_marque,1)+t(r.titre_collection,1)+t(r.titre_couleur,1)+t(r.titre_matiere,1)+t(r.titre_fonctions,2);
+  const descTotal  = t(r.desc_bullets_nb,4)+t(r.desc_bullets_pertinence,4)+t(r.desc_caract_tech,1)+t(r.desc_dimensions,1)+t(r.desc_colis,1)+t(r.desc_textes_mkt,1);
+  const visTotal   = t(r.visuels_fond_blanc,1)+t(r.visuels_dimensions,1)+t(r.visuels_lifestyle,1)+t(r.visuels_zoom_matiere,1)+t(r.visuels_fonction,1)+t(r.visuels_qualite_carrousel,5);
+  const gdvTotal   = t(r.gdv_couleur,1)+t(r.gdv_autre,1);
+  const aplusTotal = t(r.aplus_fiche,2)+t(r.aplus_video,1);
+  const score = Math.round((titreTotal + descTotal + visTotal + gdvTotal + aplusTotal));
+  return { titreTotal, descTotal, visTotal, gdvTotal, aplusTotal, score };
+};
+
+const AUDIT_NIVEAU = (score) => {
+  if (!score && score !== 0) return "";
+  if (score >= 90) return "⭐ Excellence";
+  if (score >= 75) return "🟢 Conforme";
+  if (score >= 50) return "🟡 À optimiser";
+  return "🔴 Critique";
+};
+
+const AUDIT_NIVEAU_COLOR = (niveau) => ({
+  "⭐ Excellence": "var(--pu)",
+  "🟢 Conforme":   "var(--gn)",
+  "🟡 À optimiser":"var(--am)",
+  "🔴 Critique":   "var(--rd)",
+}[niveau] || "var(--txT)");
+
+const AUDIT_NIVEAU_BG = (niveau) => ({
+  "⭐ Excellence": "var(--puBg)",
+  "🟢 Conforme":   "var(--gnBg)",
+  "🟡 À optimiser":"var(--amBg)",
+  "🔴 Critique":   "var(--rdBg)",
+}[niveau] || "var(--borderL)");
+
+let auditData = [];
+let auditFilters = { type: "all", categorie: "all", niveau: "all", search: "" };
+let auditSaving = {};
+
+async function loadAuditData() {
+  try {
+    const rows = await sb("audit_idq", `marketplace=eq.${MARKETPLACE}&select=*&order=type_ref.asc,sku.asc`);
+    auditData = rows;
+  } catch(e) {
+    auditData = [];
+    console.warn("audit_idq:", e.message);
+  }
+}
+
+async function renderAudit() {
+  const el = document.getElementById("content");
+  el.innerHTML = `<div class="loading"><div class="loading-spinner"></div><div>Chargement de l'audit...</div></div>`;
+  await loadAuditData();
+  el.innerHTML = buildAuditHTML();
+}
+
+function buildAuditHTML() {
+  const mpLabel = MARKETPLACES.find(m=>m.id===MARKETPLACE)?.label || MARKETPLACE;
+  const semaines = [...new Set(auditData.map(r=>r.semaine).filter(Boolean))].sort().reverse();
+  const latestSemaine = semaines[0] || "—";
+
+  // Filtrage
+  let list = auditData;
+  if (auditFilters.type !== "all") list = list.filter(r=>r.type_ref === auditFilters.type);
+  if (auditFilters.categorie !== "all") list = list.filter(r=>r.categorie === auditFilters.categorie);
+  if (auditFilters.niveau !== "all") list = list.filter(r => AUDIT_NIVEAU(AUDIT_SCORE_FORMULA(r).score) === auditFilters.niveau);
+  if (auditFilters.search) {
+    const s = auditFilters.search.toLowerCase();
+    list = list.filter(r=>(r.sku||"").toLowerCase().includes(s)||(r.nom_produit||"").toLowerCase().includes(s));
+  }
+
+  const allScores = auditData.map(r=>AUDIT_SCORE_FORMULA(r).score).filter(s=>s>0);
+  const avgScore = allScores.length ? Math.round(allScores.reduce((a,b)=>a+b,0)/allScores.length) : 0;
+  const niveaux = ["🔴 Critique","🟡 À optimiser","🟢 Conforme","⭐ Excellence"];
+  const niveauCounts = {};
+  niveaux.forEach(n => { niveauCounts[n] = auditData.filter(r=>AUDIT_NIVEAU(AUDIT_SCORE_FORMULA(r).score)===n).length; });
+
+  const categories = [...new Set(auditData.map(r=>r.categorie).filter(Boolean))];
+  const types = [...new Set(auditData.map(r=>r.type_ref).filter(Boolean))];
+
+  const synthese = `
+  <div class="card" style="margin-bottom:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+      <div>
+        <div class="card-title" style="margin:0">Audit Fiches Produits — ${mpLabel}</div>
+        <div style="font-size:11px;color:var(--txS);margin-top:2px">Semaine en cours : <b>${latestSemaine}</b> · ${auditData.length} références auditées</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button onclick="openAuditImportModal()" style="padding:6px 14px;border:.5px solid var(--pu);border-radius:6px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">⬆ Import XLS</button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:14px">
+      <div style="background:var(--bg);border-radius:10px;padding:14px;text-align:center">
+        <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Score IDQ moyen</div>
+        <div style="font-size:28px;font-weight:800;color:${AUDIT_NIVEAU_COLOR(AUDIT_NIVEAU(avgScore))}">${avgScore}</div>
+        <div style="font-size:11px;color:var(--txT)">/100</div>
+      </div>
+      ${niveaux.map(n=>`
+      <div style="background:${AUDIT_NIVEAU_BG(n)};border-radius:10px;padding:14px;text-align:center;cursor:pointer" onclick="auditFilters.niveau='${n}';document.getElementById('content').innerHTML=buildAuditHTML()">
+        <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">${n}</div>
+        <div style="font-size:24px;font-weight:800;color:${AUDIT_NIVEAU_COLOR(n)}">${niveauCounts[n]}</div>
+        <div style="font-size:11px;color:var(--txT)">${auditData.length>0?Math.round(niveauCounts[n]/auditData.length*100):0}%</div>
+      </div>`).join("")}
+    </div>
+    ${auditData.length===0?`<div style="padding:20px;text-align:center;color:var(--txT);font-size:13px">Aucune donnée pour ${mpLabel}. Importez un fichier XLS via le bouton ci-dessus.</div>`:""}
+  </div>`;
+
+  const filters = `
+  <div class="filters" style="margin-bottom:10px">
+    <input placeholder="Rechercher SKU ou produit..." value="${esc(auditFilters.search)}"
+      oninput="auditFilters.search=this.value;document.getElementById('audit-tbody').innerHTML=buildAuditRows()"
+      style="flex:1;min-width:180px"/>
+    <select onchange="auditFilters.type=this.value;document.getElementById('content').innerHTML=buildAuditHTML()">
+      <option value="all">Tous types</option>
+      ${types.map(t=>`<option value="${esc(t)}" ${auditFilters.type===t?"selected":""}>${esc(t)}</option>`).join("")}
+    </select>
+    <select onchange="auditFilters.categorie=this.value;document.getElementById('content').innerHTML=buildAuditHTML()">
+      <option value="all">Toutes catégories</option>
+      ${categories.map(c=>`<option value="${esc(c)}" ${auditFilters.categorie===c?"selected":""}>${esc(c)}</option>`).join("")}
+    </select>
+    <select onchange="auditFilters.niveau=this.value;document.getElementById('content').innerHTML=buildAuditHTML()">
+      <option value="all">Tous niveaux</option>
+      ${niveaux.map(n=>`<option value="${esc(n)}" ${auditFilters.niveau===n?"selected":""}>${esc(n)}</option>`).join("")}
+    </select>
+    ${auditFilters.niveau!=="all"||auditFilters.type!=="all"||auditFilters.categorie!=="all"||auditFilters.search
+      ?`<button onclick="auditFilters={type:'all',categorie:'all',niveau:'all',search:''};document.getElementById('content').innerHTML=buildAuditHTML()" style="padding:6px 12px;border:.5px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg);cursor:pointer;font-family:inherit">✕ Reset</button>`:""}
+  </div>
+  <div style="font-size:12px;color:var(--txS);margin-bottom:8px">${list.length} référence${list.length>1?"s":""}</div>`;
+
+  // Colonnes du tableau
+  const colGroups = [
+    { label:"IDENTIFICATION", cols:[
+      {key:"sku",label:"SKU",w:90,editable:false},
+      {key:"nom_produit",label:"Produit",w:180,editable:true},
+      {key:"lien_mkp",label:"Lien",w:60,editable:true,isLink:true},
+      {key:"categorie",label:"Catég.",w:80,editable:true},
+      {key:"type_ref",label:"Type",w:90,editable:true},
+    ]},
+    { label:"TITRE (8 pts)", cols:[
+      {key:"titre_longueur",label:"Long. (0-2)",w:60,editable:true,max:2},
+      {key:"titre_marque",label:"Marque (0-1)",w:60,editable:true,max:1},
+      {key:"titre_collection",label:"Collec. (0-1)",w:60,editable:true,max:1},
+      {key:"titre_couleur",label:"Couleur (0-1)",w:60,editable:true,max:1},
+      {key:"titre_matiere",label:"Matière (0-1)",w:60,editable:true,max:1},
+      {key:"titre_fonctions",label:"Fonct. (0-2)",w:60,editable:true,max:2},
+      {key:"_titre_total",label:"TOTAL",w:55,editable:false,isTotal:true},
+    ]},
+    { label:"DESCRIPTION (12 pts)", cols:[
+      {key:"desc_bullets_nb",label:"Bullets nb (0-4)",w:70,editable:true,max:4},
+      {key:"desc_bullets_pertinence",label:"Pertinence (0-4)",w:70,editable:true,max:4},
+      {key:"desc_caract_tech",label:"Caract. tech (0-1)",w:65,editable:true,max:1},
+      {key:"desc_dimensions",label:"Dims (0-1)",w:60,editable:true,max:1},
+      {key:"desc_colis",label:"Colis (0-1)",w:55,editable:true,max:1},
+      {key:"desc_textes_mkt",label:"Textes MKT (0-1)",w:70,editable:true,max:1},
+      {key:"_desc_total",label:"TOTAL",w:55,editable:false,isTotal:true},
+    ]},
+    { label:"VISUELS (10 pts)", cols:[
+      {key:"visuels_fond_blanc",label:"Fond blanc (0-1)",w:70,editable:true,max:1},
+      {key:"visuels_dimensions",label:"Dims (0-1)",w:55,editable:true,max:1},
+      {key:"visuels_lifestyle",label:"Lifestyle (0-1)",w:65,editable:true,max:1},
+      {key:"visuels_zoom_matiere",label:"Zoom mat. (0-1)",w:70,editable:true,max:1},
+      {key:"visuels_fonction",label:"Fonction (0-1)",w:65,editable:true,max:1},
+      {key:"visuels_qualite_carrousel",label:"Carrousel (0-5)",w:70,editable:true,max:5},
+      {key:"_vis_total",label:"TOTAL",w:55,editable:false,isTotal:true},
+    ]},
+    { label:"GDV (2 pts)", cols:[
+      {key:"gdv_couleur",label:"Couleur (0-1)",w:65,editable:true,max:1},
+      {key:"gdv_autre",label:"Autre (0-1)",w:60,editable:true,max:1},
+      {key:"_gdv_total",label:"TOTAL",w:55,editable:false,isTotal:true},
+    ]},
+    { label:"FICHE A+ (3 pts)", cols:[
+      {key:"aplus_fiche",label:"Fiche A+ (0-2)",w:70,editable:true,max:2},
+      {key:"aplus_video",label:"Vidéo (0-1)",w:60,editable:true,max:1},
+      {key:"_aplus_total",label:"TOTAL",w:55,editable:false,isTotal:true},
+    ]},
+    { label:"SCORE", cols:[
+      {key:"_score",label:"IDQ /100",w:70,editable:false,isScore:true},
+      {key:"_niveau",label:"Niveau",w:100,editable:false,isNiveau:true},
+      {key:"plan_action",label:"Plan d'action",w:160,editable:true},
+    ]},
+    { label:"COMMENTAIRES", cols:[
+      {key:"commentaire_1",label:"Titre",w:140,editable:true},
+      {key:"commentaire_2",label:"Description",w:140,editable:true},
+      {key:"commentaire_3",label:"Visuels",w:140,editable:true},
+      {key:"commentaire_4",label:"GDV",w:140,editable:true},
+      {key:"commentaire_5",label:"Fiche A+",w:140,editable:true},
+      {key:"commentaire_6",label:"Divers",w:140,editable:true},
+    ]},
+  ];
+
+  const allCols = colGroups.flatMap(g=>g.cols);
+  const totalW = allCols.reduce((s,c)=>s+c.w,0)+60;
+
+  const thead = `<thead>
+    <tr style="background:var(--bg);border-bottom:1px solid var(--borderL)">
+      ${colGroups.map(g=>`<th colspan="${g.cols.length}" style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;text-align:center;border-right:1px solid var(--border)">${g.label}</th>`).join("")}
+      <th style="padding:6px 10px"></th>
+    </tr>
+    <tr style="background:var(--bg);border-bottom:2px solid var(--border)">
+      ${allCols.map(c=>`<th style="padding:6px 8px;font-size:10px;font-weight:600;color:var(--txS);white-space:nowrap;min-width:${c.w}px;text-align:center${c.isTotal||c.isScore?';background:var(--borderL)':''}">${c.label}</th>`).join("")}
+      <th style="padding:6px 8px;font-size:10px;font-weight:600;color:var(--txS)">Hist.</th>
+    </tr>
+  </thead>`;
+
+  return synthese + filters + `
+  <div class="card" style="padding:0;overflow:hidden">
+    <div class="scroll-table">
+      <table id="audit-table" style="min-width:${totalW}px;border-collapse:collapse;font-size:11px">
+        ${thead}
+        <tbody id="audit-tbody">${buildAuditRows(list)}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function buildAuditRows(filteredList) {
+  let list = filteredList;
+  if (!list) {
+    list = auditData;
+    if (auditFilters.type !== "all") list = list.filter(r=>r.type_ref===auditFilters.type);
+    if (auditFilters.categorie !== "all") list = list.filter(r=>r.categorie===auditFilters.categorie);
+    if (auditFilters.niveau !== "all") list = list.filter(r=>AUDIT_NIVEAU(AUDIT_SCORE_FORMULA(r).score)===auditFilters.niveau);
+    if (auditFilters.search) {
+      const s = auditFilters.search.toLowerCase();
+      list = list.filter(r=>(r.sku||"").toLowerCase().includes(s)||(r.nom_produit||"").toLowerCase().includes(s));
+    }
+  }
+
+  return list.map((r, i) => {
+    const calc = AUDIT_SCORE_FORMULA(r);
+    const niveau = AUDIT_NIVEAU(calc.score);
+    const totals = {_titre_total:calc.titreTotal,_desc_total:calc.descTotal,_vis_total:calc.visTotal,_gdv_total:calc.gdvTotal,_aplus_total:calc.aplusTotal,_score:calc.score,_niveau:niveau};
+    const bg = i%2 ? "background:var(--bg)" : "";
+
+    const colGroups = [
+      {label:"",cols:[
+        {key:"sku",w:90,editable:false},
+        {key:"nom_produit",w:180,editable:true},
+        {key:"lien_mkp",w:60,editable:true,isLink:true},
+        {key:"categorie",w:80,editable:true},
+        {key:"type_ref",w:90,editable:true},
+      ]},
+      {label:"",cols:[
+        {key:"titre_longueur",w:60,editable:true,max:2},
+        {key:"titre_marque",w:60,editable:true,max:1},
+        {key:"titre_collection",w:60,editable:true,max:1},
+        {key:"titre_couleur",w:60,editable:true,max:1},
+        {key:"titre_matiere",w:60,editable:true,max:1},
+        {key:"titre_fonctions",w:60,editable:true,max:2},
+        {key:"_titre_total",w:55,editable:false,isTotal:true},
+      ]},
+      {label:"",cols:[
+        {key:"desc_bullets_nb",w:70,editable:true,max:4},
+        {key:"desc_bullets_pertinence",w:70,editable:true,max:4},
+        {key:"desc_caract_tech",w:65,editable:true,max:1},
+        {key:"desc_dimensions",w:60,editable:true,max:1},
+        {key:"desc_colis",w:55,editable:true,max:1},
+        {key:"desc_textes_mkt",w:70,editable:true,max:1},
+        {key:"_desc_total",w:55,editable:false,isTotal:true},
+      ]},
+      {label:"",cols:[
+        {key:"visuels_fond_blanc",w:70,editable:true,max:1},
+        {key:"visuels_dimensions",w:55,editable:true,max:1},
+        {key:"visuels_lifestyle",w:65,editable:true,max:1},
+        {key:"visuels_zoom_matiere",w:70,editable:true,max:1},
+        {key:"visuels_fonction",w:65,editable:true,max:1},
+        {key:"visuels_qualite_carrousel",w:70,editable:true,max:5},
+        {key:"_vis_total",w:55,editable:false,isTotal:true},
+      ]},
+      {label:"",cols:[
+        {key:"gdv_couleur",w:65,editable:true,max:1},
+        {key:"gdv_autre",w:60,editable:true,max:1},
+        {key:"_gdv_total",w:55,editable:false,isTotal:true},
+      ]},
+      {label:"",cols:[
+        {key:"aplus_fiche",w:70,editable:true,max:2},
+        {key:"aplus_video",w:60,editable:true,max:1},
+        {key:"_aplus_total",w:55,editable:false,isTotal:true},
+      ]},
+      {label:"",cols:[
+        {key:"_score",w:70,editable:false,isScore:true},
+        {key:"_niveau",w:100,editable:false,isNiveau:true},
+        {key:"plan_action",w:160,editable:true},
+      ]},
+      {label:"",cols:[
+        {key:"commentaire_1",w:140,editable:true},
+        {key:"commentaire_2",w:140,editable:true},
+        {key:"commentaire_3",w:140,editable:true},
+        {key:"commentaire_4",w:140,editable:true},
+        {key:"commentaire_5",w:140,editable:true},
+        {key:"commentaire_6",w:140,editable:true},
+      ]},
+    ];
+    const allCols = colGroups.flatMap(g=>g.cols);
+
+    const cells = allCols.map(c => {
+      if (c.isTotal) {
+        const v = totals[c.key] ?? "—";
+        return `<td style="text-align:center;font-weight:700;background:var(--borderL);padding:4px 6px">${v}</td>`;
+      }
+      if (c.isScore) {
+        const s = totals._score;
+        const col = AUDIT_NIVEAU_COLOR(AUDIT_NIVEAU(s));
+        return `<td style="text-align:center;font-weight:800;font-size:14px;color:${col};background:var(--borderL);padding:4px 6px">${s||"—"}</td>`;
+      }
+      if (c.isNiveau) {
+        const n = totals._niveau;
+        return `<td style="text-align:center;padding:4px 6px"><span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:${AUDIT_NIVEAU_BG(n)};color:${AUDIT_NIVEAU_COLOR(n)}">${n||"—"}</span></td>`;
+      }
+      if (c.isLink) {
+        const v = r[c.key] || "";
+        return `<td style="text-align:center;padding:4px 6px">
+          ${v && v !== "Pas en ligne" ? `<a href="${esc(v)}" target="_blank" class="link">Voir ↗</a>` : '<span style="color:var(--txT);font-size:10px">—</span>'}
+          <div style="display:none"><input value="${esc(v)}" onblur="auditSaveCell(${r.id},'${c.key}',this.value)"></div>
+        </td>`;
+      }
+      if (!c.editable) {
+        return `<td style="padding:4px 8px;font-weight:600;white-space:nowrap">${esc(String(r[c.key]||""))}</td>`;
+      }
+      const v = r[c.key] !== null && r[c.key] !== undefined ? r[c.key] : "";
+      const isNum = c.max !== undefined;
+      if (isNum) {
+        return `<td style="text-align:center;padding:2px 4px">
+          <input type="text" value="${esc(String(v))}" style="width:${c.w-10}px;text-align:center;padding:3px 4px;border:.5px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:transparent"
+            onblur="auditSaveCell(${r.id},'${c.key}',this.value)"
+            onkeydown="if(event.key==='Enter')this.blur()"
+            title="Max: ${c.max}">
+        </td>`;
+      }
+      return `<td style="padding:2px 4px">
+        <textarea rows="2" style="width:${c.w-8}px;padding:3px 5px;border:.5px solid var(--border);border-radius:4px;font-size:10px;font-family:inherit;resize:vertical;background:transparent;min-height:36px"
+          onblur="auditSaveCell(${r.id},'${c.key}',this.value)">${esc(String(v))}</textarea>
+      </td>`;
+    }).join("");
+
+    return `<tr style="${bg};border-bottom:1px solid var(--borderL)" id="audit-row-${r.id}">
+      ${cells}
+      <td style="padding:4px 6px;text-align:center">
+        <button onclick="showAuditHistory(${r.id},'${esc(r.sku)}')" title="Historique scores" style="background:var(--bg);border:.5px solid var(--border);border-radius:5px;padding:2px 6px;font-size:11px;cursor:pointer;font-family:inherit">📈</button>
+      </td>
+    </tr>`;
+  }).join("") || `<tr><td colspan="50" style="padding:30px;text-align:center;color:var(--txT)">Aucune donnée — importez un fichier XLS ou ajoutez des références.</td></tr>`;
+}
+
+async function auditSaveCell(id, field, value) {
+  const key = `${id}_${field}`;
+  if (auditSaving[key]) return;
+  auditSaving[key] = true;
+  try {
+    const updateData = { [field]: value === "" ? null : value, updated_at: new Date().toISOString() };
+    await sbUpdate("audit_idq", `id=eq.${id}`, updateData);
+    // Mettre à jour auditData local
+    const row = auditData.find(r=>r.id===id);
+    if (row) {
+      row[field] = value === "" ? null : value;
+      // Si c'est un champ de score, mettre à jour l'historique
+      const scoreFields = ["titre_longueur","titre_marque","titre_collection","titre_couleur","titre_matiere","titre_fonctions","desc_bullets_nb","desc_bullets_pertinence","desc_caract_tech","desc_dimensions","desc_colis","desc_textes_mkt","visuels_fond_blanc","visuels_dimensions","visuels_lifestyle","visuels_zoom_matiere","visuels_fonction","visuels_qualite_carrousel","gdv_couleur","gdv_autre","aplus_fiche","aplus_video"];
+      if (scoreFields.includes(field)) {
+        const calc = AUDIT_SCORE_FORMULA(row);
+        const niveau = AUDIT_NIVEAU(calc.score);
+        // Mettre à jour l'affichage du score dans la ligne
+        const rowEl = document.getElementById(`audit-row-${id}`);
+        if (rowEl) {
+          // Re-render juste la ligne
+          const newRow = buildAuditRows([row]);
+          rowEl.outerHTML = newRow;
+        }
+      }
+    }
+  } catch(e) {
+    console.error("Erreur sauvegarde audit:", e.message);
+  } finally {
+    delete auditSaving[key];
+  }
+}
+
+async function showAuditHistory(id, sku) {
+  try {
+    const history = await sb("audit_idq_history", `audit_idq_id=eq.${id}&select=*&order=recorded_at.desc&limit=20`);
+    const row = auditData.find(r=>r.id===id);
+    const currentScore = row ? AUDIT_SCORE_FORMULA(row).score : null;
+    const currentNiveau = row ? AUDIT_NIVEAU(currentScore) : "";
+
+    if (!history.length && !currentScore) {
+      openModal(`Historique — ${sku}`, '<div style="padding:20px;text-align:center;color:var(--txT)">Aucun historique disponible.</div>');
+      return;
+    }
+
+    const fmtDate = d => new Date(d).toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"});
+
+    // Score actuel toujours en premier
+    const currentRow = currentScore ? `
+      <tr style="background:var(--acBg);border-bottom:1px solid var(--borderL)">
+        <td style="padding:8px 12px;font-weight:600">Actuel</td>
+        <td style="padding:8px 12px;text-align:center;font-size:18px;font-weight:800;color:${AUDIT_NIVEAU_COLOR(currentNiveau)}">${currentScore}</td>
+        <td style="padding:8px 12px;text-align:center"><span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:${AUDIT_NIVEAU_BG(currentNiveau)};color:${AUDIT_NIVEAU_COLOR(currentNiveau)}">${currentNiveau}</span></td>
+        <td style="padding:8px 12px;text-align:center;color:var(--txT)">${row?.semaine||"—"}</td>
+      </tr>` : "";
+
+    const histRows = history.map((h,i) => {
+      const n = AUDIT_NIVEAU(h.score_idq);
+      const prev = history[i+1];
+      const delta = prev ? h.score_idq - prev.score_idq : null;
+      const deltaHtml = delta !== null
+        ? `<span style="font-size:10px;font-weight:600;color:${delta>0?"var(--gn)":delta<0?"var(--rd)":"var(--txT)"};margin-left:6px">${delta>0?"+":""}${delta}</span>`
+        : "";
+      return `<tr style="border-bottom:1px solid var(--borderL)">
+        <td style="padding:7px 12px;font-size:11px;color:var(--txS)">${fmtDate(h.recorded_at)}</td>
+        <td style="padding:7px 12px;text-align:center;font-size:16px;font-weight:700;color:${AUDIT_NIVEAU_COLOR(n)}">${h.score_idq||"—"}${deltaHtml}</td>
+        <td style="padding:7px 12px;text-align:center"><span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:${AUDIT_NIVEAU_BG(n)};color:${AUDIT_NIVEAU_COLOR(n)}">${n}</span></td>
+        <td style="padding:7px 12px;text-align:center;color:var(--txS)">${h.semaine||"—"}</td>
+      </tr>`;
+    }).join("");
+
+    openModal(`📈 Historique IDQ — ${sku}`, `
+      <div style="font-size:12px;color:var(--txS);margin-bottom:10px">${history.length} entrée${history.length>1?"s":""} dans l'historique</div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="background:var(--bg);border-bottom:1px solid var(--border)">
+            <th style="padding:7px 12px;text-align:left;color:var(--txS)">Date</th>
+            <th style="padding:7px 12px;text-align:center;color:var(--txS)">Score IDQ</th>
+            <th style="padding:7px 12px;text-align:center;color:var(--txS)">Niveau</th>
+            <th style="padding:7px 12px;text-align:center;color:var(--txS)">Semaine</th>
+          </tr></thead>
+          <tbody>${currentRow}${histRows}</tbody>
+        </table>
+      </div>
+      <button onclick="saveAuditSnapshot(${id},'${esc(sku)}')" style="margin-top:12px;padding:8px 16px;background:var(--ac);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">
+        + Enregistrer le score actuel dans l'historique
+      </button>`);
+  } catch(e) {
+    openModal(`Historique — ${sku}`, `<div style="color:var(--rd);padding:20px">${e.message}</div>`);
+  }
+}
+
+async function saveAuditSnapshot(id, sku) {
+  const row = auditData.find(r=>r.id===id);
+  if (!row) return;
+  const calc = AUDIT_SCORE_FORMULA(row);
+  const niveau = AUDIT_NIVEAU(calc.score);
+  try {
+    await sbInsert("audit_idq_history", {
+      audit_idq_id: id,
+      marketplace: MARKETPLACE,
+      sku: sku,
+      score_idq: calc.score,
+      niveau: niveau,
+      semaine: row.semaine || null,
+      recorded_at: new Date().toISOString()
+    });
+    closeModal();
+    showAuditHistory(id, sku);
+  } catch(e) {
+    alert("Erreur : " + e.message);
+  }
+}
+
+function openAuditImportModal() {
+  openModal("Import Audit XLS", `
+    <div style="display:grid;gap:12px">
+      <div style="background:var(--puBg);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--pu)">
+        Importe le fichier "Audit Fiches Produits" Excel.<br>
+        Les données existantes pour cette semaine seront remplacées. L'historique est conservé.
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Label semaine *</label>
+        <input id="audit-semaine" placeholder="ex: S18 2026" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Fichier XLS *</label>
+        <input id="audit-file" type="file" accept=".xls,.xlsx" style="width:100%;padding:6px;border:.5px solid var(--border);border-radius:6px;font-size:11px;font-family:inherit;background:var(--card)">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Mot de passe admin *</label>
+        <input id="audit-pwd" type="password" placeholder="••••••••" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">
+      </div>
+      <button onclick="confirmAuditImport()" style="padding:10px;background:var(--pu);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">⬆ Importer</button>
+      <div id="audit-import-status" style="font-size:12px;text-align:center;min-height:16px"></div>
+    </div>`);
+
+  // Auto-label semaine
+  const now = new Date();
+  const yr = now.getFullYear();
+  const week = Math.ceil((Math.floor((now - new Date(yr,0,0))/86400000)+1)/7);
+  document.getElementById("audit-semaine").value = `S${week} ${yr}`;
+}
+
+async function confirmAuditImport() {
+  const statusEl = document.getElementById("audit-import-status");
+  const pwd = document.getElementById("audit-pwd")?.value;
+  const file = document.getElementById("audit-file")?.files[0];
+  const semaine = document.getElementById("audit-semaine")?.value?.trim();
+
+  if (pwd !== ADMIN_PASSWORD) { statusEl.innerHTML='<span style="color:var(--rd)">❌ Mot de passe incorrect.</span>'; return; }
+  if (!file || !semaine) { statusEl.innerHTML='<span style="color:var(--rd)">Fichier et semaine obligatoires.</span>'; return; }
+
+  statusEl.innerHTML = '<span style="color:var(--txS)">Lecture du fichier...</span>';
+
+  try {
+    const rows = await parseAuditXLS(file, semaine);
+    const mpRows = rows.filter(r => normalizeAuditMp(r.marketplace) === MARKETPLACE);
+    if (!mpRows.length) {
+      statusEl.innerHTML = `<span style="color:var(--am)">⚠ Aucune ligne trouvée pour ${MARKETPLACE} dans ce fichier.</span>`;
+      return;
+    }
+
+    statusEl.innerHTML = `<span style="color:var(--txS)">Import de ${mpRows.length} lignes...</span>`;
+
+    // Sauvegarder les scores actuels dans l'historique avant d'écraser
+    const existing = await sb("audit_idq", `marketplace=eq.${MARKETPLACE}&select=id,sku,score_idq,niveau,semaine`).catch(()=>[]);
+    if (existing.length) {
+      const histRows = existing.filter(e=>e.score_idq).map(e=>({
+        audit_idq_id: e.id, marketplace: MARKETPLACE, sku: e.sku,
+        score_idq: e.score_idq, niveau: e.niveau, semaine: e.semaine,
+        recorded_at: new Date().toISOString()
+      }));
+      if (histRows.length) {
+        await fetch(`${SB_URL}/rest/v1/audit_idq_history`, {
+          method:"POST", headers:{"Content-Type":"application/json",apikey:SB_KEY,Authorization:`Bearer ${SB_KEY}`,Prefer:"return=minimal"},
+          body:JSON.stringify(histRows)
+        });
+      }
+    }
+
+    // Upsert les nouvelles données (par marketplace+sku)
+    for (const row of mpRows) {
+      const existingRow = existing.find(e=>e.sku===row.sku);
+      if (existingRow) {
+        await sbUpdate("audit_idq", `id=eq.${existingRow.id}`, {...row, updated_at: new Date().toISOString()});
+      } else {
+        await sbInsert("audit_idq", row);
+      }
+    }
+
+    statusEl.innerHTML = `<span style="color:var(--gn)">✓ ${mpRows.length} lignes importées pour ${MARKETPLACE}.</span>`;
+    setTimeout(()=>{ closeModal(); renderAudit(); }, 1000);
+  } catch(e) {
+    statusEl.innerHTML = `<span style="color:var(--rd)">Erreur : ${e.message}</span>`;
+  }
+}
+
+function normalizeAuditMp(mp) {
+  if (!mp) return null;
+  const m = mp.toLowerCase().trim();
+  if (m.includes("cdiscount")) return "cdiscount";
+  if (m.includes("maison")) return "maisonsdumonde";
+  if (m.includes("but")) return "but";
+  if (m.includes("redoute")) return "laredoute";
+  if (m.includes("leroy")) return "leredoute"; // hors dashboard
+  if (m.includes("amazon")) return "amazon";
+  if (m.includes("conforama")) return "conforama";
+  if (m.includes("manomano")) return "manomano";
+  return m;
+}
+
+async function parseAuditXLS(file, semaine) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const wb = XLSX.read(data, { type:"array" });
+        const ws = wb.Sheets["Top et Nouveautés"] || wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null });
+
+        const result = [];
+        // Les données commencent à la ligne 5 (index 4)
+        for (let i = 4; i < rows.length; i++) {
+          const r = rows[i];
+          if (!r || !r[0] || !r[2]) continue; // SKU et Marketplace obligatoires
+          const na = v => (v === "N/A" || v === null || v === undefined) ? null : (isNaN(parseFloat(v)) ? String(v) : parseFloat(v));
+          const str = v => v ? String(v).trim() : null;
+          result.push({
+            marketplace: str(r[2]),
+            sku: str(r[0]),
+            nom_produit: str(r[1]),
+            lien_mkp: str(r[3]),
+            categorie: str(r[4]),
+            type_ref: str(r[5]),
+            titre_longueur: na(r[6]),
+            titre_marque: na(r[7]),
+            titre_collection: na(r[8]),
+            titre_couleur: na(r[9]),
+            titre_matiere: na(r[10]),
+            titre_fonctions: na(r[11]),
+            desc_bullets_nb: na(r[13]),
+            desc_bullets_pertinence: na(r[14]),
+            desc_caract_tech: na(r[15]),
+            desc_dimensions: na(r[16]),
+            desc_colis: na(r[17]),
+            desc_textes_mkt: na(r[18]),
+            visuels_fond_blanc: na(r[20]),
+            visuels_dimensions: na(r[21]),
+            visuels_lifestyle: na(r[22]),
+            visuels_zoom_matiere: na(r[23]),
+            visuels_fonction: na(r[24]),
+            visuels_qualite_carrousel: na(r[25]),
+            gdv_couleur: na(r[27]),
+            gdv_autre: na(r[28]),
+            aplus_fiche: na(r[30]),
+            aplus_video: na(r[31]),
+            plan_action: str(r[35]),
+            commentaire_1: str(r[38]),
+            commentaire_2: str(r[39]),
+            commentaire_3: str(r[40]),
+            commentaire_4: str(r[41]),
+            commentaire_5: str(r[42]),
+            commentaire_6: str(r[43]),
+            semaine: semaine,
+          });
+        }
+        resolve(result);
+      } catch(e) { reject(e); }
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  });
+}
+  
 // Init
 if (MAINTENANCE_MODE) {
   const stored = sessionStorage.getItem("admin_access");
