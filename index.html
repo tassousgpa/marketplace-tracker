@@ -2743,10 +2743,10 @@ const allCols = colGroups.flatMap(g=>g.cols);
   if (c.isScore) {
     const s = totals._score;
     const col = AUDIT_NIVEAU_COLOR(AUDIT_NIVEAU(s));
-    return `<td style="text-align:center;background:var(--borderL);padding:4px 6px;white-space:nowrap">
-      <span style="font-weight:800;font-size:14px;color:${col}">${s||"—"}</span>
-      <button onclick="showAuditHistory(${r.id},'${esc(r.sku)}')" title="Historique" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;vertical-align:middle">📈</button>
-    </td>`;
+    return '<td style="text-align:center;background:var(--borderL);padding:4px 6px;white-space:nowrap">'
+      + '<span style="font-weight:800;font-size:14px;color:'+col+'">'+(s||"—")+'</span>'
+      + '<button onclick="showAuditHistory('+r.id+',\''+esc(r.sku)+'\')" title="Historique" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;vertical-align:middle">📈</button>'
+      + '</td>';
   }
   if (c.isNiveau) {
     const n = totals._niveau;
