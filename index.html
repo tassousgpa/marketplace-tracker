@@ -138,6 +138,7 @@ tr.stripe{background:var(--bg)}
 <script>
 const MAINTENANCE_MODE = true; // ← changer en false pour passer LIVE
 const ADMIN_CODE = "tassousgpa!";
+const ACCESS_CODE = "MKP2026!";
 const SB_URL = "https://pmxsthzdxubqbemdgtbr.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBteHN0aHpkeHVicWJlbWRndGJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk4NDQsImV4cCI6MjA5MDAyNTg0NH0.GpfAw91eJ8D7RIeZLFIejCt9DTwGpXvOGcxYlhZS78I";
 let MARKETPLACE = "cdiscount";
@@ -2407,7 +2408,7 @@ const AUDIT_SCORE_FORMULA = (r) => {
   const visTotal   = t(r.visuels_fond_blanc,1)+t(r.visuels_dimensions,1)+t(r.visuels_lifestyle,1)+t(r.visuels_zoom_matiere,1)+t(r.visuels_fonction,1)+t(r.visuels_qualite_carrousel,5);
   const gdvTotal   = t(r.gdv_couleur,1)+t(r.gdv_autre,1);
   const aplusTotal = t(r.aplus_fiche,2)+t(r.aplus_video,1);
-  const score = Math.round((titreTotal + descTotal + visTotal + gdvTotal + aplusTotal));
+  const score = Math.round((titreTotal + descTotal + visTotal + gdvTotal + aplusTotal) / 35 * 100);
   return { titreTotal, descTotal, visTotal, gdvTotal, aplusTotal, score };
 };
 
@@ -2487,6 +2488,8 @@ function buildAuditHTML() {
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button onclick="openAuditImportModal()" style="padding:6px 14px;border:.5px solid var(--pu);border-radius:6px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">⬆ Import XLS</button>
+        <button onclick="exportAuditCSV()" style="padding:6px 14px;border:.5px solid var(--gn);border-radius:6px;font-size:12px;background:var(--gnBg);color:var(--gn);cursor:pointer;font-weight:600;font-family:inherit">⬇ Export CSV</button>
+        <button onclick="openAuditAddProductModal()" style="padding:6px 14px;border:.5px solid var(--ac);border-radius:6px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">+ Ajouter produit</button>
       </div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:14px">
@@ -2598,7 +2601,7 @@ function buildAuditHTML() {
     </tr>
     <tr style="background:var(--bg);border-bottom:2px solid var(--border)">
       ${allCols.map(c=>`<th style="padding:6px 8px;font-size:10px;font-weight:600;color:var(--txS);white-space:nowrap;min-width:${c.w}px;text-align:center${c.isTotal||c.isScore?';background:var(--borderL)':''}">${c.label}</th>`).join("")}
-      <th style="padding:6px 8px;font-size:10px;font-weight:600;color:var(--txS)">Hist.</th>
+      <th style="display:none"></th>
     </tr>
   </thead>`;
 
@@ -2633,111 +2636,127 @@ function buildAuditRows(filteredList) {
     const bg = i%2 ? "background:var(--bg)" : "";
 
     const colGroups = [
-      {label:"",cols:[
-        {key:"sku",w:90,editable:false},
-        {key:"nom_produit",w:180,editable:true},
-        {key:"lien_mkp",w:60,editable:true,isLink:true},
-        {key:"categorie",w:80,editable:true},
-        {key:"type_ref",w:90,editable:true},
-      ]},
-      {label:"",cols:[
-        {key:"titre_longueur",w:60,editable:true,max:2},
-        {key:"titre_marque",w:60,editable:true,max:1},
-        {key:"titre_collection",w:60,editable:true,max:1},
-        {key:"titre_couleur",w:60,editable:true,max:1},
-        {key:"titre_matiere",w:60,editable:true,max:1},
-        {key:"titre_fonctions",w:60,editable:true,max:2},
-        {key:"_titre_total",w:55,editable:false,isTotal:true},
-      ]},
-      {label:"",cols:[
-        {key:"desc_bullets_nb",w:70,editable:true,max:4},
-        {key:"desc_bullets_pertinence",w:70,editable:true,max:4},
-        {key:"desc_caract_tech",w:65,editable:true,max:1},
-        {key:"desc_dimensions",w:60,editable:true,max:1},
-        {key:"desc_colis",w:55,editable:true,max:1},
-        {key:"desc_textes_mkt",w:70,editable:true,max:1},
-        {key:"_desc_total",w:55,editable:false,isTotal:true},
-      ]},
-      {label:"",cols:[
-        {key:"visuels_fond_blanc",w:70,editable:true,max:1},
-        {key:"visuels_dimensions",w:55,editable:true,max:1},
-        {key:"visuels_lifestyle",w:65,editable:true,max:1},
-        {key:"visuels_zoom_matiere",w:70,editable:true,max:1},
-        {key:"visuels_fonction",w:65,editable:true,max:1},
-        {key:"visuels_qualite_carrousel",w:70,editable:true,max:5},
-        {key:"_vis_total",w:55,editable:false,isTotal:true},
-      ]},
-      {label:"",cols:[
-        {key:"gdv_couleur",w:65,editable:true,max:1},
-        {key:"gdv_autre",w:60,editable:true,max:1},
-        {key:"_gdv_total",w:55,editable:false,isTotal:true},
-      ]},
-      {label:"",cols:[
-        {key:"aplus_fiche",w:70,editable:true,max:2},
-        {key:"aplus_video",w:60,editable:true,max:1},
-        {key:"_aplus_total",w:55,editable:false,isTotal:true},
-      ]},
-      {label:"",cols:[
-        {key:"_score",w:70,editable:false,isScore:true},
-        {key:"_niveau",w:100,editable:false,isNiveau:true},
-        {key:"plan_action",w:160,editable:true},
-      ]},
-      {label:"",cols:[
-        {key:"commentaire_1",w:140,editable:true},
-        {key:"commentaire_2",w:140,editable:true},
-        {key:"commentaire_3",w:140,editable:true},
-        {key:"commentaire_4",w:140,editable:true},
-        {key:"commentaire_5",w:140,editable:true},
-        {key:"commentaire_6",w:140,editable:true},
-      ]},
-    ];
-    const allCols = colGroups.flatMap(g=>g.cols);
+  {label:"",cols:[
+    {key:"sku",w:90,editable:false},
+    {key:"nom_produit",w:180,editable:false},
+    {key:"lien_mkp",w:60,editable:true,isLink:true},
+    {key:"categorie",w:80,editable:true,isSelect:true,options:["Canapé","Meubles","Outdoor","Autre"]},
+    {key:"type_ref",w:90,editable:true,isSelect:true,options:["Top Ref","Nouveauté","Autre"]},
+  ]},
+  {label:"",cols:[
+    {key:"titre_longueur",w:60,editable:true,max:2},
+    {key:"titre_marque",w:60,editable:true,max:1},
+    {key:"titre_collection",w:60,editable:true,max:1},
+    {key:"titre_couleur",w:60,editable:true,max:1},
+    {key:"titre_matiere",w:60,editable:true,max:1},
+    {key:"titre_fonctions",w:60,editable:true,max:2},
+    {key:"_titre_total",w:55,editable:false,isTotal:true},
+  ]},
+  {label:"",cols:[
+    {key:"desc_bullets_nb",w:70,editable:true,max:4},
+    {key:"desc_bullets_pertinence",w:70,editable:true,max:4},
+    {key:"desc_caract_tech",w:65,editable:true,max:1},
+    {key:"desc_dimensions",w:60,editable:true,max:1},
+    {key:"desc_colis",w:55,editable:true,max:1},
+    {key:"desc_textes_mkt",w:70,editable:true,max:1},
+    {key:"_desc_total",w:55,editable:false,isTotal:true},
+  ]},
+  {label:"",cols:[
+    {key:"visuels_fond_blanc",w:70,editable:true,max:1},
+    {key:"visuels_dimensions",w:55,editable:true,max:1},
+    {key:"visuels_lifestyle",w:65,editable:true,max:1},
+    {key:"visuels_zoom_matiere",w:70,editable:true,max:1},
+    {key:"visuels_fonction",w:65,editable:true,max:1},
+    {key:"visuels_qualite_carrousel",w:70,editable:true,max:5},
+    {key:"_vis_total",w:55,editable:false,isTotal:true},
+  ]},
+  {label:"",cols:[
+    {key:"gdv_couleur",w:65,editable:true,max:1},
+    {key:"gdv_autre",w:60,editable:true,max:1},
+    {key:"_gdv_total",w:55,editable:false,isTotal:true},
+  ]},
+  {label:"",cols:[
+    {key:"aplus_fiche",w:70,editable:true,max:2},
+    {key:"aplus_video",w:60,editable:true,max:1},
+    {key:"_aplus_total",w:55,editable:false,isTotal:true},
+  ]},
+  {label:"",cols:[
+    {key:"_score",w:70,editable:false,isScore:true},
+    {key:"_niveau",w:100,editable:false,isNiveau:true},
+    {key:"plan_action",w:160,editable:false,isPlan:true},
+  ]},
+  {label:"",cols:[
+    {key:"commentaire_1",w:160,editable:true,isTextarea:true},
+    {key:"commentaire_2",w:160,editable:true,isTextarea:true},
+    {key:"commentaire_3",w:160,editable:true,isTextarea:true},
+    {key:"commentaire_4",w:160,editable:true,isTextarea:true},
+    {key:"commentaire_5",w:160,editable:true,isTextarea:true},
+    {key:"commentaire_6",w:160,editable:true,isTextarea:true},
+  ]},
+];
+const allCols = colGroups.flatMap(g=>g.cols);
 
     const cells = allCols.map(c => {
-      if (c.isTotal) {
-        const v = totals[c.key] ?? "—";
-        return `<td style="text-align:center;font-weight:700;background:var(--borderL);padding:4px 6px">${v}</td>`;
-      }
-      if (c.isScore) {
-        const s = totals._score;
-        const col = AUDIT_NIVEAU_COLOR(AUDIT_NIVEAU(s));
-        return `<td style="text-align:center;font-weight:800;font-size:14px;color:${col};background:var(--borderL);padding:4px 6px">${s||"—"}</td>`;
-      }
-      if (c.isNiveau) {
-        const n = totals._niveau;
-        return `<td style="text-align:center;padding:4px 6px"><span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:${AUDIT_NIVEAU_BG(n)};color:${AUDIT_NIVEAU_COLOR(n)}">${n||"—"}</span></td>`;
-      }
-      if (c.isLink) {
-        const v = r[c.key] || "";
-        return `<td style="text-align:center;padding:4px 6px">
-          ${v && v !== "Pas en ligne" ? `<a href="${esc(v)}" target="_blank" class="link">Voir ↗</a>` : '<span style="color:var(--txT);font-size:10px">—</span>'}
-          <div style="display:none"><input value="${esc(v)}" onblur="auditSaveCell(${r.id},'${c.key}',this.value)"></div>
-        </td>`;
-      }
-      if (!c.editable) {
-        return `<td style="padding:4px 8px;font-weight:600;white-space:nowrap">${esc(String(r[c.key]||""))}</td>`;
-      }
-      const v = r[c.key] !== null && r[c.key] !== undefined ? r[c.key] : "";
-      const isNum = c.max !== undefined;
-      if (isNum) {
-        return `<td style="text-align:center;padding:2px 4px">
-          <input type="text" value="${esc(String(v))}" style="width:${c.w-10}px;text-align:center;padding:3px 4px;border:.5px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:transparent"
-            onblur="auditSaveCell(${r.id},'${c.key}',this.value)"
-            onkeydown="if(event.key==='Enter')this.blur()"
-            title="Max: ${c.max}">
-        </td>`;
-      }
-      return `<td style="padding:2px 4px">
-        <textarea rows="2" style="width:${c.w-8}px;padding:3px 5px;border:.5px solid var(--border);border-radius:4px;font-size:10px;font-family:inherit;resize:vertical;background:transparent;min-height:36px"
-          onblur="auditSaveCell(${r.id},'${c.key}',this.value)">${esc(String(v))}</textarea>
-      </td>`;
-    }).join("");
+  if (c.isTotal) {
+    const v = totals[c.key] ?? "—";
+    return `<td style="text-align:center;font-weight:700;background:var(--borderL);padding:4px 6px">${v}</td>`;
+  }
+  if (c.isScore) {
+    const s = totals._score;
+    const col = AUDIT_NIVEAU_COLOR(AUDIT_NIVEAU(s));
+    return `<td style="text-align:center;background:var(--borderL);padding:4px 6px;white-space:nowrap">
+      <span style="font-weight:800;font-size:14px;color:${col}">${s||"—"}</span>
+      <button onclick="showAuditHistory(${r.id},'${esc(r.sku)}')" title="Historique" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;vertical-align:middle">📈</button>
+    </td>`;
+  }
+  if (c.isNiveau) {
+    const n = totals._niveau;
+    return `<td style="text-align:center;padding:4px 6px"><span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:${AUDIT_NIVEAU_BG(n)};color:${AUDIT_NIVEAU_COLOR(n)}">${n||"—"}</span></td>`;
+  }
+  if (c.isPlan) {
+    const n = totals._niveau;
+    const pa = totals._score >= 90 ? "OK — Surveiller" : totals._score >= 75 ? "Ajustements mineurs" : totals._score >= 50 ? "Optimisation contenu + visuels" : "Refonte complète urgente";
+    return `<td style="padding:4px 8px;font-size:11px;color:${AUDIT_NIVEAU_COLOR(n)};font-weight:600;white-space:nowrap">${pa}</td>`;
+  }
+  if (c.isLink) {
+    const v = r[c.key] || "";
+    const isReal = v && v !== "Pas en ligne" && v.startsWith("http");
+    return `<td style="text-align:center;padding:4px 6px">
+      ${isReal ? `<a href="${esc(v)}" target="_blank" class="link">Voir ↗</a>` : '<span style="color:var(--txT);font-size:10px">—</span>'}
+    </td>`;
+  }
+  if (!c.editable) {
+    return `<td style="padding:4px 8px;font-size:12px;font-weight:500">${esc(String(r[c.key]||""))}</td>`;
+  }
+  if (c.isSelect) {
+    const v = r[c.key] || "";
+    const isOther = v && !c.options.slice(0,-1).includes(v);
+    return `<td style="padding:2px 4px;min-width:${c.w}px">
+      <select onchange="auditHandleSelect(${r.id},'${c.key}',this.value,this)" style="width:100%;padding:3px 4px;border:.5px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:transparent">
+        ${c.options.map(o=>`<option value="${esc(o)}" ${(isOther&&o==='Autre')||v===o?'selected':''}>${esc(o)}</option>`).join("")}
+      </select>
+      ${isOther ? `<input value="${esc(v)}" style="width:100%;margin-top:2px;padding:2px 4px;border:.5px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit" onblur="auditSaveCell(${r.id},'${c.key}',this.value)" onkeydown="if(event.key==='Enter')this.blur()">` : ""}
+    </td>`;
+  }
+  const v = r[c.key] !== null && r[c.key] !== undefined ? r[c.key] : "";
+  const isNum = c.max !== undefined;
+  if (isNum) {
+    return `<td style="text-align:center;padding:2px 4px">
+      <input type="text" value="${esc(String(v))}" style="width:${c.w-10}px;text-align:center;padding:3px 4px;border:.5px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:transparent"
+        onblur="auditSaveCell(${r.id},'${c.key}',this.value)"
+        onkeydown="if(event.key==='Enter')this.blur()"
+        title="Max: ${c.max}">
+    </td>`;
+  }
+  return `<td style="padding:2px 4px;min-width:${c.w}px">
+    <textarea rows="3" style="width:${c.w-8}px;padding:3px 5px;border:.5px solid var(--border);border-radius:4px;font-size:10px;font-family:inherit;resize:vertical;background:transparent;min-height:52px;overflow:visible"
+      onblur="auditSaveCell(${r.id},'${c.key}',this.value)">${esc(String(v))}</textarea>
+  </td>`;
+}).join("");
 
     return `<tr style="${bg};border-bottom:1px solid var(--borderL)" id="audit-row-${r.id}">
       ${cells}
-      <td style="padding:4px 6px;text-align:center">
-        <button onclick="showAuditHistory(${r.id},'${esc(r.sku)}')" title="Historique scores" style="background:var(--bg);border:.5px solid var(--border);border-radius:5px;padding:2px 6px;font-size:11px;cursor:pointer;font-family:inherit">📈</button>
-      </td>
+      <td style="display:none"></td>
     </tr>`;
   }).join("") || `<tr><td colspan="50" style="padding:30px;text-align:center;color:var(--txT)">Aucune donnée — importez un fichier XLS ou ajoutez des références.</td></tr>`;
 }
@@ -3016,6 +3035,127 @@ async function parseAuditXLS(file, semaine) {
     reader.readAsArrayBuffer(file);
   });
 }
+
+function auditHandleSelect(id, field, value, selectEl) {
+  const td = selectEl.closest('td');
+  if (value === 'Autre') {
+    let inp = td.querySelector('input');
+    if (!inp) {
+      inp = document.createElement('input');
+      inp.style.cssText = 'width:100%;margin-top:2px;padding:2px 4px;border:.5px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit';
+      inp.addEventListener('blur', () => auditSaveCell(id, field, inp.value));
+      inp.addEventListener('keydown', e => { if(e.key==='Enter') inp.blur(); });
+      td.appendChild(inp);
+    }
+    inp.focus();
+  } else {
+    const inp = td.querySelector('input');
+    if (inp) inp.remove();
+    auditSaveCell(id, field, value);
+  }
+}
+
+
+function exportAuditCSV() {
+  const headers = ["SKU","Produit","Marketplace","Lien","Catégorie","Type","Titre Long.","Titre Marque","Titre Collec.","Titre Couleur","Titre Matière","Titre Fonct.","Total Titre","Bullets nb","Pertinence","Caract. tech","Dims","Colis","Textes MKT","Total Desc","Fond blanc","Dims vis.","Lifestyle","Zoom mat.","Fonction","Carrousel","Total Visuels","GDV Couleur","GDV Autre","Total GDV","Fiche A+","Vidéo","Total A+","Score IDQ","Niveau","Plan d'action","Commentaire Titre","Commentaire Desc","Commentaire Visuels","Commentaire GDV","Commentaire A+","Commentaire Divers","Semaine"];
+  const rows = auditData.map(r => {
+    const calc = AUDIT_SCORE_FORMULA(r);
+    const niveau = AUDIT_NIVEAU(calc.score);
+    const pa = calc.score >= 90 ? "OK — Surveiller" : calc.score >= 75 ? "Ajustements mineurs" : calc.score >= 50 ? "Optimisation contenu + visuels" : "Refonte complète urgente";
+    return [r.sku,r.nom_produit,r.marketplace,r.lien_mkp,r.categorie,r.type_ref,r.titre_longueur,r.titre_marque,r.titre_collection,r.titre_couleur,r.titre_matiere,r.titre_fonctions,calc.titreTotal,r.desc_bullets_nb,r.desc_bullets_pertinence,r.desc_caract_tech,r.desc_dimensions,r.desc_colis,r.desc_textes_mkt,calc.descTotal,r.visuels_fond_blanc,r.visuels_dimensions,r.visuels_lifestyle,r.visuels_zoom_matiere,r.visuels_fonction,r.visuels_qualite_carrousel,calc.visTotal,r.gdv_couleur,r.gdv_autre,calc.gdvTotal,r.aplus_fiche,r.aplus_video,calc.aplusTotal,calc.score,niveau,pa,r.commentaire_1,r.commentaire_2,r.commentaire_3,r.commentaire_4,r.commentaire_5,r.commentaire_6,r.semaine];
+  });
+  const csvCell = v => { const s = String(v??''); return s.includes(';')||s.includes('"')||s.includes('\n') ? `"${s.replace(/"/g,'""')}"` : s; };
+  const csv = [headers,...rows].map(row=>row.map(csvCell).join(';')).join('\n');
+  const blob = new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href=url; a.download=`audit_idq_${MARKETPLACE}_${new Date().toLocaleDateString('fr-FR').replace(/\//g,'-')}.csv`;
+  a.click(); URL.revokeObjectURL(url);
+}
+
+async function openAuditAddProductModal() {
+  // Charger les produits déjà en base pour cette marketplace
+  const existing = new Set(auditData.map(r => r.sku));
+  let products = [];
+  try {
+    products = await sb("products", `marketplace=eq.${MARKETPLACE}&active=eq.true&select=product_id,name,sku,type&order=name.asc`);
+  } catch(e) { products = []; }
+
+  const available = products.filter(p => p.sku && !existing.has(p.sku));
+
+  openModal("Ajouter des produits à auditer", `
+    <div style="display:grid;gap:10px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input id="audit-add-search" placeholder="Rechercher..." oninput="filterAuditAddList()" style="flex:1;min-width:200px;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">
+        <button onclick="toggleAuditAddAll()" style="padding:6px 12px;border:.5px solid var(--border);border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit" id="audit-add-toggleall">Tout cocher</button>
+      </div>
+      <div id="audit-add-list" style="max-height:350px;overflow-y:auto;border:.5px solid var(--border);border-radius:8px">
+        ${available.length === 0
+          ? '<div style="padding:20px;text-align:center;color:var(--txT);font-size:12px">Tous les produits actifs sont déjà dans l\'audit.</div>'
+          : available.map(p => `
+            <label style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--borderL);cursor:pointer;font-size:12px" data-name="${esc((p.name||'').toLowerCase())}">
+              <input type="checkbox" value="${esc(p.sku)}" data-name="${esc(p.name||'')}" data-type="${esc(p.type||'')}" style="cursor:pointer">
+              <div>
+                <div style="font-weight:600">${esc(p.sku)}</div>
+                <div style="color:var(--txS)">${esc(p.name||'')}</div>
+              </div>
+            </label>`).join("")}
+      </div>
+      <div style="font-size:11px;color:var(--txS)" id="audit-add-count">0 produit(s) sélectionné(s)</div>
+      <button onclick="confirmAuditAddProducts('${esc(MARKETPLACE)}')" style="padding:10px;background:var(--ac);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Ajouter à l'audit</button>
+      <div id="audit-add-status" style="font-size:12px;text-align:center"></div>
+    </div>`);
+
+  // Mettre à jour le compteur à chaque changement
+  document.getElementById("audit-add-list")?.addEventListener("change", () => {
+    const n = document.querySelectorAll('#audit-add-list input[type=checkbox]:checked').length;
+    const el = document.getElementById("audit-add-count");
+    if (el) el.textContent = `${n} produit(s) sélectionné(s)`;
+  });
+}
+
+function filterAuditAddList() {
+  const s = (document.getElementById("audit-add-search")?.value||"").toLowerCase();
+  document.querySelectorAll('#audit-add-list label').forEach(el => {
+    el.style.display = el.dataset.name?.includes(s) ? "" : "none";
+  });
+}
+
+function toggleAuditAddAll() {
+  const boxes = document.querySelectorAll('#audit-add-list input[type=checkbox]');
+  const allChecked = [...boxes].every(b => b.checked);
+  boxes.forEach(b => { b.checked = !allChecked; });
+  const btn = document.getElementById("audit-add-toggleall");
+  if (btn) btn.textContent = allChecked ? "Tout cocher" : "Tout décocher";
+  const n = allChecked ? 0 : boxes.length;
+  const el = document.getElementById("audit-add-count");
+  if (el) el.textContent = `${n} produit(s) sélectionné(s)`;
+}
+
+async function confirmAuditAddProducts(mp) {
+  const statusEl = document.getElementById("audit-add-status");
+  const checked = [...document.querySelectorAll('#audit-add-list input[type=checkbox]:checked')];
+  if (!checked.length) { statusEl.innerHTML='<span style="color:var(--am)">Sélectionnez au moins un produit.</span>'; return; }
+  statusEl.innerHTML = '<span style="color:var(--txS)">Ajout en cours...</span>';
+  try {
+    const rows = checked.map(b => ({
+      marketplace: mp,
+      sku: b.value,
+      nom_produit: b.dataset.name || null,
+      type_ref: b.dataset.type || null,
+      semaine: auditData[0]?.semaine || null,
+    }));
+    await fetch(`${SB_URL}/rest/v1/audit_idq`, {
+      method:"POST",
+      headers:{"Content-Type":"application/json",apikey:SB_KEY,Authorization:`Bearer ${SB_KEY}`,Prefer:"return=minimal"},
+      body:JSON.stringify(rows)
+    });
+    statusEl.innerHTML = `<span style="color:var(--gn)">✓ ${rows.length} produit(s) ajouté(s).</span>`;
+    setTimeout(()=>{ closeModal(); renderAudit(); }, 800);
+  } catch(e) {
+    statusEl.innerHTML = `<span style="color:var(--rd)">Erreur : ${e.message}</span>`;
+  }
+}
   
 // Init
 if (MAINTENANCE_MODE) {
@@ -3037,6 +3177,29 @@ if (MAINTENANCE_MODE) {
     document.getElementById("admin-input").addEventListener("keydown", e => { if(e.key==="Enter") checkAdmin(); });
     throw new Error("MAINTENANCE");
   }
+}
+// Code d'accès général
+const accessGranted = sessionStorage.getItem("mkp_access");
+if (!accessGranted) {
+  document.body.innerHTML = `
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:'DM Sans',sans-serif;background:#fafaf8;gap:16px">
+      <div style="font-size:28px;font-weight:800;color:#1a1a18;letter-spacing:-0.02em">Marketplace Tracker</div>
+      <div style="font-size:14px;color:#6b6a65;margin-bottom:8px">Entrez le code d'accès pour continuer</div>
+      <input id="access-input" type="password" placeholder="Code d'accès" style="padding:10px 16px;border:1px solid #e8e6e1;border-radius:8px;font-size:14px;font-family:inherit;width:260px;text-align:center">
+      <button onclick="checkAccess()" style="padding:10px 28px;background:#2c5ea0;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Accéder</button>
+      <div id="access-err" style="font-size:12px;color:#b5312c"></div>
+    </div>`;
+  window.checkAccess = () => {
+    const val = document.getElementById("access-input").value;
+    if (val === ACCESS_CODE || val === ADMIN_CODE) {
+      sessionStorage.setItem("mkp_access", "1");
+      location.reload();
+    } else {
+      document.getElementById("access-err").textContent = "Code incorrect.";
+    }
+  };
+  document.getElementById("access-input").addEventListener("keydown", e => { if(e.key==="Enter") checkAccess(); });
+  throw new Error("ACCESS");
 }
 loadScrapingIndicators();
 loadData();
