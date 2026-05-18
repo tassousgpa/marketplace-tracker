@@ -2738,7 +2738,7 @@ const allCols = colGroups.flatMap(g=>g.cols);
     const cells = allCols.map(c => {
   if (c.isTotal) {
     const v = totals[c.key] ?? "—";
-    return `<td style="text-align:center;font-weight:700;background:var(--borderL);padding:4px 6px">${v}</td>`;
+    return '<td style="text-align:center;font-weight:700;background:var(--borderL);padding:4px 6px">'+v+'</td>';
   }
   if (c.isScore) {
     const s = totals._score;
