@@ -2832,12 +2832,12 @@ function buildAuditRows(filteredList) {
 }
 
 async function auditSaveCell(id, field, value) {
-  const key = `${id}_${field}`;
+  const key = id + "_" + field;
   if (auditSaving[key]) return;
   auditSaving[key] = true;
   try {
     const updateData = { [field]: value === "" ? null : value, updated_at: new Date().toISOString() };
-    await sbUpdate("audit_idq", `id=eq.${id}`, updateData);
+    await sbUpdate("audit_idq", "id=eq."+id, updateData);
     // Mettre à jour auditData local
     const row = auditData.find(r=>r.id===id);
     if (row) {
@@ -2848,7 +2848,7 @@ async function auditSaveCell(id, field, value) {
         const calc = AUDIT_SCORE_FORMULA(row);
         const niveau = AUDIT_NIVEAU(calc.score);
         // Mettre à jour l'affichage du score dans la ligne
-        const rowEl = document.getElementById(`audit-row-${id}`);
+        const rowEl = document.getElementById("audit-row-" + id);
         if (rowEl) {
           // Re-render juste la ligne
           const newRow = buildAuditRows([row]);
