@@ -856,7 +856,7 @@ const monthRows = MONTH_NAMES.map((mName, mi) => {
   const mNum = String(mi+1).padStart(2,"0");
   const cells = allYears.map(y => {
     const key = y+"-"+mNum;
-    const rev = mergedmonthRevs[key];
+    const rev = mergedMonthRevs[key];
     if (!rev) return '<td style="text-align:right;color:var(--txT)">—</td>';
     const n1key = (parseInt(y)-1)+"-"+mNum;
     const revN1 = monthRevsN1[n1key] || 0;
