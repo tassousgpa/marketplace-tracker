@@ -869,7 +869,7 @@ const monthRows = MONTH_NAMES.map((mName, mi) => {
 
 const totalRow = '<tr style="border-top:2px solid var(--border);font-weight:700"><td>Total</td>'
   + allYears.map(y => {
-    const total = Object.entries(monthRevs).filter(([k])=>k.startsWith(y)).reduce((s,[,v])=>s+v,0);
+    const total = Object.entries(mergedMonthRevs).filter(([k])=>k.startsWith(y)).reduce((s,[,v])=>s+v,0);
     return '<td style="text-align:right">'+fmtCA(total)+'</td>';
   }).join("")
   + '</tr>';
