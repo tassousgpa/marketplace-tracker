@@ -322,7 +322,7 @@ async function loadData() {
     // Évite le problème de la limite 5000 qui tronquerait les premiers keywords.
     // La table positions ne contient que le dernier run (purge côté scraper avant chaque session)
     // → select * sans filtre ni limite, requête simple et fiable
-    const [products, allProducts, snapshots, positions, sellerStats, revenueEntries, trackedSellers, revenueImports, productSalesWeekly] = await Promise.all([
+    const [products, allProducts, snapshots, positions, sellerStats, revenueEntries, trackedSellers, revenueImports, productSalesWeekly, monthlyHistory] = await Promise.all([
       sb("products", `marketplace=eq.${MARKETPLACE}&active=eq.true&select=*&order=product_id`),
       sb("products", `marketplace=eq.${MARKETPLACE}&select=*&order=product_id`),
       sb("product_snapshots", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=10000`),
@@ -331,6 +331,7 @@ async function loadData() {
       sb("revenue_entries", `marketplace=eq.${MARKETPLACE}&select=*&order=week_start_date.asc`).catch(()=>[]),
       sb("tracked_sellers", `marketplace=eq.${MARKETPLACE}&active=eq.true&select=*&order=id.asc`).catch(()=>[]),
       sb("revenue_imports", `marketplace=eq.${MARKETPLACE}&select=*&order=period_start.asc`).catch(()=>[]),
+      sb("revenue_monthly_history", `marketplace=eq.${MARKETPLACE}&select=year,month,revenue&order=year.asc,month.asc`).catch(()=>[]),
       sb("product_sales_weekly", `marketplace=eq.${MARKETPLACE}&select=*&order=week_label.desc`).catch(()=>[]),
     ]);
 
@@ -517,7 +518,7 @@ async function loadData() {
     console.log("DEBUG positions:", MARKETPLACE, "snapshotDay=", snapshotDay, "posDay=", posDay, "latestDate=", latestDate, "latestPosDay=", latestPosDay);
     const positionsOutdated = !posDay || (snapshotDay && posDay < snapshotDay);
 
-    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, leaderCounts, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], revenueImports: revenueImports||[], productSalesWeekly: productSalesWeekly||[], tab:STATE.tab||0 };
+    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, leaderCounts, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], revenueImports: revenueImports||[], monthlyHistory: monthlyHistory||[], productSalesWeekly: productSalesWeekly||[], tab:STATE.tab||0 };
 
     const sessionDisplay = latestDate ? new Date(latestDate + "T12:00:00Z").toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}) : "N/A";
     document.getElementById("header-subtitle").textContent = `${products.length} produits · Relevé du ${sessionDisplay}`;
@@ -733,6 +734,13 @@ function renderRevenueBlock() {
   const entries = (STATE.revenueEntries || []).slice().sort((a,b) => a.week_start_date > b.week_start_date ? 1 : -1);
   const hasAnyData = imports.length > 0 || entries.length > 0;
   const now = new Date();
+  // Intégrer l'historique mensuel dans monthRevs
+  const monthlyHistory = STATE.monthlyHistory || [];
+  const monthRevsHistory = {};
+  monthlyHistory.forEach(h => {
+    const key = h.year + "-" + String(h.month).padStart(2,"0");
+    monthRevsHistory[key] = (monthRevsHistory[key]||0) + h.revenue;
+  });
 
   const fmtCA = v => {
     if (v == null || isNaN(v) || v === 0) return "—";
@@ -842,12 +850,13 @@ function renderRevenueBlock() {
   // ── Tableau mois ─────────────────────────────────────────────────────
   // ── Tableau mois ─────────────────────────────────────────────────────
 const MONTH_NAMES = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
-const allYears = [...new Set(Object.keys(monthRevs).map(m=>m.slice(0,4)))].sort();
+const mergedMonthRevs = Object.assign({}, monthRevsHistory, monthRevs); // imports hebdo écrasent l'historique pour les mois récents
+const allYears = [...new Set(Object.keys(mergedMonthRevs).map(m=>m.slice(0,4)))].sort();
 const monthRows = MONTH_NAMES.map((mName, mi) => {
   const mNum = String(mi+1).padStart(2,"0");
   const cells = allYears.map(y => {
     const key = y+"-"+mNum;
-    const rev = monthRevs[key];
+    const rev = mergedmonthRevs[key];
     if (!rev) return '<td style="text-align:right;color:var(--txT)">—</td>';
     const n1key = (parseInt(y)-1)+"-"+mNum;
     const revN1 = monthRevsN1[n1key] || 0;
