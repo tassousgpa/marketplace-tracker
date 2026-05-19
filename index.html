@@ -858,11 +858,7 @@ const monthRows = MONTH_NAMES.map((mName, mi) => {
     const key = y+"-"+mNum;
     const rev = mergedMonthRevs[key];
     if (!rev) return '<td style="text-align:right;color:var(--txT)">—</td>';
-    const n1key = (parseInt(y)-1)+"-"+mNum;
-    const revN1 = monthRevsN1[n1key] || 0;
-    const pct = revN1>0 ? Math.round((rev-revN1)/revN1*100) : null;
-    const pctHtml = pct!=null ? '<span style="font-size:10px;color:'+(pct>=0?"var(--gn)":"var(--rd)")+'"> '+(pct>=0?"+":"")+pct+'%</span>' : "";
-    return '<td style="text-align:right;font-weight:600">'+fmtCA(rev)+pctHtml+'</td>';
+    return '<td style="text-align:right;font-weight:600">'+fmtCA(rev)+'</td>';
   }).join("");
   return '<tr class="'+(mi%2?"stripe":"")+'"><td style="font-weight:500;white-space:nowrap">'+mName+'</td>'+cells+'</tr>';
 }).join("");
