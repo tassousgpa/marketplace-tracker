@@ -331,8 +331,8 @@ async function loadData() {
       sb("revenue_entries", `marketplace=eq.${MARKETPLACE}&select=*&order=week_start_date.asc`).catch(()=>[]),
       sb("tracked_sellers", `marketplace=eq.${MARKETPLACE}&active=eq.true&select=*&order=id.asc`).catch(()=>[]),
       sb("revenue_imports", `marketplace=eq.${MARKETPLACE}&select=*&order=period_start.asc`).catch(()=>[]),
-      sb("revenue_monthly_history", `marketplace=eq.${MARKETPLACE}&select=year,month,revenue&order=year.asc,month.asc`).catch(()=>[]),
       sb("product_sales_weekly", `marketplace=eq.${MARKETPLACE}&select=*&order=week_label.desc`).catch(()=>[]),
+      sb("revenue_monthly_history", `marketplace=eq.${MARKETPLACE}&select=year,month,revenue&order=year.asc,month.asc`).catch(()=>[]),
     ]);
 
     // Mettre à jour le cache de scraping avec les données fraîchement chargées
