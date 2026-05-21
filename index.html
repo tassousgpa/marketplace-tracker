@@ -626,6 +626,7 @@ function showVariation(tag) {
 // =============================================
 // BLOC VENTES PRODUITS (Synthèse)
 // =============================================
+
 function renderProductSalesBlocks() {
   const allSales = STATE.productSalesWeekly || [];
   if (!allSales.length) return '<div style="margin-top:20px"><div style="font-size:13px;font-weight:700;margin-bottom:12px">📦 Ventes produits par semaine</div><div class="card" style="padding:24px;text-align:center;color:var(--txT);font-size:12px">Aucune donnée produit. Importez un fichier Odoo via <b>Import Semaine</b>.</div></div>';
@@ -674,7 +675,6 @@ function renderProductSalesBlocks() {
       + "</tbody></table></div>";
   }
 
-  // Historique semaines précédentes
   const histBlocks = weeks.slice(1).map(function(w) {
     const wSales = allSales.filter(r => r.week_label === w);
     const top10 = [...wSales].sort((a,b) => b.qty - a.qty).slice(0,10);
@@ -693,79 +693,7 @@ function renderProductSalesBlocks() {
     + "</div>"
     + "</div>";
 }
-
-  // Index sku → dernier prix scrapé (marketplace courante, normalisation casse)
-  const scraperIdToSku = {};
-  (STATE.products || []).forEach(p => {
-    if (p.sku && p.product_id_scraper) scraperIdToSku[p.product_id_scraper.toLowerCase()] = p.sku;
-  });
-  const skuToPriceIndex = {};
-  (STATE.snapshots || []).forEach(s => {
-    if (!s.price) return;
-    const sku = scraperIdToSku[(s.product_id || "").toLowerCase()];
-    if (!sku) return;
-    if (!skuToPriceIndex[sku] || s.date > (skuToPriceIndex[sku].date || "")) {
-      skuToPriceIndex[sku] = { price: s.price, date: s.date };
-    }
-  });
-  Object.keys(skuToPriceIndex).forEach(k => { skuToPriceIndex[k] = skuToPriceIndex[k].price; });
-
-  function salesTable(rows, showDelta) {
-    if (!rows.length) return "<div style='color:var(--txT);font-size:12px;padding:8px'>Aucune donnée</div>";
-    return "<div style='overflow-x:auto'><table style='width:100%;min-width:400px;border-collapse:collapse;font-size:12px'>"
-      + "<thead><tr style='border-bottom:1px solid var(--border)'>"
-      + "<th style='padding:5px 8px;text-align:left;font-weight:600;color:var(--txS)'>Réf</th>"
-      + "<th style='padding:5px 8px;text-align:left;font-weight:600;color:var(--txS)'>Produit</th>"
-      + "<th style='padding:5px 8px;text-align:right;font-weight:600;color:var(--txS)'>Ventes</th>"
-      + "<th style='padding:5px 8px;text-align:right;font-weight:600;color:var(--txS)'>PM TTC</th>"
-      + "<th style='padding:5px 8px;text-align:right;font-weight:600;color:var(--txS)'>Prix affiché</th>"
-      + (showDelta ? "<th style='padding:5px 8px;text-align:right;font-weight:600;color:var(--txS)'>vs S-2</th>" : "")
-      + "</tr></thead><tbody>"
-      + rows.map(function(r,i) {
-          const lastPrice = skuToPriceIndex[r.ref] || null;
-          const basket = (r.ca_ht && r.qty) ? Math.round(r.ca_ht / r.qty * 1.2) + "€" : "—";
-          const priceCell = lastPrice ? Math.round(lastPrice) + "€" : "—";
-          const deltaHtml = showDelta
-            ? "<td style='padding:5px 8px;text-align:right;font-weight:600;color:"+(r.delta>0?"var(--gn)":"var(--rd)")+"'>"+(r.delta>0?"+":"")+r.delta+"</td>"
-            : "";
-          const bg = i%2 ? "background:var(--bg)" : "";
-          return "<tr style='"+bg+";border-bottom:1px solid var(--borderL)'>"
-            + "<td style='padding:5px 8px;font-weight:600;white-space:nowrap'>"+esc(r.ref)+"</td>"
-            + "<td style='padding:5px 8px;color:var(--txS);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap' title='"+esc(r.name)+"'>"+esc((r.name||"").slice(0,30))+"</td>"
-            + "<td style='padding:5px 8px;text-align:right;font-weight:700'>"+r.qty+"</td>"
-            + "<td style='padding:5px 8px;text-align:right;color:var(--txS)'>"+basket+"</td>"
-            + "<td style='padding:5px 8px;text-align:right;color:var(--txS)'>"+priceCell+"</td>"
-            + deltaHtml
-            + "</tr>";
-        }).join("")
-      + "</tbody></table></div>";
-  }
-
-  const weekInfo = prev3Week
-    ? `<span style='font-size:11px;color:var(--txT)'>Comparaison ${latestWeek} vs ${prev3Week}</span>`
-    : `<span style='font-size:11px;color:var(--txT)'>Semaine ${latestWeek}</span>`;
-
-  return `<div style='margin-top:20px'>
-    <div style='font-size:13px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:10px'>
-      📦 Ventes produits — ${latestWeek} ${weekInfo}
-    </div>
-    <div style='display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px'>
-      <div class='card' style='padding:14px'>
-        <div class='card-title' style='margin-bottom:10px'>🏆 Top 5 ventes ${latestWeek}</div>
-        ${salesTable(top5Sales, false)}
-      </div>
-      <div class='card' style='padding:14px'>
-        <div class='card-title' style='margin-bottom:10px'>📈 Top 5 croissance (vs S-2)</div>
-        ${salesTable(growthRows, true)}
-      </div>
-      <div class='card' style='padding:14px'>
-        <div class='card-title' style='margin-bottom:10px'>📉 Top 5 décroissance (vs S-2)</div>
-        ${salesTable(declineRows, true)}
-      </div>
-    </div>
-  </div>`;
-}
-
+  
 function renderRevenueBlock() {
   const imports = (STATE.revenueImports || []);
   const entries = (STATE.revenueEntries || []).slice().sort((a,b) => a.week_start_date > b.week_start_date ? 1 : -1);
