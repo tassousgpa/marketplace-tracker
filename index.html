@@ -3608,7 +3608,7 @@ async function parseOpeXLS(file) {
           if (!r || !r[1]) continue;
           const refVal = r[1] ? String(r[1]).trim() : null;
 if (!refVal) continue;
-result.push({ ref: refVal, nom: r[2]?String(r[2]).trim():null, prix: r[3]?parseFloat(r[3]):null, taux: r[4]?parseFloat(r[4]):null });
+result.push({ ref: refVal, nom: r[2]?String(r[2]).trim():null, prix: r[3]?parseFloat(String(r[3]).replace("€","").trim()):null, taux: r[4]?(parseFloat(String(r[4]).replace("%","").trim())/100):null });
         }
         resolve(result);
       } catch(e) { reject(e); }
@@ -3639,7 +3639,7 @@ async function parseOpeXLSFull(file) {
           if (f) fin = f;
           const refVal = r[1] ? String(r[1]).trim() : null;
 if (!refVal) continue;
-prods.push({ ref: refVal, nom: r[2]?String(r[2]).trim():null, prix: r[3]?parseFloat(r[3]):null, taux: r[4]?parseFloat(r[4]):null });
+prods.push({ ref: refVal, nom: r[2]?String(r[2]).trim():null, prix: r[3]?parseFloat(String(r[3]).replace("€","").trim()):null, taux: r[4]?(parseFloat(String(r[4]).replace("%","").trim())/100):null });
         }
         if (!nomOpe || !debut || !fin) { resolve({ ops:[], prods:[] }); return; }
         resolve({ ops:[{ nom: nomOpe, type: typeOpe, debut, fin, prods }], prods });
