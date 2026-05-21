@@ -628,34 +628,71 @@ function showVariation(tag) {
 // =============================================
 function renderProductSalesBlocks() {
   const allSales = STATE.productSalesWeekly || [];
-  if (!allSales.length) return `
-    <div style="margin-top:20px">
-      <div style="font-size:13px;font-weight:700;margin-bottom:12px">📦 Ventes produits par semaine</div>
-      <div class="card" style="padding:24px;text-align:center;color:var(--txT);font-size:12px">
-        Aucune donnée produit. Importez un fichier Odoo via <b>Import Semaine</b>.
-      </div>
-    </div>`;
+  if (!allSales.length) return '<div style="margin-top:20px"><div style="font-size:13px;font-weight:700;margin-bottom:12px">📦 Ventes produits par semaine</div><div class="card" style="padding:24px;text-align:center;color:var(--txT);font-size:12px">Aucune donnée produit. Importez un fichier Odoo via <b>Import Semaine</b>.</div></div>';
 
   const weeks = [...new Set(allSales.map(r => r.week_label))].sort((a,b) => b.localeCompare(a));
   if (!weeks.length) return "";
-  const latestWeek = weeks[0];
-  const prev3Week  = weeks[2] || null;
-  const latestSales = allSales.filter(r => r.week_label === latestWeek);
 
-  const top5Sales = [...latestSales].sort((a,b) => b.qty - a.qty).slice(0,5);
-  let growthRows = [], declineRows = [];
-  if (prev3Week) {
-    const prev3Sales = allSales.filter(r => r.week_label === prev3Week);
-    const prev3Map = {};
-    prev3Sales.forEach(r => { prev3Map[r.ref] = r.qty; });
-    const withDelta = latestSales.map(r => ({
-      ...r, prev3: prev3Map[r.ref] || 0,
-      delta: r.qty - (prev3Map[r.ref] || 0),
-      deltaPct: prev3Map[r.ref] > 0 ? Math.round((r.qty - prev3Map[r.ref]) / prev3Map[r.ref] * 100) : null
-    }));
-    growthRows  = [...withDelta].filter(r => r.delta > 0).sort((a,b) => b.delta - a.delta).slice(0,5);
-    declineRows = [...withDelta].filter(r => r.delta < 0).sort((a,b) => a.delta - b.delta).slice(0,5);
+  const latestWeek = weeks[0];
+  const latestSales = allSales.filter(r => r.week_label === latestWeek);
+  const top10Sales = [...latestSales].sort((a,b) => b.qty - a.qty).slice(0,10);
+
+  const scraperIdToSku = {};
+  (STATE.products || []).forEach(p => {
+    if (p.sku && p.product_id_scraper) scraperIdToSku[p.product_id_scraper.toLowerCase()] = p.sku;
+  });
+  const skuToPriceIndex = {};
+  (STATE.snapshots || []).forEach(s => {
+    if (!s.price) return;
+    const sku = scraperIdToSku[(s.product_id || "").toLowerCase()];
+    if (!sku) return;
+    if (!skuToPriceIndex[sku] || s.date > (skuToPriceIndex[sku].date || "")) skuToPriceIndex[sku] = { price: s.price, date: s.date };
+  });
+  Object.keys(skuToPriceIndex).forEach(k => { skuToPriceIndex[k] = skuToPriceIndex[k].price; });
+
+  function salesRow(r, i) {
+    const basket = (r.ca_ht && r.qty) ? Math.round(r.ca_ht / r.qty * 1.2) + "€" : "—";
+    const bg = i%2 ? "background:var(--bg)" : "";
+    return "<tr style='" + bg + ";border-bottom:1px solid var(--borderL)'>"
+      + "<td style='padding:5px 8px;font-weight:600;white-space:nowrap'>" + esc(r.ref) + "</td>"
+      + "<td style='padding:5px 8px;color:var(--txS);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap' title='" + esc(r.name) + "'>" + esc((r.name||"").slice(0,40)) + "</td>"
+      + "<td style='padding:5px 8px;text-align:right;font-weight:700'>" + r.qty + "</td>"
+      + "<td style='padding:5px 8px;text-align:right;color:var(--txS)'>" + basket + "</td>"
+      + "</tr>";
   }
+
+  function salesTable(rows) {
+    if (!rows.length) return "<div style='color:var(--txT);font-size:12px;padding:8px'>Aucune donnée</div>";
+    return "<div style='overflow-x:auto'><table style='width:100%;min-width:300px;border-collapse:collapse;font-size:12px'>"
+      + "<thead><tr style='border-bottom:1px solid var(--border)'>"
+      + "<th style='padding:5px 8px;text-align:left;font-weight:600;color:var(--txS)'>Réf</th>"
+      + "<th style='padding:5px 8px;text-align:left;font-weight:600;color:var(--txS)'>Produit</th>"
+      + "<th style='padding:5px 8px;text-align:right;font-weight:600;color:var(--txS)'>Ventes</th>"
+      + "<th style='padding:5px 8px;text-align:right;font-weight:600;color:var(--txS)'>PM TTC</th>"
+      + "</tr></thead><tbody>"
+      + rows.map(function(r,i) { return salesRow(r,i); }).join("")
+      + "</tbody></table></div>";
+  }
+
+  // Historique semaines précédentes
+  const histBlocks = weeks.slice(1).map(function(w) {
+    const wSales = allSales.filter(r => r.week_label === w);
+    const top10 = [...wSales].sort((a,b) => b.qty - a.qty).slice(0,10);
+    return "<details style='margin-top:6px'>"
+      + "<summary style='cursor:pointer;font-size:11px;color:var(--txS);font-weight:600;padding:4px 0'>Top 10 — " + w + "</summary>"
+      + "<div style='margin-top:6px'>" + salesTable(top10) + "</div>"
+      + "</details>";
+  }).join("");
+
+  return "<div style='margin-top:20px'>"
+    + "<div style='font-size:13px;font-weight:700;margin-bottom:12px'>📦 Ventes produits — " + latestWeek + "</div>"
+    + "<div class='card' style='padding:14px'>"
+    + "<div class='card-title' style='margin-bottom:10px'>🏆 Top 10 ventes " + latestWeek + "</div>"
+    + salesTable(top10Sales)
+    + (histBlocks ? "<div style='border-top:1px solid var(--borderL);margin-top:10px;padding-top:6px'>" + histBlocks + "</div>" : "")
+    + "</div>"
+    + "</div>";
+}
 
   // Index sku → dernier prix scrapé (marketplace courante, normalisation casse)
   const scraperIdToSku = {};
