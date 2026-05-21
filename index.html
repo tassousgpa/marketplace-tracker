@@ -301,8 +301,8 @@ function normalizeKeyword(kw) {
   return kw;
 }
 
-const TAB_NAMES = ["Synthèse","Produits","Historique","Positions","Concurrents","Anomalies","Audit","Gestion"];
-const TAB_NAMES_LIGHT = ["Synthèse","Produits","Historique","Anomalies","Audit","Gestion"];
+const TAB_NAMES = ["Synthèse","Produits","Historique","Positions","Concurrents","Anomalies","Audit","Opé. Commerciales","Gestion"];
+const TAB_NAMES_LIGHT = ["Synthèse","Produits","Historique","Anomalies","Audit","Opé. Commerciales","Gestion"];
 
 function isLightMp() { return NO_POSITIONS_MP.has(MARKETPLACE); }
 function getTabNames() { return isLightMp() ? TAB_NAMES_LIGHT : TAB_NAMES; }
@@ -539,11 +539,12 @@ function renderContent() {
   if (isLightMp()) {
     switch(STATE.tab) {
       case 0: el.innerHTML=renderSynthese(); break;
-    case 1: el.innerHTML=renderProduits(); break;
-    case 2: el.innerHTML=renderHistorique(); break;
-    case 3: el.innerHTML=renderAnomalies(); break;
-    case 4: renderAudit(); break;
-    case 5: el.innerHTML=renderGestion(); break;
+      case 1: el.innerHTML=renderProduits(); break;
+      case 2: el.innerHTML=renderHistorique(); break;
+      case 3: el.innerHTML=renderAnomalies(); break;
+      case 4: renderAudit(); break;
+      case 5: renderOpeCommerciales(); break;
+      case 6: el.innerHTML=renderGestion(); break;
       default: el.innerHTML='';
     }
     return;
@@ -556,7 +557,8 @@ function renderContent() {
     case 4: el.innerHTML=renderConcurrents(); break;
     case 5: el.innerHTML=renderAnomalies(); break;
     case 6: renderAudit(); break;
-    case 7: el.innerHTML=renderGestion(); break;
+    case 7: renderOpeCommerciales(); break;
+    case 8: el.innerHTML=renderGestion(); break;
   }
 }
 
@@ -3234,6 +3236,453 @@ function auditSortByScore() {
   const btn = document.getElementById('audit-sort-btn');
   if (btn) btn.textContent = `Score ${auditSortDir === 'asc' ? '↑' : '↓'}`;
   document.getElementById('audit-tbody').innerHTML = buildAuditRows();
+}
+
+// =============================================
+// TAB OPÉ. COMMERCIALES
+// =============================================
+
+let opeData = [];
+const OPE_COLORS = ["#2c5ea0","#e8963a","#2e9e6b","#c0392b","#8e44ad","#16a085","#d35400","#e74c3c","#27ae60","#2980b9"];
+
+function opeColor(id) {
+  return OPE_COLORS[id % OPE_COLORS.length];
+}
+
+function opeIsActive(op) {
+  const now = new Date();
+  const d = new Date(op.date_debut);
+  const f = new Date(op.date_fin);
+  return now >= d && now <= f;
+}
+
+async function renderOpeCommerciales() {
+  const el = document.getElementById("content");
+  el.innerHTML = '<div class="loading"><div class="loading-spinner"></div><div>Chargement des opérations...</div></div>';
+  try {
+    opeData = await sb("commercial_operations", "marketplace=eq."+MARKETPLACE+"&select=*&order=date_debut.desc");
+  } catch(e) { opeData = []; }
+  el.innerHTML = buildOpeHTML();
+}
+
+function buildOpeHTML() {
+  const now = new Date();
+  const months = [];
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    months.push({ year: d.getFullYear(), month: d.getMonth(), label: d.toLocaleDateString("fr-FR", {month:"long", year:"numeric"}) });
+  }
+
+  const active = opeData.filter(op => opeIsActive(op));
+  const expired = opeData.filter(op => new Date(op.date_fin) < now);
+  const future = opeData.filter(op => new Date(op.date_debut) > now);
+
+  // KPIs
+  const kpis = '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px">'
+    + '<div class="metric"><div class="metric-label">Opérations actives</div><div class="metric-value" style="color:var(--gn)">'+active.length+'</div></div>'
+    + '<div class="metric"><div class="metric-label">À venir</div><div class="metric-value" style="color:var(--ac)">'+future.length+'</div></div>'
+    + '<div class="metric"><div class="metric-label">Expirées</div><div class="metric-value" style="color:var(--txT)">'+expired.length+'</div></div>'
+    + '<div class="metric"><div class="metric-label">Total produits actifs</div><div class="metric-value" style="color:var(--am)">'
+    + active.reduce((s,op) => s + (op._prodCount||0), 0)
+    + '</div></div>'
+    + '</div>';
+
+  // Timeline
+  const COL_W = 180;
+  const LEFT_W = 60;
+  const ROW_H = 54;
+  const HEADER_H = 48;
+
+  // Filtrer les opérations visibles sur la timeline (actives + futures + expirées du mois courant)
+  const timelineOps = opeData.filter(op => {
+    const fin = new Date(op.date_fin);
+    const start = new Date(months[0].year, months[0].month, 1);
+    const end = new Date(months[5].year, months[5].month + 1, 0);
+    return fin >= start && new Date(op.date_debut) <= end;
+  });
+
+  const timelineH = Math.max(timelineOps.length * ROW_H + HEADER_H + 20, HEADER_H + 60);
+  const totalW = LEFT_W + COL_W * 6;
+
+  // SVG timeline
+  let svg = '<svg viewBox="0 0 '+totalW+' '+timelineH+'" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block;font-family:DM Sans,sans-serif">';
+
+  // Fond header
+  svg += '<rect x="0" y="0" width="'+totalW+'" height="'+HEADER_H+'" fill="#f0eee9" rx="0"/>';
+
+  // Bouton historique (colonne gauche)
+  svg += '<rect x="0" y="0" width="'+LEFT_W+'" height="'+timelineH+'" fill="#fafaf8"/>';
+  svg += '<text x="'+(LEFT_W/2)+'" y="'+(HEADER_H/2+5)+'" text-anchor="middle" font-size="10" fill="#6b6a65" font-weight="600">HIST.</text>';
+  svg += '<text x="'+(LEFT_W/2)+'" y="'+(HEADER_H/2+18)+'" text-anchor="middle" font-size="18" fill="#2c5ea0" style="cursor:pointer" onclick="openOpeHistory()">+</text>';
+
+  // Colonnes mois
+  months.forEach(function(m, mi) {
+    const x = LEFT_W + mi * COL_W;
+    const isCurrentMonth = (m.year === now.getFullYear() && m.month === now.getMonth());
+    svg += '<rect x="'+x+'" y="0" width="'+COL_W+'" height="'+HEADER_H+'" fill="'+(isCurrentMonth?"#e8f0fa":"#f0eee9")+'"/>';
+    svg += '<text x="'+(x+COL_W/2)+'" y="'+(HEADER_H/2+5)+'" text-anchor="middle" font-size="12" fill="'+(isCurrentMonth?"#2c5ea0":"#1a1a18")+'" font-weight="700">'+m.label.charAt(0).toUpperCase()+m.label.slice(1)+'</text>';
+    // Bouton + sous le header
+    svg += '<text x="'+(x+COL_W/2)+'" y="'+(HEADER_H+16)+'" text-anchor="middle" font-size="13" fill="#2c5ea0" style="cursor:pointer" onclick="openOpeCreate(\''+m.year+'-'+String(m.month+1).padStart(2,'0')+'\')">＋</text>';
+    // Ligne verticale
+    svg += '<line x1="'+x+'" y1="0" x2="'+x+'" y2="'+timelineH+'" stroke="#e8e6e1" stroke-width="1"/>';
+  });
+
+  // Ligne horizontale header
+  svg += '<line x1="0" y1="'+HEADER_H+'" x2="'+totalW+'" y2="'+HEADER_H+'" stroke="#e8e6e1" stroke-width="1.5"/>';
+
+  // Barre "aujourd'hui"
+  const todayX = LEFT_W + (now.getDate() / new Date(now.getFullYear(), now.getMonth()+1, 0).getDate()) * COL_W;
+  svg += '<line x1="'+todayX+'" y1="'+HEADER_H+'" x2="'+todayX+'" y2="'+timelineH+'" stroke="#e8963a" stroke-width="1.5" stroke-dasharray="4,3"/>';
+  svg += '<circle cx="'+todayX+'" cy="'+(HEADER_H+6)+'" r="4" fill="#e8963a"/>';
+
+  // Opérations
+  const timelineStart = new Date(months[0].year, months[0].month, 1);
+  const timelineEnd = new Date(months[5].year, months[5].month + 1, 0);
+  const totalDays = (timelineEnd - timelineStart) / 86400000;
+
+  timelineOps.forEach(function(op, ri) {
+    const color = opeColor(op.id);
+    const isAct = opeIsActive(op);
+    const debut = new Date(Math.max(new Date(op.date_debut), timelineStart));
+    const fin = new Date(Math.min(new Date(op.date_fin), timelineEnd));
+    const x1 = LEFT_W + ((debut - timelineStart) / 86400000 / totalDays) * (COL_W * 6);
+    const x2 = LEFT_W + ((fin - timelineStart + 86400000) / 86400000 / totalDays) * (COL_W * 6);
+    const y = HEADER_H + 28 + ri * ROW_H;
+    const w = Math.max(x2 - x1, 20);
+
+    svg += '<rect x="'+x1.toFixed(1)+'" y="'+(y-18)+'" width="'+w.toFixed(1)+'" height="28" rx="6" fill="'+color+'" opacity="'+(isAct?1:0.45)+'" style="cursor:pointer" onclick="openOpeDetail('+op.id+')"/>';
+    // Nom tronqué
+    const maxChars = Math.floor(w / 7);
+    const nom = op.nom.length > maxChars ? op.nom.slice(0, maxChars-1)+"…" : op.nom;
+    svg += '<text x="'+(x1+8).toFixed(1)+'" y="'+(y-1)+'" font-size="10" fill="#fff" font-weight="600">'+esc(nom)+'</text>';
+    // Statut pill
+    if (w > 60) {
+      svg += '<rect x="'+(x2-52).toFixed(1)+'" y="'+(y-15)+'" width="44" height="14" rx="7" fill="'+(isAct?"#fff":"#e8e6e1")+'" opacity="0.3"/>';
+      svg += '<text x="'+(x2-30).toFixed(1)+'" y="'+(y-5)+'" font-size="8" fill="#fff" text-anchor="middle">'+(isAct?"● Actif":"○ Expiré")+'</text>';
+    }
+  });
+
+  if (!timelineOps.length) {
+    svg += '<text x="'+(totalW/2)+'" y="'+(HEADER_H+50)+'" text-anchor="middle" font-size="12" fill="#9c9a92">Aucune opération sur cette période — cliquez + pour créer</text>';
+  }
+
+  svg += '</svg>';
+
+  // Bouton import + créer
+  const actions = '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">'
+    + '<button onclick="openOpeCreate(null)" style="padding:7px 16px;border:.5px solid var(--ac);border-radius:8px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">+ Nouvelle opération</button>'
+    + '<button onclick="openOpeImport()" style="padding:7px 16px;border:.5px solid var(--pu);border-radius:8px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">⬆ Import Excel</button>'
+    + '</div>';
+
+  return kpis + actions
+    + '<div class="card" style="padding:0;overflow:hidden">'
+    + '<div style="overflow-x:auto">'
+    + svg
+    + '</div></div>'
+    + (opeData.length ? renderOpeCards() : "");
+}
+
+function renderOpeCards() {
+  const now = new Date();
+  const active = opeData.filter(op => opeIsActive(op));
+  const future = opeData.filter(op => new Date(op.date_debut) > now);
+  if (!active.length && !future.length) return "";
+
+  function opeCard(op) {
+    const color = opeColor(op.id);
+    const isAct = opeIsActive(op);
+    const fmtD = d => new Date(d).toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit"});
+    return '<div style="background:var(--card);border:.5px solid var(--border);border-radius:10px;padding:14px 16px;min-width:200px;flex:1;cursor:pointer;border-left:4px solid '+color+'" onclick="openOpeDetail('+op.id+')">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
+      + '<div style="font-size:13px;font-weight:700;color:var(--tx)">'+esc(op.nom)+'</div>'
+      + '<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:'+(isAct?"var(--gnBg)":"var(--acBg)")+';color:'+(isAct?"var(--gn)":"var(--ac)")+'">'+( isAct?"● Actif":"⏳ À venir")+'</span>'
+      + '</div>'
+      + '<div style="font-size:11px;color:var(--txS);margin-bottom:8px">'+fmtD(op.date_debut)+' → '+fmtD(op.date_fin)+'</div>'
+      + (op.type_ope ? '<div style="font-size:10px;color:var(--txT);margin-bottom:6px">'+esc(op.type_ope)+'</div>' : "")
+      + '<div style="font-size:11px;color:var(--txS)">'+( op._prodCount||0)+' produit'+(op._prodCount>1?"s":"")+'</div>'
+      + '</div>';
+  }
+
+  let html = "";
+  if (active.length) {
+    html += '<div style="margin-top:16px"><div style="font-size:13px;font-weight:700;margin-bottom:10px">🟢 Opérations actives</div>'
+      + '<div style="display:flex;gap:10px;flex-wrap:wrap">'+active.map(opeCard).join("")+'</div></div>';
+  }
+  if (future.length) {
+    html += '<div style="margin-top:16px"><div style="font-size:13px;font-weight:700;margin-bottom:10px">⏳ À venir</div>'
+      + '<div style="display:flex;gap:10px;flex-wrap:wrap">'+future.map(opeCard).join("")+'</div></div>';
+  }
+  return html;
+}
+
+async function openOpeDetail(id) {
+  const op = opeData.find(o => o.id === id);
+  if (!op) return;
+  const color = opeColor(op.id);
+  const isAct = opeIsActive(op);
+  const fmtD = d => new Date(d).toLocaleDateString("fr-FR",{day:"2-digit",month:"long",year:"numeric"});
+
+  let prods = [];
+  try {
+    prods = await sb("operation_products", "operation_id=eq."+id+"&select=*&order=ref.asc");
+  } catch(e) {}
+
+  const avgComm = prods.length ? (prods.reduce((s,p)=>s+(p.taux_commission||0),0)/prods.length*100).toFixed(1) : "—";
+
+  const prodRows = prods.map(function(p,i) {
+    return '<tr style="'+(i%2?"background:var(--bg)":"")+';border-bottom:1px solid var(--borderL)">'
+      + '<td style="padding:6px 10px;font-weight:600;white-space:nowrap">'+esc(p.ref)+'</td>'
+      + '<td style="padding:6px 10px;color:var(--txS)">'+esc(p.nom_produit||"—")+'</td>'
+      + '<td style="padding:6px 10px;text-align:right">'+(p.prix!=null?p.prix+"€":"—")+'</td>'
+      + '<td style="padding:6px 10px;text-align:right">'+(p.taux_commission!=null?Math.round(p.taux_commission*100)+"%":"—")+'</td>'
+      + '</tr>';
+  }).join("");
+
+  const html = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">'
+    + '<div style="width:12px;height:12px;border-radius:50%;background:'+color+'"></div>'
+    + '<span style="padding:3px 10px;border-radius:99px;font-size:11px;font-weight:600;background:'+(isAct?"var(--gnBg)":"var(--rdBg)")+';color:'+(isAct?"var(--gn)":"var(--rd)")+'">'+( isAct?"● Actif":"○ Expiré")+'</span>'
+    + (op.type_ope ? '<span style="font-size:11px;color:var(--txS)">'+esc(op.type_ope)+'</span>' : "")
+    + '</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">'
+    + '<div style="background:var(--bg);border-radius:8px;padding:10px 12px"><div style="font-size:10px;color:var(--txS);text-transform:uppercase;margin-bottom:4px">Début</div><div style="font-size:13px;font-weight:600">'+fmtD(op.date_debut)+'</div></div>'
+    + '<div style="background:var(--bg);border-radius:8px;padding:10px 12px"><div style="font-size:10px;color:var(--txS);text-transform:uppercase;margin-bottom:4px">Fin</div><div style="font-size:13px;font-weight:600">'+fmtD(op.date_fin)+'</div></div>'
+    + '<div style="background:var(--bg);border-radius:8px;padding:10px 12px"><div style="font-size:10px;color:var(--txS);text-transform:uppercase;margin-bottom:4px">Commission moy.</div><div style="font-size:13px;font-weight:600">'+avgComm+'%</div></div>'
+    + '</div>'
+    + '<div style="font-size:12px;font-weight:600;color:var(--txS);text-transform:uppercase;margin-bottom:8px">'+prods.length+' produit'+(prods.length>1?"s":"")+'</div>'
+    + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+    + '<thead><tr style="background:var(--bg);border-bottom:1px solid var(--border)">'
+    + '<th style="padding:6px 10px;text-align:left">Réf</th>'
+    + '<th style="padding:6px 10px;text-align:left">Produit</th>'
+    + '<th style="padding:6px 10px;text-align:right">Prix</th>'
+    + '<th style="padding:6px 10px;text-align:right">Commission</th>'
+    + '</tr></thead><tbody>'+prodRows+'</tbody></table></div>'
+    + '<div style="display:flex;gap:8px;margin-top:14px">'
+    + '<button onclick="openOpeEdit('+id+')" style="padding:7px 14px;border:.5px solid var(--ac);border-radius:6px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">✏️ Modifier</button>'
+    + '<button onclick="deleteOpe('+id+')" style="padding:7px 14px;border:.5px solid var(--rd);border-radius:6px;font-size:12px;background:var(--rdBg);color:var(--rd);cursor:pointer;font-weight:600;font-family:inherit">🗑 Supprimer</button>'
+    + '</div>';
+
+  openModal("📋 "+esc(op.nom), html);
+}
+
+function openOpeHistory() {
+  const now = new Date();
+  const expired = opeData.filter(op => new Date(op.date_fin) < now);
+  if (!expired.length) {
+    openModal("Historique opérations", '<div style="padding:20px;text-align:center;color:var(--txT)">Aucune opération expirée.</div>');
+    return;
+  }
+  const rows = expired.map(function(op,i) {
+    const color = opeColor(op.id);
+    const fmtD = d => new Date(d).toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"2-digit"});
+    return '<tr style="'+(i%2?"background:var(--bg)":"")+';border-bottom:1px solid var(--borderL);cursor:pointer" onclick="openOpeDetail('+op.id+')">'
+      + '<td style="padding:8px 10px"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+color+';margin-right:6px"></span><span style="font-weight:600">'+esc(op.nom)+'</span></td>'
+      + '<td style="padding:8px 10px;color:var(--txS);font-size:11px">'+fmtD(op.date_debut)+' → '+fmtD(op.date_fin)+'</td>'
+      + '<td style="padding:8px 10px;color:var(--txS);font-size:11px">'+(op.type_ope||"—")+'</td>'
+      + '</tr>';
+  }).join("");
+
+  openModal("📦 Historique opérations ("+expired.length+")",
+    '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+    + '<thead><tr style="background:var(--bg);border-bottom:1px solid var(--border)">'
+    + '<th style="padding:8px 10px;text-align:left">Opération</th>'
+    + '<th style="padding:8px 10px;text-align:left">Période</th>'
+    + '<th style="padding:8px 10px;text-align:left">Type</th>'
+    + '</tr></thead><tbody>'+rows+'</tbody></table></div>');
+}
+
+function openOpeCreate(defaultMonth) {
+  const now = new Date();
+  const yr = now.getFullYear();
+  const mo = String(now.getMonth()+1).padStart(2,"0");
+  const defaultStart = defaultMonth ? defaultMonth+"-01" : yr+"-"+mo+"-01";
+  const defaultEnd = defaultMonth ? defaultMonth+"-28" : yr+"-"+mo+"-28";
+
+  openModal("Nouvelle opération", '<div style="display:grid;gap:10px">'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Nom de l\'opération *</label><input id="ope-nom" placeholder="ex: French Days" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Type</label><input id="ope-type" placeholder="ex: DEALS EXCLUSIFS" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Date début *</label><input id="ope-debut" type="date" value="'+defaultStart+'" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Date fin *</label><input id="ope-fin" type="date" value="'+defaultEnd+'" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '</div>'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Fichier Excel produits (optionnel)</label><input id="ope-file" type="file" accept=".xls,.xlsx" style="width:100%;padding:6px;border:.5px solid var(--border);border-radius:6px;font-size:11px;font-family:inherit;background:var(--card)"></div>'
+    + '<button onclick="confirmOpeCreate()" style="padding:10px;background:var(--ac);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Créer l\'opération</button>'
+    + '<div id="ope-status" style="font-size:12px;text-align:center;min-height:16px"></div>'
+    + '</div>');
+}
+
+async function confirmOpeCreate() {
+  const statusEl = document.getElementById("ope-status");
+  const nom = document.getElementById("ope-nom")?.value?.trim();
+  const type = document.getElementById("ope-type")?.value?.trim();
+  const debut = document.getElementById("ope-debut")?.value;
+  const fin = document.getElementById("ope-fin")?.value;
+  const file = document.getElementById("ope-file")?.files[0];
+
+  if (!nom || !debut || !fin) { statusEl.innerHTML='<span style="color:var(--rd)">Nom, date début et date fin obligatoires.</span>'; return; }
+  if (debut > fin) { statusEl.innerHTML='<span style="color:var(--rd)">La date de fin doit être après le début.</span>'; return; }
+
+  statusEl.innerHTML='<span style="color:var(--txS)">Création en cours...</span>';
+  try {
+    const ops = await sbInsert("commercial_operations", { marketplace: MARKETPLACE, nom, type_ope: type||null, date_debut: debut, date_fin: fin });
+    const opId = ops[0]?.id;
+
+    if (file && opId) {
+      statusEl.innerHTML='<span style="color:var(--txS)">Import produits...</span>';
+      const prods = await parseOpeXLS(file);
+      if (prods.length) {
+        const rows = prods.map(p => ({ operation_id: opId, marketplace: MARKETPLACE, ref: p.ref, nom_produit: p.nom, prix: p.prix, taux_commission: p.taux }));
+        await fetch(SB_URL+"/rest/v1/operation_products", {
+          method:"POST",
+          headers:{"Content-Type":"application/json",apikey:SB_KEY,Authorization:"Bearer "+SB_KEY,Prefer:"return=minimal"},
+          body:JSON.stringify(rows)
+        });
+      }
+    }
+
+    statusEl.innerHTML='<span style="color:var(--gn)">✓ Opération créée !</span>';
+    setTimeout(function(){ closeModal(); renderOpeCommerciales(); }, 800);
+  } catch(e) {
+    statusEl.innerHTML='<span style="color:var(--rd)">Erreur : '+e.message+'</span>';
+  }
+}
+
+function openOpeImport() {
+  openModal("Import Excel opération", '<div style="display:grid;gap:10px">'
+    + '<div style="background:var(--puBg);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--pu)">Format attendu : colonnes Ref enfant, Nom, Prix, Taux com, Opé, Début, Fin (à partir de la ligne 7).</div>'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Fichier Excel *</label><input id="ope-imp-file" type="file" accept=".xls,.xlsx" style="width:100%;padding:6px;border:.5px solid var(--border);border-radius:6px;font-size:11px;font-family:inherit;background:var(--card)"></div>'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Mot de passe admin *</label><input id="ope-imp-pwd" type="password" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '<button onclick="confirmOpeImport()" style="padding:10px;background:var(--pu);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">⬆ Importer</button>'
+    + '<div id="ope-imp-status" style="font-size:12px;text-align:center;min-height:16px"></div>'
+    + '</div>');
+}
+
+async function confirmOpeImport() {
+  const statusEl = document.getElementById("ope-imp-status");
+  const pwd = document.getElementById("ope-imp-pwd")?.value;
+  const file = document.getElementById("ope-imp-file")?.files[0];
+  if (pwd !== ADMIN_PASSWORD) { statusEl.innerHTML='<span style="color:var(--rd)">❌ Mot de passe incorrect.</span>'; return; }
+  if (!file) { statusEl.innerHTML='<span style="color:var(--rd)">Fichier obligatoire.</span>'; return; }
+  statusEl.innerHTML='<span style="color:var(--txS)">Lecture...</span>';
+  try {
+    const { ops, prods } = await parseOpeXLSFull(file);
+    if (!ops.length) { statusEl.innerHTML='<span style="color:var(--am)">Aucune opération trouvée.</span>'; return; }
+
+    for (const op of ops) {
+      const existing = await sb("commercial_operations", "marketplace=eq."+MARKETPLACE+"&nom=eq."+encodeURIComponent(op.nom)+"&date_debut=eq."+op.debut);
+      let opId;
+      if (existing.length) {
+        opId = existing[0].id;
+        await sbUpdate("commercial_operations", "id=eq."+opId, { date_fin: op.fin, type_ope: op.type||null, updated_at: new Date().toISOString() });
+        await sbDelete("operation_products", "operation_id=eq."+opId);
+      } else {
+        const created = await sbInsert("commercial_operations", { marketplace: MARKETPLACE, nom: op.nom, type_ope: op.type||null, date_debut: op.debut, date_fin: op.fin });
+        opId = created[0]?.id;
+      }
+      if (opId && op.prods.length) {
+        const rows = op.prods.map(p => ({ operation_id: opId, marketplace: MARKETPLACE, ref: p.ref, nom_produit: p.nom, prix: p.prix, taux_commission: p.taux }));
+        await fetch(SB_URL+"/rest/v1/operation_products", {
+          method:"POST",
+          headers:{"Content-Type":"application/json",apikey:SB_KEY,Authorization:"Bearer "+SB_KEY,Prefer:"return=minimal"},
+          body:JSON.stringify(rows)
+        });
+      }
+    }
+    statusEl.innerHTML='<span style="color:var(--gn)">✓ '+ops.length+' opération(s) importée(s).</span>';
+    setTimeout(function(){ closeModal(); renderOpeCommerciales(); }, 1000);
+  } catch(e) {
+    statusEl.innerHTML='<span style="color:var(--rd)">Erreur : '+e.message+'</span>';
+  }
+}
+
+async function parseOpeXLS(file) {
+  return new Promise(function(resolve, reject) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type:"array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null });
+        const result = [];
+        for (let i = 6; i < rows.length; i++) {
+          const r = rows[i];
+          if (!r || !r[1]) continue;
+          result.push({ ref: String(r[1]).trim(), nom: r[2]?String(r[2]).trim():null, prix: r[3]?parseFloat(r[3]):null, taux: r[4]?parseFloat(r[4]):null });
+        }
+        resolve(result);
+      } catch(e) { reject(e); }
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+async function parseOpeXLSFull(file) {
+  return new Promise(function(resolve, reject) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type:"array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null });
+        const typeOpe = rows[1]?.[1] ? String(rows[1][1]).split("-").pop().trim() : null;
+        const nomOpe = rows[2]?.[1] ? String(rows[2][1]).trim() : null;
+        const prods = [];
+        let debut = null, fin = null;
+        for (let i = 6; i < rows.length; i++) {
+          const r = rows[i];
+          if (!r || !r[1]) continue;
+          const d = r[6] ? (r[6] instanceof Date ? r[6].toISOString().slice(0,10) : String(r[6]).slice(0,10)) : null;
+          const f = r[7] ? (r[7] instanceof Date ? r[7].toISOString().slice(0,10) : String(r[7]).slice(0,10)) : null;
+          if (d && !debut) debut = d;
+          if (f) fin = f;
+          prods.push({ ref: String(r[1]).trim(), nom: r[2]?String(r[2]).trim():null, prix: r[3]?parseFloat(r[3]):null, taux: r[4]?parseFloat(r[4]):null });
+        }
+        if (!nomOpe || !debut || !fin) { resolve({ ops:[], prods:[] }); return; }
+        resolve({ ops:[{ nom: nomOpe, type: typeOpe, debut, fin, prods }], prods });
+      } catch(e) { reject(e); }
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+async function deleteOpe(id) {
+  if (!confirm("Supprimer cette opération et tous ses produits ?")) return;
+  try {
+    await sbDelete("commercial_operations", "id=eq."+id);
+    closeModal();
+    renderOpeCommerciales();
+  } catch(e) { alert("Erreur : "+e.message); }
+}
+
+function openOpeEdit(id) {
+  const op = opeData.find(o => o.id === id);
+  if (!op) return;
+  closeModal();
+  openModal("Modifier l'opération", '<div style="display:grid;gap:10px">'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Nom *</label><input id="ope-edit-nom" value="'+esc(op.nom)+'" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Type</label><input id="ope-edit-type" value="'+esc(op.type_ope||"")+'" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Date début</label><input id="ope-edit-debut" type="date" value="'+op.date_debut+'" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Date fin</label><input id="ope-edit-fin" type="date" value="'+op.date_fin+'" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '</div>'
+    + '<button onclick="confirmOpeEdit('+id+')" style="padding:10px;background:var(--ac);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Enregistrer</button>'
+    + '<div id="ope-edit-status" style="font-size:12px;text-align:center"></div>'
+    + '</div>');
+}
+
+async function confirmOpeEdit(id) {
+  const statusEl = document.getElementById("ope-edit-status");
+  const nom = document.getElementById("ope-edit-nom")?.value?.trim();
+  const type = document.getElementById("ope-edit-type")?.value?.trim();
+  const debut = document.getElementById("ope-edit-debut")?.value;
+  const fin = document.getElementById("ope-edit-fin")?.value;
+  if (!nom || !debut || !fin) { statusEl.innerHTML='<span style="color:var(--rd)">Champs obligatoires manquants.</span>'; return; }
+  try {
+    await sbUpdate("commercial_operations", "id=eq."+id, { nom, type_ope: type||null, date_debut: debut, date_fin: fin, updated_at: new Date().toISOString() });
+    statusEl.innerHTML='<span style="color:var(--gn)">✓ Modifié !</span>';
+    setTimeout(function(){ closeModal(); renderOpeCommerciales(); }, 600);
+  } catch(e) { statusEl.innerHTML='<span style="color:var(--rd)">Erreur : '+e.message+'</span>'; }
 }
   
 // Init
