@@ -655,21 +655,25 @@ function renderProductSalesBlocks() {
     const basket = (r.ca_ht && r.qty) ? Math.round(r.ca_ht / r.qty * 1.2) + "€" : "—";
     const bg = i%2 ? "background:var(--bg)" : "";
     return "<tr style='" + bg + ";border-bottom:1px solid var(--borderL)'>"
-      + "<td style='padding:5px 8px;font-weight:600;white-space:nowrap'>" + esc(r.ref) + "</td>"
-      + "<td style='padding:5px 8px;color:var(--txS);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap' title='" + esc(r.name) + "'>" + esc((r.name||"").slice(0,40)) + "</td>"
-      + "<td style='padding:5px 8px;text-align:right;font-weight:700'>" + r.qty + "</td>"
-      + "<td style='padding:5px 8px;text-align:right;color:var(--txS)'>" + basket + "</td>"
+      + "<td style='padding:5px 10px;font-weight:600;white-space:nowrap;width:90px'>" + esc(r.ref) + "</td>"
+      + "<td style='padding:5px 10px;color:var(--txS);width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap' title='" + esc(r.name) + "'>" + esc((r.name||"").slice(0,45)) + "</td>"
+      + "<td style='padding:5px 10px;text-align:right;font-weight:700;width:70px'>" + r.qty + "</td>"
+      + "<td style='padding:5px 10px;text-align:right;color:var(--txS);width:70px'>" + basket + "</td>"
+      + "<td style='padding:5px 10px;text-align:center;width:90px'><span style='font-size:10px;color:var(--txT)'>—</span></td>"
+      + "<td style='padding:5px 10px;text-align:center;width:90px'><span style='font-size:10px;color:var(--txT)'>—</span></td>"
       + "</tr>";
   }
 
   function salesTable(rows) {
     if (!rows.length) return "<div style='color:var(--txT);font-size:12px;padding:8px'>Aucune donnée</div>";
-    return "<div style='overflow-x:auto'><table style='width:100%;min-width:300px;border-collapse:collapse;font-size:12px'>"
+    return "<div style='overflow-x:auto'><table style='width:auto;border-collapse:collapse;font-size:12px'>"
       + "<thead><tr style='border-bottom:1px solid var(--border)'>"
-      + "<th style='padding:5px 8px;text-align:left;font-weight:600;color:var(--txS)'>Réf</th>"
-      + "<th style='padding:5px 8px;text-align:left;font-weight:600;color:var(--txS)'>Produit</th>"
-      + "<th style='padding:5px 8px;text-align:right;font-weight:600;color:var(--txS)'>Ventes</th>"
-      + "<th style='padding:5px 8px;text-align:right;font-weight:600;color:var(--txS)'>PM TTC</th>"
+      + "<th style='padding:5px 10px;text-align:left;font-weight:600;color:var(--txS);width:90px'>Réf</th>"
+      + "<th style='padding:5px 10px;text-align:left;font-weight:600;color:var(--txS);width:280px'>Produit</th>"
+      + "<th style='padding:5px 10px;text-align:right;font-weight:600;color:var(--txS);width:70px'>Ventes</th>"
+      + "<th style='padding:5px 10px;text-align:right;font-weight:600;color:var(--txS);width:70px'>PM TTC</th>"
+      + "<th style='padding:5px 10px;text-align:center;font-weight:600;color:var(--txS);width:90px'>Sponsorisé</th>"
+      + "<th style='padding:5px 10px;text-align:center;font-weight:600;color:var(--txS);width:90px'>SEA activé</th>"
       + "</tr></thead><tbody>"
       + rows.map(function(r,i) { return salesRow(r,i); }).join("")
       + "</tbody></table></div>";
