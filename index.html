@@ -3612,14 +3612,14 @@ async function parseOpeXLS(file) {
         for (let i = 6; i < rows.length; i++) {
           const r = rows[i];
           if (!r || !r[1]) continue;
-          const refVal = clean(r[1]);
-          if (!refVal) continue;
-          result.push({
-            ref: refVal,
-            nom: clean(r[2]),
-            prix: r[3] ? parseFloat(String(r[3]).replace(/[€\s]/g,"").replace(",",".")) : null,
-            taux: r[4] ? parseFloat(String(r[4]).replace(/[%\s]/g,"").replace(",",".")) : null
-          });
+          const refVal = clean(r[0]);
+if (!refVal) continue;
+result.push({
+  ref: refVal,
+  nom: clean(r[1]),
+  prix: r[2] ? parseFloat(String(r[2]).replace(/[€\s]/g,"").replace(",",".")) : null,
+  taux: r[3] ? parseFloat(String(r[3]).replace(/[%\s]/g,"").replace(",",".")) : null
+});
         }
         console.log("Premier produit parsé:", result[0]);
         resolve(result);
