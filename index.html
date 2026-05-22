@@ -3601,16 +3601,22 @@ async function parseOpeXLS(file) {
     const reader = new FileReader();
     reader.onload = function(e) {
       try {
-        const wb = XLSX.read(new Uint8Array(e.target.result), { type:"array" });
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type:"array", cellDates:true });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null });
+        const clean = s => s ? String(s).replace(/^'+|'+$/g,"").trim() : null;
         const result = [];
         for (let i = 6; i < rows.length; i++) {
           const r = rows[i];
           if (!r || !r[1]) continue;
-          const refVal = r[1] ? String(r[1]).trim() : null;
-if (!refVal) continue;
-result.push({ ref: refVal, nom: r[2]?String(r[2]).trim():null, prix: r[3]?parseFloat(String(r[3]).replace("€","").trim()):null, taux: r[4]?(parseFloat(String(r[4]).replace("%","").trim())/100):null });
+          const refVal = clean(r[1]);
+          if (!refVal) continue;
+          result.push({
+            ref: refVal,
+            nom: clean(r[2]),
+            prix: r[3] ? parseFloat(String(r[3]).replace(/[€\s]/g,"").replace(",",".")) : null,
+            taux: r[4] ? parseFloat(String(r[4]).replace(/[%\s]/g,"").replace(",","."))/100 : null
+          });
         }
         resolve(result);
       } catch(e) { reject(e); }
@@ -3625,25 +3631,50 @@ async function parseOpeXLSFull(file) {
     const reader = new FileReader();
     reader.onload = function(e) {
       try {
-        const wb = XLSX.read(new Uint8Array(e.target.result), { type:"array" });
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type:"array", cellDates:true });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null });
-        const typeOpe = rows[1]?.[1] ? String(rows[1][1]).split("-").pop().trim() : null;
-        const nomOpe = rows[2]?.[1] ? String(rows[2][1]).trim() : null;
-        // nomOpe sera "Prolongation French Days" — le type sera lu depuis col F des lignes produits
+        const clean = s => s ? String(s).replace(/^'+|'+$/g,"").trim() : null;
+        const parseDate = v => {
+          if (!v) return null;
+          if (v instanceof Date) return v.toISOString().slice(0,10);
+          const s = clean(v);
+          if (!s) return null;
+          if (s.match(/^\d{4}-\d{2}-\d{2}/)) return s.slice(0,10);
+          // Format DD/MM/YYYY
+          const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+          if (m) return (m[3].length===2?"20"+m[3]:m[3])+"-"+m[2].padStart(2,"0")+"-"+m[1].padStart(2,"0");
+          return null;
+        };
+        const typeOpe = clean(rows[1]?.[1])?.split("-").pop()?.trim() || null;
+        const nomOpe = clean(rows[2]?.[1]);
         const prods = [];
         let debut = null, fin = null;
         for (let i = 6; i < rows.length; i++) {
           const r = rows[i];
           if (!r || !r[1]) continue;
-          const d = r[6] ? (r[6] instanceof Date ? r[6].toISOString().slice(0,10) : String(r[6]).slice(0,10)) : null;
-          const f = r[7] ? (r[7] instanceof Date ? r[7].toISOString().slice(0,10) : String(r[7]).slice(0,10)) : null;
+          const d = parseDate(r[6]);
+          const f = parseDate(r[7]);
           if (d && !debut) debut = d;
           if (f) fin = f;
-          const refVal = r[1] ? String(r[1]).trim() : null;
-if (!refVal) continue;
-prods.push({ ref: refVal, nom: r[2]?String(r[2]).trim():null, prix: r[3]?parseFloat(String(r[3]).replace("€","").trim()):null, taux: r[4]?(parseFloat(String(r[4]).replace("%","").trim())/100):null });
+          const refVal = clean(r[1]);
+          if (!refVal) continue;
+          prods.push({
+            ref: refVal,
+            nom: clean(r[2]),
+            prix: r[3] ? parseFloat(String(r[3]).replace(/[€\s]/g,"").replace(",",".")) : null,
+            taux: r[4] ? parseFloat(String(r[4]).replace(/[%\s]/g,"").replace(",","."))/100 : null
+          });
         }
+        const finalNom = nomOpe || (rows[6]?.[5] ? clean(rows[6][5]) : null);
+        if (!finalNom || !debut || !fin) { resolve({ ops:[], prods:[] }); return; }
+        resolve({ ops:[{ nom: finalNom, type: typeOpe, debut, fin, prods }], prods });
+      } catch(e) { reject(e); }
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  });
+}
         // Fallback : utiliser le nom depuis col F si nomOpe vide
 const finalNom = nomOpe || (prods[0] ? String(rows[6]?.[5]||"").trim() : null);
 if (!finalNom || !debut || !fin) { resolve({ ops:[], prods:[] }); return; }
