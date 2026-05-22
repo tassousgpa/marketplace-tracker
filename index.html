@@ -521,24 +521,7 @@ async function loadData() {
     const positionsOutdated = !posDay || (snapshotDay && posDay < snapshotDay);
 
     STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, leaderCounts, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], revenueImports: revenueImports||[], monthlyHistory: monthlyHistory||[], activeOps: activeOps||[], activeOpProducts: activeOpProducts||[], productSalesWeekly: productSalesWeekly||[], tab:STATE.tab||0 };
-    // Helper : ref → nom du deal actif (ou null)
-   function getActiveDeal(sku) {
-     if (!sku || !STATE.activeOps || !STATE.activeOpProducts) return null;
-     const now = new Date();
-     const activeOpIds = new Set(
-    STATE.activeOps
-      .filter(op => new Date(op.date_debut) <= now && new Date(op.date_fin) >= now)
-      .map(op => op.id)
-    );
-     const match = STATE.activeOpProducts.find(p => 
-      p.ref === sku && activeOpIds.has(p.operation_id)
-    );
-    if (!match) return null;
-    const op = STATE.activeOps.find(o => o.id === match.operation_id);
-    return op ? op.nom : null;
-   }
 
-    
     const sessionDisplay = latestDate ? new Date(latestDate + "T12:00:00Z").toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}) : "N/A";
     document.getElementById("header-subtitle").textContent = `${products.length} produits · Relevé du ${sessionDisplay}`;
     renderTabs(); renderContent();
@@ -589,6 +572,23 @@ function openModal(title,html){document.getElementById("modal-title").textConten
 function closeModal(){document.getElementById("modal-overlay").classList.add("hidden")}
 const tagLabel=t=>({prix_up:"Prix ↑",prix_down:"Prix ↓",delai_up:"Délai ↑",delai_down:"Délai ↓",note_up:"Note ↑",note_down:"Note ↓"}[t]||t);
 const tagColor=t=>(t.includes("up")&&t!=="note_up")?"red":(t.includes("down")&&t!=="note_down")?"green":t==="note_up"?"green":"red";
+
+// Helper : ref → nom du deal actif (ou null)
+function getActiveDeal(sku) {
+  if (!sku || !STATE.activeOps || !STATE.activeOpProducts) return null;
+  const now = new Date();
+  const activeOpIds = new Set(
+    STATE.activeOps
+      .filter(op => new Date(op.date_debut) <= now && new Date(op.date_fin) >= now)
+      .map(op => op.id)
+  );
+  const match = STATE.activeOpProducts.find(p =>
+    p.ref === sku && activeOpIds.has(p.operation_id)
+  );
+  if (!match) return null;
+  const op = STATE.activeOps.find(o => o.id === match.operation_id);
+  return op ? op.nom : null;
+}
 
 // =============================================
 // TAB 0: SYNTHESE
