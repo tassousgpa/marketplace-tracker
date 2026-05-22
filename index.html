@@ -3675,16 +3675,7 @@ async function parseOpeXLSFull(file) {
     reader.readAsArrayBuffer(file);
   });
 }
-        // Fallback : utiliser le nom depuis col F si nomOpe vide
-const finalNom = nomOpe || (prods[0] ? String(rows[6]?.[5]||"").trim() : null);
-if (!finalNom || !debut || !fin) { resolve({ ops:[], prods:[] }); return; }
-        resolve({ ops:[{ nom: finalNom, type: typeOpe, debut, fin, prods }], prods });
-      } catch(e) { reject(e); }
-    };
-    reader.onerror = reject;
-    reader.readAsArrayBuffer(file);
-  });
-}
+        
 
 async function deleteOpe(id) {
   if (!confirm("Supprimer cette opération et tous ses produits ?")) return;
