@@ -3617,6 +3617,7 @@ async function parseOpeXLS(file) {
             taux: r[4] ? parseFloat(String(r[4]).replace(/[%\s]/g,"").replace(",",".")) : null
           });
         }
+        console.log("Premier produit parsé:", result[0]);
         resolve(result);
       } catch(e) { reject(e); }
     };
