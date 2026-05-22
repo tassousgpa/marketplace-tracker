@@ -301,8 +301,8 @@ function normalizeKeyword(kw) {
   return kw;
 }
 
-const TAB_NAMES = ["Synthèse","Produits","Historique","Positions","Concurrents","Anomalies","Audit","Opé. Commerciales","Gestion"];
-const TAB_NAMES_LIGHT = ["Synthèse","Produits","Historique","Anomalies","Audit","Opé. Commerciales","Gestion"];
+const TAB_NAMES = ["Synthèse","Produits","Historique","Positions","Concurrents","Anomalies","Audit","Opé. Commerciales","SEA","Gestion"];
+const TAB_NAMES_LIGHT = ["Synthèse","Produits","Historique","Anomalies","Audit","Opé. Commerciales","SEA","Gestion"];
 
 function isLightMp() { return NO_POSITIONS_MP.has(MARKETPLACE); }
 function getTabNames() { return isLightMp() ? TAB_NAMES_LIGHT : TAB_NAMES; }
@@ -322,7 +322,7 @@ async function loadData() {
     // Évite le problème de la limite 5000 qui tronquerait les premiers keywords.
     // La table positions ne contient que le dernier run (purge côté scraper avant chaque session)
     // → select * sans filtre ni limite, requête simple et fiable
-    const [products, allProducts, snapshots, positions, sellerStats, revenueEntries, trackedSellers, revenueImports, productSalesWeekly, monthlyHistory, activeOps, activeOpProducts] = await Promise.all([
+    const [products, allProducts, snapshots, positions, sellerStats, revenueEntries, trackedSellers, revenueImports, productSalesWeekly, monthlyHistory, activeOps, activeOpProducts, seaCampaigns, seaProductStats] = await Promise.all([
       sb("products", `marketplace=eq.${MARKETPLACE}&active=eq.true&select=*&order=product_id`),
       sb("products", `marketplace=eq.${MARKETPLACE}&select=*&order=product_id`),
       sb("product_snapshots", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=10000`),
@@ -335,6 +335,8 @@ async function loadData() {
       sb("revenue_monthly_history", `marketplace=eq.${MARKETPLACE}&select=year,month,revenue&order=year.asc,month.asc`).catch(()=>[]),
       sb("commercial_operations", "marketplace=eq."+MARKETPLACE+"&select=*").catch(()=>[]),
       sb("operation_products", "marketplace=eq."+MARKETPLACE+"&select=ref,operation_id").catch(()=>[]),
+      sb("sea_campaigns_general", "marketplace=eq."+MARKETPLACE+"&select=*&order=date_debut.desc").catch(()=>[]),
+      sb("sea_product_stats", "marketplace=eq."+MARKETPLACE+"&select=ref,period_start,period_end,period_label,period_type,budget,impressions,clics,conversions&order=period_start.desc").catch(()=>[]),
     ]);
 
     // Mettre à jour le cache de scraping avec les données fraîchement chargées
@@ -520,7 +522,7 @@ async function loadData() {
     console.log("DEBUG positions:", MARKETPLACE, "snapshotDay=", snapshotDay, "posDay=", posDay, "latestDate=", latestDate, "latestPosDay=", latestPosDay);
     const positionsOutdated = !posDay || (snapshotDay && posDay < snapshotDay);
 
-    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, leaderCounts, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], revenueImports: revenueImports||[], monthlyHistory: monthlyHistory||[], activeOps: activeOps||[], activeOpProducts: activeOpProducts||[], productSalesWeekly: productSalesWeekly||[], tab:STATE.tab||0 };
+    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, leaderCounts, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], revenueImports: revenueImports||[], monthlyHistory: monthlyHistory||[], activeOps: activeOps||[], activeOpProducts: activeOpProducts||[], productSalesWeekly: productSalesWeekly||[], seaCampaigns: seaCampaigns||[], seaProductStats: seaProductStats||[], tab:STATE.tab||0 };
 
     const sessionDisplay = latestDate ? new Date(latestDate + "T12:00:00Z").toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}) : "N/A";
     document.getElementById("header-subtitle").textContent = `${products.length} produits · Relevé du ${sessionDisplay}`;
@@ -546,7 +548,8 @@ function renderContent() {
       case 3: el.innerHTML=renderAnomalies(); break;
       case 4: renderAudit(); break;
       case 5: renderOpeCommerciales(); break;
-      case 6: el.innerHTML=renderGestion(); break;
+      case 6: renderSEA(); break;
+      case 7: el.innerHTML=renderGestion(); break;
       default: el.innerHTML='';
     }
     return;
@@ -560,7 +563,8 @@ function renderContent() {
     case 5: el.innerHTML=renderAnomalies(); break;
     case 6: renderAudit(); break;
     case 7: renderOpeCommerciales(); break;
-    case 8: el.innerHTML=renderGestion(); break;
+    case 8: renderSEA(); break;
+    case 9: el.innerHTML=renderGestion(); break;
   }
 }
 
@@ -609,6 +613,12 @@ function getActiveDealForWeek(sku, weekLabel) {
   if (!match) return null;
   const op = STATE.activeOps.find(o => o.id === match.operation_id);
   return op ? op.nom : null;
+}
+
+// Helper : sku + weekLabel → true si le produit a des données SEA cette semaine
+function getSeaActive(sku, weekLabel) {
+  if (!sku || !weekLabel || !STATE.seaProductStats) return false;
+  return (STATE.seaProductStats).some(function(r) { return r.ref === sku && r.period_label === weekLabel; });
 }
 
 // =============================================
@@ -702,7 +712,7 @@ function renderProductSalesBlocks() {
       + "<td style='padding:5px 10px;text-align:right;font-weight:700;width:70px'>" + r.qty + "</td>"
       + "<td style='padding:5px 10px;text-align:right;color:var(--txS);width:70px'>" + basket + "</td>"
       + "<td style='padding:5px 10px;text-align:center;width:90px'>"+(getActiveDealForWeek(r.ref, currentWeek)?'<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:#fff3e0;color:#e65100">✓ Deal</span>':'<span style="font-size:10px;color:var(--txT)">—</span>')+"</td>"
-      + "<td style='padding:5px 10px;text-align:center;width:90px'><span style='font-size:10px;color:var(--txT)'>—</span></td>"
+      + "<td style='padding:5px 10px;text-align:center;width:90px'>"+(getSeaActive(r.ref, currentWeek)?'<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:var(--amBg);color:var(--am)">⚡ SEA</span>':'<span style="font-size:10px;color:var(--txT)">—</span>')+"</td>"
       + "</tr>";
   }
 
@@ -3782,6 +3792,442 @@ async function confirmOpeEdit(id) {
   } catch(e) { statusEl.innerHTML='<span style="color:var(--rd)">Erreur : '+e.message+'</span>'; }
 }
   
+// =============================================
+// TAB SEA — CAMPAGNES & PRODUITS SPONSORISÉS
+// =============================================
+let seaSortCol = 'budget';
+let seaSortDir = 'desc';
+
+function seaGrade(ctr, tauxConv) {
+  if (ctr >= 0.8 && tauxConv >= 5) return 'A';
+  if (ctr >= 0.5 && tauxConv >= 3) return 'B';
+  if (ctr >= 0.3 && tauxConv >= 1) return 'C';
+  return 'D';
+}
+function seaGradeColor(g) {
+  if (g === 'A') return 'green';
+  if (g === 'B') return 'accent';
+  if (g === 'C') return 'amber';
+  return 'red';
+}
+
+async function renderSEA() {
+  var el = document.getElementById("content");
+  el.innerHTML = buildSEACampaignsHTML() + renderSEAProductsTable();
+}
+
+function buildSEACampaignsHTML() {
+  var campaigns = STATE.seaCampaigns || [];
+  var now = new Date();
+  var months = [];
+  for (var i = 0; i < 6; i++) {
+    var d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    months.push({ year: d.getFullYear(), month: d.getMonth(), label: d.toLocaleDateString("fr-FR", {month:"long", year:"numeric"}) });
+  }
+  var OPE_COLORS_SEA = ["#2c5ea0","#e8963a","#2e9e6b","#c0392b","#8e44ad","#16a085","#d35400","#e74c3c","#27ae60","#2980b9"];
+  function isActiveCamp(c) { return new Date(c.date_debut) <= now && new Date(c.date_fin) >= now; }
+  var active = campaigns.filter(isActiveCamp);
+  var future = campaigns.filter(function(c) { return new Date(c.date_debut) > now; });
+  var totalBudget = campaigns.reduce(function(s,c) { return s+(c.budget||0); }, 0);
+  var totalImp = campaigns.reduce(function(s,c) { return s+(c.impressions||0); }, 0);
+  var totalClics = campaigns.reduce(function(s,c) { return s+(c.clics||0); }, 0);
+  var ctrGlobal = totalImp > 0 ? (totalClics/totalImp*100).toFixed(2) : null;
+
+  var kpis = '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px">'
+    + '<div class="metric"><div class="metric-label">Campagnes actives</div><div class="metric-value" style="color:var(--gn)">'+active.length+'</div></div>'
+    + '<div class="metric"><div class="metric-label">A venir</div><div class="metric-value" style="color:var(--ac)">'+future.length+'</div></div>'
+    + '<div class="metric"><div class="metric-label">Budget total</div><div class="metric-value" style="color:var(--am)">'+(totalBudget?Math.round(totalBudget).toLocaleString("fr-FR")+"€":"—")+'</div></div>'
+    + '<div class="metric"><div class="metric-label">CTR global</div><div class="metric-value">'+(ctrGlobal!=null?ctrGlobal+"%":"—")+'</div></div>'
+    + '</div>';
+
+  var COL_W = 180, LEFT_W = 60, ROW_H = 60, HEADER_H = 72, BAR_H = 34;
+  var timelineOps = campaigns.filter(function(c) {
+    var fin = new Date(c.date_fin);
+    var start = new Date(months[0].year, months[0].month, 1);
+    var end = new Date(months[5].year, months[5].month + 1, 0);
+    return fin >= start && new Date(c.date_debut) <= end;
+  });
+  var timelineH = Math.max(timelineOps.length * ROW_H + HEADER_H + 20, HEADER_H + 60);
+  var totalW = LEFT_W + COL_W * 6;
+  var timelineStart = new Date(months[0].year, months[0].month, 1);
+  var timelineEnd = new Date(months[5].year, months[5].month + 1, 0);
+  var totalDays = (timelineEnd - timelineStart) / 86400000;
+
+  var svg = '<svg viewBox="0 0 '+totalW+' '+timelineH+'" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block;font-family:DM Sans,sans-serif">';
+  svg += '<rect x="0" y="0" width="'+totalW+'" height="'+HEADER_H+'" fill="#f0eee9" rx="0"/>';
+  svg += '<rect x="0" y="0" width="'+LEFT_W+'" height="'+timelineH+'" fill="#fafaf8"/>';
+  svg += '<text x="'+(LEFT_W/2)+'" y="22" text-anchor="middle" font-size="10" fill="#6b6a65" font-weight="600">CAMP.</text>';
+  months.forEach(function(m, mi) {
+    var x = LEFT_W + mi * COL_W;
+    var isCur = (m.year === now.getFullYear() && m.month === now.getMonth());
+    var ac = isCur ? "#2c5ea0" : "#6b6a65";
+    svg += '<rect x="'+x+'" y="0" width="'+COL_W+'" height="'+HEADER_H+'" fill="'+(isCur?"#e8f0fa":"#f0eee9")+'"/>';
+    svg += '<text x="'+(x+COL_W/2)+'" y="22" text-anchor="middle" font-size="12" fill="'+(isCur?"#2c5ea0":"#1a1a18")+'" font-weight="700">'+m.label.charAt(0).toUpperCase()+m.label.slice(1)+'</text>';
+    svg += '<rect x="'+(x+COL_W/2-14)+'" y="36" width="28" height="22" rx="6" fill="'+ac+'" opacity="0.12" style="cursor:pointer" onclick="openSEACreate(\''+m.year+'-'+String(m.month+1).padStart(2,'0')+'\')"/>';
+    svg += '<text x="'+(x+COL_W/2)+'" y="52" text-anchor="middle" font-size="15" fill="'+ac+'" font-weight="700" style="cursor:pointer" onclick="openSEACreate(\''+m.year+'-'+String(m.month+1).padStart(2,'0')+'\')">+</text>';
+    svg += '<line x1="'+x+'" y1="0" x2="'+x+'" y2="'+timelineH+'" stroke="#e8e6e1" stroke-width="1"/>';
+  });
+  svg += '<line x1="0" y1="'+HEADER_H+'" x2="'+totalW+'" y2="'+HEADER_H+'" stroke="#e8e6e1" stroke-width="1.5"/>';
+  var todayX = LEFT_W + (now.getDate() / new Date(now.getFullYear(), now.getMonth()+1, 0).getDate()) * COL_W;
+  svg += '<line x1="'+todayX+'" y1="'+HEADER_H+'" x2="'+todayX+'" y2="'+timelineH+'" stroke="#e8963a" stroke-width="1.5" stroke-dasharray="4,3"/>';
+  svg += '<circle cx="'+todayX+'" cy="'+(HEADER_H+6)+'" r="4" fill="#e8963a"/>';
+  timelineOps.forEach(function(c, ri) {
+    var color = OPE_COLORS_SEA[c.id % OPE_COLORS_SEA.length];
+    var isAct = isActiveCamp(c);
+    var debut = new Date(Math.max(new Date(c.date_debut), timelineStart));
+    var fin = new Date(Math.min(new Date(c.date_fin), timelineEnd));
+    var x1 = LEFT_W + ((debut - timelineStart) / 86400000 / totalDays) * (COL_W * 6);
+    var x2 = LEFT_W + ((fin - timelineStart + 86400000) / 86400000 / totalDays) * (COL_W * 6);
+    var w = Math.max(x2 - x1, 30);
+    var cy = HEADER_H + ROW_H / 2 + ri * ROW_H;
+    svg += '<rect x="'+x1.toFixed(1)+'" y="'+(cy-BAR_H/2).toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+BAR_H+'" rx="6" fill="'+color+'" opacity="'+(isAct?1:0.5)+'" style="cursor:pointer" onclick="openSEACampaignDetail('+c.id+')"/>';
+    var maxChars = Math.floor(w / 6.5);
+    var nom = c.nom.length > maxChars ? c.nom.slice(0, Math.max(1, maxChars-1))+"..." : c.nom;
+    svg += '<text x="'+(x1+8).toFixed(1)+'" y="'+(cy-4).toFixed(1)+'" font-size="11" fill="#fff" font-weight="600">'+esc(nom)+'</text>';
+    if (w > 40) {
+      var statusLabel = isAct ? "● Actif" : (new Date(c.date_debut) > now ? "○ A venir" : "○ Expire");
+      var sub = statusLabel + (c.budget ? " · "+Math.round(c.budget)+"€" : "");
+      svg += '<text x="'+(x1+8).toFixed(1)+'" y="'+(cy+11).toFixed(1)+'" font-size="9" fill="#fff" opacity="0.85">'+sub+'</text>';
+    }
+  });
+  if (!timelineOps.length) {
+    svg += '<text x="'+(totalW/2)+'" y="'+(HEADER_H+50)+'" text-anchor="middle" font-size="12" fill="#9c9a92">Aucune campagne sur cette periode — cliquez + pour creer</text>';
+  }
+  svg += '</svg>';
+
+  // Cartes campagnes actives / à venir
+  var cards = '';
+  if (active.length || future.length) {
+    var fmtD = function(dt) { return new Date(dt).toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit"}); };
+    function seaCard(c) {
+      var isAct = isActiveCamp(c);
+      var color = OPE_COLORS_SEA[c.id % OPE_COLORS_SEA.length];
+      var ctr = (c.impressions && c.clics) ? (c.clics/c.impressions*100).toFixed(2)+"%" : "—";
+      return '<div style="background:var(--card);border:.5px solid var(--border);border-radius:10px;padding:14px 16px;min-width:200px;flex:1;cursor:pointer;border-left:4px solid '+color+'" onclick="openSEACampaignDetail('+c.id+')">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
+        + '<div style="font-size:13px;font-weight:700">'+esc(c.nom)+'</div>'
+        + '<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:'+(isAct?"var(--gnBg)":"var(--acBg)")+';color:'+(isAct?"var(--gn)":"var(--ac)")+'">'+( isAct?"● Actif":"A venir")+'</span>'
+        + '</div>'
+        + '<div style="font-size:11px;color:var(--txS);margin-bottom:6px">'+fmtD(c.date_debut)+' → '+fmtD(c.date_fin)+'</div>'
+        + '<div style="display:flex;gap:12px;font-size:11px;color:var(--txS)">'
+        + (c.budget ? '<span>'+Math.round(c.budget).toLocaleString("fr-FR")+'€</span>' : '')
+        + (c.impressions ? '<span>'+c.impressions.toLocaleString("fr-FR")+' imp.</span>' : '')
+        + '<span>CTR '+ctr+'</span>'
+        + '</div></div>';
+    }
+    if (active.length) cards += '<div style="margin-top:16px"><div style="font-size:13px;font-weight:700;margin-bottom:10px">Campagnes actives</div><div style="display:flex;gap:10px;flex-wrap:wrap">'+active.map(seaCard).join("")+'</div></div>';
+    if (future.length) cards += '<div style="margin-top:16px"><div style="font-size:13px;font-weight:700;margin-bottom:10px">A venir</div><div style="display:flex;gap:10px;flex-wrap:wrap">'+future.map(seaCard).join("")+'</div></div>';
+  }
+
+  var actions = '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">'
+    + '<button onclick="openSEACreate(null)" style="padding:7px 16px;border:.5px solid var(--ac);border-radius:8px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">+ Nouvelle campagne</button>'
+    + '<button onclick="openSEAImport()" style="padding:7px 16px;border:.5px solid var(--pu);border-radius:8px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">Import SEA</button>'
+    + '</div>';
+
+  var mpLabel = (MARKETPLACES.find(function(m){return m.id===MARKETPLACE;})||{label:MARKETPLACE}).label;
+  return '<div style="font-size:15px;font-weight:700;margin-bottom:16px">SEA — '+mpLabel+'</div>'
+    + kpis + actions
+    + '<div class="card" style="padding:0;overflow:hidden"><div style="overflow-x:auto">'+svg+'</div></div>'
+    + cards;
+}
+
+function renderSEAProductsTable() {
+  var stats = STATE.seaProductStats || [];
+  if (!stats.length) return '<div class="card" style="margin-top:20px;padding:24px;text-align:center;color:var(--txT);font-size:13px">Aucune donnee SEA produits. Importez un fichier via Import SEA.</div>';
+  var curYear = new Date().getFullYear();
+  var aggMap = {};
+  stats.forEach(function(r) {
+    if (!r.period_start || String(r.period_start).slice(0,4) !== String(curYear)) return;
+    if (!aggMap[r.ref]) aggMap[r.ref] = { ref: r.ref, budget: 0, impressions: 0, clics: 0, conversions: 0 };
+    aggMap[r.ref].budget += r.budget || 0;
+    aggMap[r.ref].impressions += r.impressions || 0;
+    aggMap[r.ref].clics += r.clics || 0;
+    aggMap[r.ref].conversions += r.conversions || 0;
+  });
+  var skuToName = {};
+  (STATE.products||[]).forEach(function(p) { if (p.sku) skuToName[p.sku] = p.name; });
+  var rows = Object.values(aggMap).map(function(r) {
+    var ctr = r.impressions > 0 ? r.clics / r.impressions * 100 : 0;
+    var tauxConv = r.clics > 0 ? r.conversions / r.clics * 100 : 0;
+    return Object.assign({}, r, { ctr: ctr, tauxConv: tauxConv, grade: seaGrade(ctr, tauxConv), name: skuToName[r.ref] || "" });
+  });
+  rows.sort(function(a, b) {
+    var va = a[seaSortCol] !== undefined ? a[seaSortCol] : 0;
+    var vb = b[seaSortCol] !== undefined ? b[seaSortCol] : 0;
+    if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb||"").toLowerCase(); }
+    if (seaSortDir === 'asc') return va < vb ? -1 : va > vb ? 1 : 0;
+    return va > vb ? -1 : va < vb ? 1 : 0;
+  });
+  function si(col) { return seaSortCol === col ? (seaSortDir === 'asc' ? ' ↑' : ' ↓') : ''; }
+  function th(col, label, align) {
+    return '<th style="cursor:pointer;padding:8px 10px;font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;letter-spacing:.03em;white-space:nowrap;text-align:'+(align||'right')+'" onclick="toggleSeaSort(\''+col+'\')">'+label+si(col)+'</th>';
+  }
+  var tbody = rows.map(function(r, i) {
+    var ctrFmt = r.impressions > 0 ? r.ctr.toFixed(2)+"%" : "—";
+    var convFmt = r.clics > 0 ? r.tauxConv.toFixed(2)+"%" : "—";
+    return '<tr style="'+(i%2?"background:var(--bg)":"")+';border-bottom:1px solid var(--borderL);cursor:pointer" onclick="openSEAProductDetail(\''+esc(r.ref)+'\')">'
+      + '<td style="padding:7px 10px;font-weight:600;white-space:nowrap">'+esc(r.ref)+'</td>'
+      + '<td style="padding:7px 10px;color:var(--txS);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r.name)+'</td>'
+      + '<td style="padding:7px 10px;text-align:right;font-weight:600">'+(r.budget?Math.round(r.budget).toLocaleString("fr-FR")+"€":"—")+'</td>'
+      + '<td style="padding:7px 10px;text-align:right">'+(r.impressions?r.impressions.toLocaleString("fr-FR"):"—")+'</td>'
+      + '<td style="padding:7px 10px;text-align:right">'+(r.clics?r.clics.toLocaleString("fr-FR"):"—")+'</td>'
+      + '<td style="padding:7px 10px;text-align:right">'+(r.conversions||0)+'</td>'
+      + '<td style="padding:7px 10px;text-align:right;font-weight:500">'+ctrFmt+'</td>'
+      + '<td style="padding:7px 10px;text-align:right;font-weight:500">'+convFmt+'</td>'
+      + '<td style="padding:7px 10px;text-align:center">'+pill(r.grade, seaGradeColor(r.grade))+'</td>'
+      + '</tr>';
+  }).join("");
+  return '<div style="margin-top:20px">'
+    + '<div style="font-size:13px;font-weight:700;margin-bottom:12px">Produits sponsorisés — YTD '+curYear+'</div>'
+    + '<div class="card" style="padding:0;overflow:hidden"><div class="scroll-table"><table style="min-width:900px">'
+    + '<thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)">'
+    + th('ref','Ref','left')+th('name','Produit','left')
+    + th('budget','Budget YTD')+th('impressions','Impressions')+th('clics','Clics')+th('conversions','Conversions')
+    + th('ctr','CTR%')+th('tauxConv','Taux conv%')
+    + '<th style="padding:8px 10px;font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;text-align:center">Note</th>'
+    + '</tr></thead><tbody>'+tbody+'</tbody></table></div></div></div>';
+}
+
+function toggleSeaSort(col) {
+  if (seaSortCol === col) seaSortDir = seaSortDir === 'asc' ? 'desc' : 'asc';
+  else { seaSortCol = col; seaSortDir = 'desc'; }
+  renderSEA();
+}
+
+async function openSEAProductDetail(ref) {
+  var stats = (STATE.seaProductStats||[]).filter(function(r) { return r.ref === ref; });
+  if (!stats.length) { openModal("Detail SEA — "+ref, '<div style="padding:20px;text-align:center;color:var(--txT)">Aucune donnee disponible.</div>'); return; }
+  var months = stats.filter(function(r) { return r.period_type === 'month'; }).sort(function(a,b) { return a.period_start > b.period_start ? 1 : -1; });
+  var weeks = stats.filter(function(r) { return r.period_type === 'week'; }).sort(function(a,b) { return a.period_start > b.period_start ? 1 : -1; });
+  function fmtNum(v) { return v != null ? Number(v).toLocaleString("fr-FR") : "—"; }
+  function rowHtml(r, indent) {
+    var ctr = r.impressions > 0 ? (r.clics/r.impressions*100).toFixed(2)+"%" : "—";
+    var conv = r.clics > 0 ? (r.conversions/r.clics*100).toFixed(2)+"%" : "—";
+    return '<tr style="'+(indent?"background:var(--bg)":"")+';border-bottom:1px solid var(--borderL)">'
+      + '<td style="padding:5px 10px;font-size:11px;color:var(--txS);padding-left:'+(indent?20:10)+'px">'+esc(r.period_label||r.period_start)+'</td>'
+      + '<td style="padding:5px 10px;text-align:right;font-weight:'+(indent?400:600)+'">'+(r.budget?Math.round(r.budget).toLocaleString("fr-FR")+"€":"—")+'</td>'
+      + '<td style="padding:5px 10px;text-align:right">'+fmtNum(r.impressions)+'</td>'
+      + '<td style="padding:5px 10px;text-align:right">'+fmtNum(r.clics)+'</td>'
+      + '<td style="padding:5px 10px;text-align:right">'+fmtNum(r.conversions)+'</td>'
+      + '<td style="padding:5px 10px;text-align:right">'+ctr+'</td>'
+      + '<td style="padding:5px 10px;text-align:right">'+conv+'</td>'
+      + '</tr>';
+  }
+  var html = '<div class="scroll-table"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+    + '<thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)">'
+    + '<th style="padding:6px 10px;text-align:left;font-weight:600;color:var(--txS)">Periode</th>'
+    + '<th style="padding:6px 10px;text-align:right;font-weight:600;color:var(--txS)">Budget</th>'
+    + '<th style="padding:6px 10px;text-align:right;font-weight:600;color:var(--txS)">Impressions</th>'
+    + '<th style="padding:6px 10px;text-align:right;font-weight:600;color:var(--txS)">Clics</th>'
+    + '<th style="padding:6px 10px;text-align:right;font-weight:600;color:var(--txS)">Conversions</th>'
+    + '<th style="padding:6px 10px;text-align:right;font-weight:600;color:var(--txS)">CTR%</th>'
+    + '<th style="padding:6px 10px;text-align:right;font-weight:600;color:var(--txS)">Conv%</th>'
+    + '</tr></thead><tbody>';
+  if (months.length) {
+    months.forEach(function(m) {
+      html += rowHtml(m, false);
+      weeks.filter(function(w) { return w.period_start >= m.period_start && w.period_end <= m.period_end; })
+           .forEach(function(w) { html += rowHtml(w, true); });
+    });
+  } else {
+    weeks.forEach(function(w) { html += rowHtml(w, false); });
+  }
+  html += '</tbody></table></div>';
+  var skuToName = {};
+  (STATE.products||[]).forEach(function(p) { if (p.sku) skuToName[p.sku] = p.name; });
+  openModal("Detail SEA — "+ref+(skuToName[ref] ? " — "+skuToName[ref] : ""), html);
+}
+
+function openSEACampaignDetail(id) {
+  var c = (STATE.seaCampaigns||[]).find(function(x) { return x.id === id; });
+  if (!c) return;
+  var now = new Date();
+  var isAct = new Date(c.date_debut) <= now && new Date(c.date_fin) >= now;
+  var fmtD = function(dt) { return new Date(dt).toLocaleDateString("fr-FR",{day:"2-digit",month:"long",year:"numeric"}); };
+  var ctr = (c.impressions && c.clics) ? (c.clics/c.impressions*100).toFixed(2)+"%" : "—";
+  var tauxConv = (c.clics && c.conversions) ? (c.conversions/c.clics*100).toFixed(2)+"%" : "—";
+  var fmtNum = function(v) { return v != null ? Number(v).toLocaleString("fr-FR") : "—"; };
+  var html = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">'
+    + '<span style="padding:3px 10px;border-radius:99px;font-size:11px;font-weight:600;background:'+(isAct?"var(--gnBg)":"var(--rdBg)")+';color:'+(isAct?"var(--gn)":"var(--rd)")+'">'+( isAct?"● Actif":"○ Expire")+'</span>'
+    + '</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">'
+    + '<div style="font-size:12px;color:var(--txS)">Du <strong>'+fmtD(c.date_debut)+'</strong> au <strong>'+fmtD(c.date_fin)+'</strong></div>'
+    + '<div style="font-size:12px;color:var(--txS)">Budget : <strong>'+(c.budget?Math.round(c.budget).toLocaleString("fr-FR")+"€":"—")+'</strong></div>'
+    + '</div>'
+    + '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">'
+    + '<div style="background:var(--bg);border-radius:8px;padding:10px;text-align:center"><div style="font-size:10px;color:var(--txS);margin-bottom:4px">Impressions</div><div style="font-size:18px;font-weight:700">'+fmtNum(c.impressions)+'</div></div>'
+    + '<div style="background:var(--bg);border-radius:8px;padding:10px;text-align:center"><div style="font-size:10px;color:var(--txS);margin-bottom:4px">Clics</div><div style="font-size:18px;font-weight:700">'+fmtNum(c.clics)+'</div></div>'
+    + '<div style="background:var(--bg);border-radius:8px;padding:10px;text-align:center"><div style="font-size:10px;color:var(--txS);margin-bottom:4px">CTR</div><div style="font-size:18px;font-weight:700">'+ctr+'</div></div>'
+    + '<div style="background:var(--bg);border-radius:8px;padding:10px;text-align:center"><div style="font-size:10px;color:var(--txS);margin-bottom:4px">Conversions</div><div style="font-size:18px;font-weight:700">'+fmtNum(c.conversions)+'</div></div>'
+    + '</div>'
+    + '<button onclick="confirmSEADelete('+id+')" style="padding:7px 14px;border:.5px solid var(--rd);border-radius:6px;font-size:12px;background:var(--rdBg);color:var(--rd);cursor:pointer;font-family:inherit">Supprimer</button>';
+  openModal("Campagne : "+esc(c.nom), html);
+}
+
+async function confirmSEADelete(id) {
+  if (!confirm("Supprimer cette campagne ?")) return;
+  try {
+    await sbDelete("sea_campaigns_general", "id=eq."+id);
+    STATE.seaCampaigns = (STATE.seaCampaigns||[]).filter(function(c) { return c.id !== id; });
+    closeModal();
+    renderSEA();
+  } catch(e) { alert("Erreur : "+e.message); }
+}
+
+function openSEACreate(monthStr) {
+  var today = new Date().toISOString().slice(0,10);
+  var defaultStart = monthStr ? monthStr+"-01" : today;
+  var defaultEnd = monthStr ? monthStr+"-28" : today;
+  openModal("Nouvelle campagne SEA", '<div style="display:grid;gap:10px">'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Nom *</label><input id="sea-nom" placeholder="ex: Campagne Canapes Mai" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Date debut *</label><input id="sea-debut" type="date" value="'+defaultStart+'" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Date fin *</label><input id="sea-fin" type="date" value="'+defaultEnd+'" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Budget (€)</label><input id="sea-budget" type="number" placeholder="ex: 500" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Conversions</label><input id="sea-conv" type="number" placeholder="ex: 12" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Impressions</label><input id="sea-imp" type="number" placeholder="ex: 50000" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Clics</label><input id="sea-clics" type="number" placeholder="ex: 400" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '</div>'
+    + '<button onclick="confirmSEACreate()" style="padding:10px;background:var(--ac);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Enregistrer</button>'
+    + '<div id="sea-status" style="font-size:12px;text-align:center;min-height:16px"></div>'
+    + '</div>');
+}
+
+async function confirmSEACreate() {
+  var statusEl = document.getElementById("sea-status");
+  var nom = document.getElementById("sea-nom")?.value?.trim();
+  var debut = document.getElementById("sea-debut")?.value;
+  var fin = document.getElementById("sea-fin")?.value;
+  var budget = parseFloat(document.getElementById("sea-budget")?.value) || null;
+  var impressions = parseInt(document.getElementById("sea-imp")?.value) || null;
+  var clics = parseInt(document.getElementById("sea-clics")?.value) || null;
+  var conversions = parseInt(document.getElementById("sea-conv")?.value) || null;
+  if (!nom || !debut || !fin) { statusEl.innerHTML='<span style="color:var(--rd)">Nom, debut et fin obligatoires.</span>'; return; }
+  statusEl.innerHTML='<span style="color:var(--txS)">Enregistrement...</span>';
+  try {
+    var result = await sbInsert("sea_campaigns_general", { marketplace: MARKETPLACE, nom: nom, date_debut: debut, date_fin: fin, budget: budget, impressions: impressions, clics: clics, conversions: conversions });
+    STATE.seaCampaigns = (STATE.seaCampaigns||[]).concat(result);
+    statusEl.innerHTML='<span style="color:var(--gn)">✓ Campagne creee !</span>';
+    setTimeout(function() { closeModal(); renderSEA(); }, 700);
+  } catch(e) { statusEl.innerHTML='<span style="color:var(--rd)">Erreur : '+e.message+'</span>'; }
+}
+
+function openSEAImport() {
+  var today = new Date().toISOString().slice(0,10);
+  openModal("Import SEA — Produits sponsorisés", '<div style="display:grid;gap:10px">'
+    + '<div style="background:var(--acBg);border-radius:8px;padding:10px 12px;font-size:11px;color:var(--ac)">Formats : <b>Cdiscount</b> SKU|Lib|Imp|Clics|CTR|Dep|CPC|Conv · <b>MdM</b> idx|OfferSKU|ProdSKU|Nom|Cat|Marque|Imp|Clics|Dep|Conv · <b>BUT</b> team|...|ref|prod|displays|views|clicks|ctr|vctr|spend|sales</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Type de periode *</label><select id="sea-imp-type" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"><option value="week">Semaine</option><option value="month">Mois</option></select></div>'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Label periode *</label><input id="sea-imp-label" placeholder="ex: S20 2026" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Date debut *</label><input id="sea-imp-debut" type="date" value="'+today+'" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Date fin *</label><input id="sea-imp-fin" type="date" value="'+today+'" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '</div>'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Fichier Excel *</label><input id="sea-imp-file" type="file" accept=".xls,.xlsx" style="width:100%;padding:6px;border:.5px solid var(--border);border-radius:6px;font-size:11px;font-family:inherit;background:var(--card)"></div>'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Mot de passe admin *</label><input id="sea-imp-pwd" type="password" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '<button onclick="confirmSEAImport()" style="padding:10px;background:var(--pu);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Importer</button>'
+    + '<div id="sea-imp-status" style="font-size:12px;text-align:center;min-height:16px"></div>'
+    + '</div>');
+}
+
+async function confirmSEAImport() {
+  var statusEl = document.getElementById("sea-imp-status");
+  var pwd = document.getElementById("sea-imp-pwd")?.value;
+  var file = document.getElementById("sea-imp-file")?.files[0];
+  var periodType = document.getElementById("sea-imp-type")?.value;
+  var label = document.getElementById("sea-imp-label")?.value?.trim();
+  var debut = document.getElementById("sea-imp-debut")?.value;
+  var fin = document.getElementById("sea-imp-fin")?.value;
+  if (pwd !== ADMIN_PASSWORD) { statusEl.innerHTML='<span style="color:var(--rd)">Mot de passe incorrect.</span>'; return; }
+  if (!file || !label || !debut || !fin) { statusEl.innerHTML='<span style="color:var(--rd)">Tous les champs sont obligatoires.</span>'; return; }
+  statusEl.innerHTML='<span style="color:var(--txS)">Lecture du fichier...</span>';
+  try {
+    var rows = await parseSEAXLS(file);
+    if (!rows.length) { statusEl.innerHTML='<span style="color:var(--am)">Aucune ligne reconnue dans le fichier.</span>'; return; }
+    // Détection doublons
+    var existingQ = periodType === 'month'
+      ? "marketplace=eq."+MARKETPLACE+"&period_start=gte."+debut+"&period_end=lte."+fin+"&period_type=eq.week&select=id"
+      : "marketplace=eq."+MARKETPLACE+"&period_start=eq."+debut+"&period_type=eq.week&select=id";
+    var existing = await sb("sea_product_stats", existingQ);
+    if (existing.length > 0) {
+      if (!confirm(existing.length+" entrees existantes seront remplacees. Continuer ?")) { statusEl.innerHTML=''; return; }
+      var delQ = periodType === 'month'
+        ? "marketplace=eq."+MARKETPLACE+"&period_start=gte."+debut+"&period_end=lte."+fin+"&period_type=eq.week"
+        : "marketplace=eq."+MARKETPLACE+"&period_start=eq."+debut+"&period_type=eq.week";
+      await sbDelete("sea_product_stats", delQ);
+    }
+    statusEl.innerHTML='<span style="color:var(--txS)">Import de '+rows.length+' lignes...</span>';
+    var insertRows = rows.map(function(r) {
+      return { marketplace: MARKETPLACE, ref: r.ref, period_start: debut, period_end: fin, period_type: periodType, period_label: label, budget: r.budget, impressions: r.impressions, clics: r.clics, conversions: r.conversions };
+    });
+    for (var i = 0; i < insertRows.length; i += 200) {
+      await fetch(SB_URL+"/rest/v1/sea_product_stats", {
+        method:"POST",
+        headers:{"Content-Type":"application/json",apikey:SB_KEY,Authorization:"Bearer "+SB_KEY,Prefer:"return=minimal"},
+        body:JSON.stringify(insertRows.slice(i, i+200))
+      });
+    }
+    statusEl.innerHTML='<span style="color:var(--gn)">'+rows.length+' produits importes !</span>';
+    setTimeout(function() { closeModal(); loadData(); }, 1000);
+  } catch(e) { statusEl.innerHTML='<span style="color:var(--rd)">Erreur : '+e.message+'</span>'; }
+}
+
+async function parseSEAXLS(file) {
+  return new Promise(function(resolve, reject) {
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        var wb = XLSX.read(e.target.result, { type: 'binary' });
+        var ws = wb.Sheets[wb.SheetNames[0]];
+        var data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+        var dataRows = data.slice(1).filter(function(r) { return r[0] !== '' && r[0] != null; });
+        var mp = MARKETPLACE;
+        var results = [];
+        var aggMap = {};
+        var eanToSku = {}, scraperToSku = {};
+        (STATE.products||[]).forEach(function(p) {
+          if (p.ean && p.sku && p.marketplace === mp) eanToSku[p.ean] = p.sku;
+          if (p.product_id_scraper && p.sku && p.marketplace === mp) scraperToSku[p.product_id_scraper] = p.sku;
+        });
+        function pf(v) { return parseFloat(String(v||"").replace(/\s/g,'').replace(',','.')) || 0; }
+        dataRows.forEach(function(r) {
+          var ref, imp, clics, budget, conv;
+          if (mp === 'maisonsdumonde') {
+            ref = scraperToSku[String(r[2]||"").trim()] || null;
+            imp = pf(r[6]); clics = pf(r[7]); budget = pf(r[8]); conv = pf(r[9]);
+          } else if (mp === 'but') {
+            var rawRef = String(r[9]||"").trim();
+            var eanBut = rawRef.includes("_") ? rawRef.split("_").slice(1).join("_") : rawRef;
+            ref = eanToSku[eanBut] || null;
+            imp = pf(r[11]); clics = pf(r[13]); budget = pf(r[16]); conv = 0;
+          } else {
+            var rawSku = String(r[0]||"").trim();
+            var ean = rawSku.replace("BES","");
+            ref = eanToSku[ean] || (rawSku && !rawSku.startsWith("BES") ? rawSku : null);
+            imp = pf(r[2]); clics = pf(r[3]); budget = pf(r[5]); conv = pf(r[7]);
+          }
+          if (!ref) return;
+          if (mp === 'but') {
+            if (!aggMap[ref]) aggMap[ref] = { ref:ref, impressions:0, clics:0, budget:0, conversions:0 };
+            aggMap[ref].impressions += imp; aggMap[ref].clics += clics; aggMap[ref].budget += budget;
+          } else {
+            results.push({ ref:ref, impressions:imp, clics:clics, budget:budget, conversions:conv });
+          }
+        });
+        if (mp === 'but') Object.values(aggMap).forEach(function(v) { results.push(v); });
+        resolve(results);
+      } catch(err) { reject(err); }
+    };
+    reader.onerror = reject;
+    reader.readAsBinaryString(file);
+  });
+}
+
 // Init
 if (MAINTENANCE_MODE) {
   const stored = sessionStorage.getItem("admin_access");
