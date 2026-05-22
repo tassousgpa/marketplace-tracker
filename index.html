@@ -590,6 +590,27 @@ function getActiveDeal(sku) {
   return op ? op.nom : null;
 }
 
+// Helper : ref → nom du deal actif pendant la semaine identifiée par weekLabel (ex: "S19 2026")
+function getActiveDealForWeek(sku, weekLabel) {
+  if (!sku || !weekLabel || !STATE.activeOps || !STATE.activeOpProducts) return null;
+  const weekRow = (STATE.productSalesWeekly || []).find(r => r.week_label === weekLabel && r.period_start);
+  if (!weekRow) return null;
+  const weekStart = new Date(weekRow.period_start);
+  const weekEnd = new Date(weekRow.period_start);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+  const activeOpIds = new Set(
+    STATE.activeOps
+      .filter(op => new Date(op.date_debut) <= weekEnd && new Date(op.date_fin) >= weekStart)
+      .map(op => op.id)
+  );
+  const match = STATE.activeOpProducts.find(p =>
+    p.ref === sku && activeOpIds.has(p.operation_id)
+  );
+  if (!match) return null;
+  const op = STATE.activeOps.find(o => o.id === match.operation_id);
+  return op ? op.nom : null;
+}
+
 // =============================================
 // TAB 0: SYNTHESE
 // =============================================
@@ -672,7 +693,7 @@ function renderProductSalesBlocks() {
   });
   Object.keys(skuToPriceIndex).forEach(k => { skuToPriceIndex[k] = skuToPriceIndex[k].price; });
 
-  function salesRow(r, i) {
+  function salesRow(r, i, currentWeek) {
     const basket = (r.ca_ht && r.qty) ? Math.round(r.ca_ht / r.qty * 1.2) + "€" : "—";
     const bg = i%2 ? "background:var(--bg)" : "";
     return "<tr style='" + bg + ";border-bottom:1px solid var(--borderL)'>"
@@ -680,12 +701,12 @@ function renderProductSalesBlocks() {
       + "<td style='padding:5px 10px;color:var(--txS);width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap' title='" + esc(r.name) + "'>" + esc((r.name||"").slice(0,45)) + "</td>"
       + "<td style='padding:5px 10px;text-align:right;font-weight:700;width:70px'>" + r.qty + "</td>"
       + "<td style='padding:5px 10px;text-align:right;color:var(--txS);width:70px'>" + basket + "</td>"
-      + "<td style='padding:5px 10px;text-align:center;width:90px'>"+(getActiveDeal(r.ref)?'<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:#fff3e0;color:#e65100">✓ Deal</span>':'<span style="font-size:10px;color:var(--txT)">—</span>')+"</td>"
+      + "<td style='padding:5px 10px;text-align:center;width:90px'>"+(getActiveDealForWeek(r.ref, currentWeek)?'<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:#fff3e0;color:#e65100">✓ Deal</span>':'<span style="font-size:10px;color:var(--txT)">—</span>')+"</td>"
       + "<td style='padding:5px 10px;text-align:center;width:90px'><span style='font-size:10px;color:var(--txT)'>—</span></td>"
       + "</tr>";
   }
 
-  function salesTable(rows) {
+  function salesTable(rows, weekLabel) {
     if (!rows.length) return "<div style='color:var(--txT);font-size:12px;padding:8px'>Aucune donnée</div>";
     return "<div style='overflow-x:auto'><table style='width:auto;border-collapse:collapse;font-size:12px'>"
       + "<thead><tr style='border-bottom:1px solid var(--border)'>"
@@ -696,7 +717,7 @@ function renderProductSalesBlocks() {
       + "<th style='padding:5px 10px;text-align:center;font-weight:600;color:var(--txS);width:90px'>Sponsorisé</th>"
       + "<th style='padding:5px 10px;text-align:center;font-weight:600;color:var(--txS);width:90px'>SEA activé</th>"
       + "</tr></thead><tbody>"
-      + rows.map(function(r,i) { return salesRow(r,i); }).join("")
+      + rows.map(function(r,i) { return salesRow(r, i, weekLabel); }).join("")
       + "</tbody></table></div>";
   }
 
@@ -705,7 +726,7 @@ function renderProductSalesBlocks() {
     const top10 = [...wSales].sort((a,b) => b.qty - a.qty).slice(0,10);
     return "<details style='margin-top:6px'>"
       + "<summary style='cursor:pointer;font-size:11px;color:var(--txS);font-weight:600;padding:4px 0'>Top 10 — " + w + "</summary>"
-      + "<div style='margin-top:6px'>" + salesTable(top10) + "</div>"
+      + "<div style='margin-top:6px'>" + salesTable(top10, w) + "</div>"
       + "</details>";
   }).join("");
 
@@ -713,7 +734,7 @@ function renderProductSalesBlocks() {
     + "<div style='font-size:13px;font-weight:700;margin-bottom:12px'>📦 Ventes produits — " + latestWeek + "</div>"
     + "<div class='card' style='padding:14px'>"
     + "<div class='card-title' style='margin-bottom:10px'>🏆 Top 10 ventes " + latestWeek + "</div>"
-    + salesTable(top10Sales)
+    + salesTable(top10Sales, latestWeek)
     + (histBlocks ? "<div style='border-top:1px solid var(--borderL);margin-top:10px;padding-top:6px'>" + histBlocks + "</div>" : "")
     + "</div>"
     + "</div>";
