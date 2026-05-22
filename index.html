@@ -3614,7 +3614,7 @@ async function parseOpeXLS(file) {
             ref: refVal,
             nom: clean(r[2]),
             prix: r[3] ? parseFloat(String(r[3]).replace(/[€\s]/g,"").replace(",",".")) : null,
-            taux: r[4] ? parseFloat(String(r[4]).replace(/[%\s]/g,"").replace(",","."))/100 : null
+            taux: r[4] ? parseFloat(String(r[4]).replace(/[%\s]/g,"").replace(",",".")) : null
           });
         }
         resolve(result);
