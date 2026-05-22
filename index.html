@@ -2148,6 +2148,8 @@ async function parseXLSFile(file) {
         const wb = XLSX.read(data, { type: "array" });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+        console.log("Row 7:", rows[6]);
+        console.log("Row 8:", rows[7]);
 
         // Agréger par marketplace
         const totals = {};
