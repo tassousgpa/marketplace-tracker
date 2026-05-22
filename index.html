@@ -3630,6 +3630,7 @@ async function parseOpeXLSFull(file) {
         const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null });
         const typeOpe = rows[1]?.[1] ? String(rows[1][1]).split("-").pop().trim() : null;
         const nomOpe = rows[2]?.[1] ? String(rows[2][1]).trim() : null;
+        // nomOpe sera "Prolongation French Days" — le type sera lu depuis col F des lignes produits
         const prods = [];
         let debut = null, fin = null;
         for (let i = 6; i < rows.length; i++) {
@@ -3643,8 +3644,10 @@ async function parseOpeXLSFull(file) {
 if (!refVal) continue;
 prods.push({ ref: refVal, nom: r[2]?String(r[2]).trim():null, prix: r[3]?parseFloat(String(r[3]).replace("€","").trim()):null, taux: r[4]?(parseFloat(String(r[4]).replace("%","").trim())/100):null });
         }
-        if (!nomOpe || !debut || !fin) { resolve({ ops:[], prods:[] }); return; }
-        resolve({ ops:[{ nom: nomOpe, type: typeOpe, debut, fin, prods }], prods });
+        // Fallback : utiliser le nom depuis col F si nomOpe vide
+const finalNom = nomOpe || (prods[0] ? String(rows[6]?.[5]||"").trim() : null);
+if (!finalNom || !debut || !fin) { resolve({ ops:[], prods:[] }); return; }
+        resolve({ ops:[{ nom: finalNom, type: typeOpe, debut, fin, prods }], prods });
       } catch(e) { reject(e); }
     };
     reader.onerror = reject;
