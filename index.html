@@ -403,7 +403,7 @@ async function loadData() {
       .filter(p => p.date && dayKey(p.date) === latestPosDay)
       .sort((a, b) => new Date(b.date) - new Date(a.date)) // plus récent en premier
       .forEach(p => {
-        const dedupeKey = (p.keyword||"") + "||" + (p.product_id||"") + "||" + (p.seller||"");
+        const dedupeKey = (p.keyword||"") + "||" + (p.product_id||"") + "||" + (p.seller||"") + "||" + (p.url||"");
         if (!posSeenKey.has(dedupeKey)) {
           posSeenKey.add(dedupeKey);
           latestPositions.push(p);
@@ -1351,10 +1351,8 @@ function isProductUrl(url, marketplace) {
 function showCompetitorProducts(el) {
   const kw = el.getAttribute('data-kw');
   const seller = el.getAttribute('data-seller');
-  const items = (STATE.positions || []).filter(function(i) {
-    return normalizeKeyword(i.keyword).toLowerCase() === kw.toLowerCase()
-      && i.seller === seller
-      && isProductUrl(i.url, MARKETPLACE);
+  const items = (STATE.keywordData[kw] || []).filter(function(i) {
+    return i.seller === seller && isProductUrl(i.url, MARKETPLACE);
   });
   items.sort(function(a, b) { return (a.position || 99) - (b.position || 99); });
   const title = seller + ' — ' + kw + ' (' + items.length + ' produit' + (items.length > 1 ? 's' : '') + ')';
