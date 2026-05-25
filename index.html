@@ -1342,7 +1342,7 @@ function isProductUrl(url, marketplace) {
   if (marketplace === 'laredoute')
     return clean.includes('/produit/') || clean.includes('/p-');
   if (marketplace === 'but')
-    return clean.includes('/p/') || clean.includes('/produit/');
+    return clean.includes('/produits/') || clean.includes('/p/') || clean.includes('/produit/');
   if (marketplace === 'manomano')
     return clean.includes('/p/') || clean.includes('/product/');
   return true;
@@ -1352,7 +1352,7 @@ function showCompetitorProducts(el) {
   const kw = el.getAttribute('data-kw');
   const seller = el.getAttribute('data-seller');
   const items = (STATE.positions || []).filter(function(i) {
-    return normalizeKeyword(i.keyword) === kw
+    return normalizeKeyword(i.keyword).toLowerCase() === kw.toLowerCase()
       && i.seller === seller
       && isProductUrl(i.url, MARKETPLACE);
   });
