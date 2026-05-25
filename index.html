@@ -1200,7 +1200,7 @@ function renderPositions() {
       <div class="metric"><div class="metric-label">Total apparitions P1</div><div class="metric-value" style="color:var(--gn)">${totalBM}</div></div>
     </div>
     <div class="card"><div class="card-title">Présence BestMobilier par catégorie</div>
-      <div class="cat-grid">${keywords.map(kw=>{const c=STATE.bmByKeyword[kw]||0;return`<div class="cat-card ${c===0?'cat-card-zero':''}" onclick="showPositionDetail('${esc(kw)}')"><div class="cat-card-header"><span class="cat-card-name">${esc(kw)}</span><span class="cat-card-count">${c}</span></div>${c>0?`<div style="margin-top:5px;height:4px;background:var(--borderL);border-radius:2px;overflow:hidden"><div style="height:100%;width:${Math.min(c/(maxBM+1)*100,100)}%;background:var(--ac);border-radius:2px"></div></div>`:''}</div>`;}).join("")}</div>
+      <div class="cat-grid">${keywords.map(kw=>{const c=STATE.bmByKeyword[kw]||0;const BM_S=new Set(['BestMobilier','Best Mobilier','Lisa Design']);const spo=(STATE.keywordData[kw]||[]).filter(i=>(BM_S.has(i.seller)||(STATE.bmScraperIds&&STATE.bmScraperIds.has((i.product_id||'').toLowerCase())))&&i.is_sponsored===true).length;return'<div class="cat-card '+(c===0?'cat-card-zero':'')+'" onclick="showPositionDetail(\''+esc(kw)+'\')">'+'<div class="cat-card-header"><span class="cat-card-name">'+esc(kw)+'</span><span class="cat-card-count">'+c+'</span></div>'+(spo>0?'<div style="font-size:10px;color:var(--am);margin-top:2px">dont '+spo+' sponsorisé'+(spo>1?'s':'')+'</div>':'')+(c>0?'<div style="margin-top:5px;height:4px;background:var(--borderL);border-radius:2px;overflow:hidden"><div style="height:100%;width:'+Math.min(c/(maxBM+1)*100,100)+'%;background:var(--ac);border-radius:2px"></div></div>':'')+'</div>';}).join('')}</div>
       ${!keywords.length?'<div style="color:var(--txT);font-size:12px;padding:20px;text-align:center">Aucune donnée de position disponible.</div>':''}
     </div>
     <div class="card"><div class="card-title">Leader par catégorie</div><div class="grid-2">${(()=>{
@@ -1210,7 +1210,7 @@ function renderPositions() {
         const sellers = lc[kw] || {};
         const sorted = Object.entries(sellers).sort((a,b) => b[1]-a[1]).slice(0,3);
         const bmC = STATE.bmByKeyword[kw] || 0;
-        return `<div style="padding:8px 12px;border-bottom:1px solid var(--borderL)"><div style="font-size:13px;font-weight:500;margin-bottom:4px">${esc(kw)}</div><div style="display:flex;gap:4px;flex-wrap:wrap">${sorted.map((s,i)=>pill(`${medals[i]} ${s[0]} (${s[1]})`,["BestMobilier","Best Mobilier","Lisa Design"].includes(s[0])?"accent":s[0]==="Conforama"?"purple":"default")).join("")}${bmC>0&&!sorted.find(s=>["BestMobilier","Best Mobilier","Lisa Design"].includes(s[0]))?pill(`BM: ${bmC}`,"accent"):''}</div></div>`;
+        return '<div style="padding:8px 12px;border-bottom:1px solid var(--borderL)"><div style="font-size:13px;font-weight:500;margin-bottom:4px">'+esc(kw)+'</div><div style="display:flex;gap:4px;flex-wrap:wrap">'+sorted.map((s,idx)=>{const isBM=['BestMobilier','Best Mobilier','Lisa Design'].includes(s[0]);const color=isBM?'accent':s[0]==='Conforama'?'purple':'default';return'<span style="cursor:pointer" data-kw="'+esc(kw)+'" data-seller="'+esc(s[0])+'" onclick="showCompetitorProducts(this)">'+pill(medals[idx]+' '+s[0]+' ('+s[1]+')',color)+'</span>';}).join('')+(bmC>0&&!sorted.find(s=>['BestMobilier','Best Mobilier','Lisa Design'].includes(s[0]))?pill('BM: '+bmC,'accent'):'')+'</div></div>';
       }).join("");
     })()}</div></div>
     ${renderMarketplaceDominance()}`;
@@ -1308,16 +1308,53 @@ function renderPositions() {
     const tracked = STATE.trackedByScraperId?.[(i.product_id||"").toLowerCase()];
     if (tracked) return productRowHTML(tracked);
     // Fallback : afficher les infos de la position directement
-    return `<div class="product-row">
-      <div class="product-row-name">${esc(i.product_id)}</div>
-      <div class="product-row-refs">
-        <span>Position: ${i.position||'—'}</span>
-        <span>Vendeur: ${esc(i.seller)}</span>
-        ${i.url ? `<a href="${esc(i.url)}" target="_blank" class="link">Voir ↗</a>` : ''}
-      </div>
-    </div>`;
+    return '<div class="product-row">'
+      + '<div class="product-row-name">'+esc(i.product_id)+'</div>'
+      + '<div class="product-row-refs">'
+      + '<span>Position: '+(i.position||'—')+'</span>'
+      + '<span>Vendeur: '+esc(i.seller)+'</span>'
+      + (i.url ? '<a href="'+esc(i.url)+'" target="_blank" class="link">Voir ↗</a>' : '')
+      + (i.is_sponsored===true ? ' <span style="display:inline-block;padding:2px 7px;border-radius:99px;font-size:11px;font-weight:600;background:#fff3e0;color:#e65100">⚡ Sponso</span>' : '')
+      + '</div>'
+      + '</div>';
   }).join("");
   openModal(`Produits BM en page 1 — ${kw} (${bmItems.length})`, html);
+}
+
+function showCompetitorProducts(el) {
+  const kw = el.getAttribute('data-kw');
+  const seller = el.getAttribute('data-seller');
+  const items = (STATE.positions || []).filter(function(i) {
+    return normalizeKeyword(i.keyword) === kw
+      && i.seller === seller
+      && i.url
+      && (/\/maison\//.test(i.url) || /\/f-/.test(i.url));
+  });
+  items.sort(function(a, b) { return (a.position || 99) - (b.position || 99); });
+  const title = seller + ' — ' + kw + ' (' + items.length + ' produit' + (items.length > 1 ? 's' : '') + ')';
+  if (!items.length) {
+    openModal(title, '<div style="padding:20px;text-align:center;color:var(--txT)">Aucune fiche produit disponible pour ce vendeur sur ce keyword.</div>');
+    return;
+  }
+  function extractName(url) {
+    const s = url.replace(/\?.*/, '').replace(/#.*/, '').replace(/\/$/, '');
+    return (s.split('/').pop() || '').replace(/-/g, ' ');
+  }
+  const rows = items.map(function(i) {
+    const name = extractName(i.url || '');
+    const spoTag = i.is_sponsored === true
+      ? ' <span style="display:inline-block;padding:2px 7px;border-radius:99px;font-size:11px;font-weight:600;background:#fff3e0;color:#e65100">⚡ Sponso</span>'
+      : '';
+    return '<div style="display:flex;align-items:baseline;gap:12px;padding:8px 0;border-bottom:1px solid var(--borderL)">'
+      + '<span style="font-size:13px;font-weight:700;color:var(--ac);min-width:28px">#' + (i.position || '?') + '</span>'
+      + '<div style="flex:1;min-width:0">'
+      + '<div style="font-size:11px;color:var(--txS);margin-bottom:2px">' + esc(i.product_id || '—') + '</div>'
+      + '<div style="font-size:13px;font-weight:500;word-break:break-word">' + esc(name) + '</div>'
+      + '</div>'
+      + (i.url ? '<div style="white-space:nowrap"><a href="' + esc(i.url) + '" target="_blank" class="link">Voir ↗</a>' + spoTag + '</div>' : '')
+      + '</div>';
+  }).join('');
+  openModal(title, '<div style="padding:4px 0">' + rows + '</div>');
 }
 
 // =============================================
