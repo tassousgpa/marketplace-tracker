@@ -1321,14 +1321,40 @@ function renderPositions() {
   openModal(`Produits BM en page 1 — ${kw} (${bmItems.length})`, html);
 }
 
+function cleanUrl(url) {
+  if (!url) return null;
+  const doubled = url.match(/(https?:\/\/[^\/]+)(https?:\/\/.+)/);
+  if (doubled) return doubled[2];
+  return url;
+}
+
+function isProductUrl(url, marketplace) {
+  if (!url) return false;
+  const clean = cleanUrl(url);
+  if (marketplace === 'cdiscount')
+    return clean.includes('/maison/') || clean.includes('/f-');
+  if (marketplace === 'maisonsdumonde')
+    return clean.includes('/FR/fr/p/') || clean.includes('/fr/p/');
+  if (marketplace === 'amazon')
+    return clean.includes('/dp/') || clean.includes('/gp/product/');
+  if (marketplace === 'conforama')
+    return clean.includes('/p/');
+  if (marketplace === 'laredoute')
+    return clean.includes('/produit/') || clean.includes('/p-');
+  if (marketplace === 'but')
+    return clean.includes('/p/') || clean.includes('/produit/');
+  if (marketplace === 'manomano')
+    return clean.includes('/p/') || clean.includes('/product/');
+  return true;
+}
+
 function showCompetitorProducts(el) {
   const kw = el.getAttribute('data-kw');
   const seller = el.getAttribute('data-seller');
   const items = (STATE.positions || []).filter(function(i) {
     return normalizeKeyword(i.keyword) === kw
       && i.seller === seller
-      && i.url
-      && (/\/maison\//.test(i.url) || /\/f-/.test(i.url));
+      && isProductUrl(i.url, MARKETPLACE);
   });
   items.sort(function(a, b) { return (a.position || 99) - (b.position || 99); });
   const title = seller + ' — ' + kw + ' (' + items.length + ' produit' + (items.length > 1 ? 's' : '') + ')';
@@ -1341,7 +1367,8 @@ function showCompetitorProducts(el) {
     return (s.split('/').pop() || '').replace(/-/g, ' ');
   }
   const rows = items.map(function(i) {
-    const name = extractName(i.url || '');
+    const url = cleanUrl(i.url) || '';
+    const name = extractName(url);
     const spoTag = i.is_sponsored === true
       ? ' <span style="display:inline-block;padding:2px 7px;border-radius:99px;font-size:11px;font-weight:600;background:#fff3e0;color:#e65100">⚡ Sponso</span>'
       : '';
@@ -1351,7 +1378,7 @@ function showCompetitorProducts(el) {
       + '<div style="font-size:11px;color:var(--txS);margin-bottom:2px">' + esc(i.product_id || '—') + '</div>'
       + '<div style="font-size:13px;font-weight:500;word-break:break-word">' + esc(name) + '</div>'
       + '</div>'
-      + (i.url ? '<div style="white-space:nowrap"><a href="' + esc(i.url) + '" target="_blank" class="link">Voir ↗</a>' + spoTag + '</div>' : '')
+      + (url ? '<div style="white-space:nowrap"><a href="' + esc(url) + '" target="_blank" class="link">Voir ↗</a>' + spoTag + '</div>' : '')
       + '</div>';
   }).join('');
   openModal(title, '<div style="padding:4px 0">' + rows + '</div>');
