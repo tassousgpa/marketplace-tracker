@@ -1015,7 +1015,7 @@ let prodFilters={search:"",type:"all",avail:"all",page1:"all",tag:"all",sort:"na
 let exportSessions = 4;
 let filterOnlySales = false;
 let filterOnlyDeal = false;
-function renderProduits() {
+function buildProduitsTableHTML() {
   const f=prodFilters; let list=[...STATE.products];
   if(f.search){const s=f.search.toLowerCase();list=list.filter(p=>p.name.toLowerCase().includes(s)||p.product_id.includes(s)||(p.sku||"").toLowerCase().includes(s));}
   if(f.type!=="all")list=list.filter(p=>p.type===f.type);
@@ -1025,17 +1025,10 @@ function renderProduits() {
   if(f.page1==="no")list=list.filter(p=>!STATE.productsInPage1.has((p.product_id_scraper||"").toLowerCase()));
   if(f.tag!=="all")list=list.filter(p=>p._tags.includes(f.tag));
   if(filterOnlySales)list=list.filter(p=>(STATE.productSalesWeekly||[]).some(r=>r.ref===p.sku&&r.qty>0));
+  if(filterOnlyDeal)list=list.filter(p=>getActiveDeal(p.sku));
   list.sort((a,b)=>{let va,vb;switch(f.sort){case"price":va=a._price||0;vb=b._price||0;break;case"rating":va=a._rating||0;vb=b._rating||0;break;case"delivery":va=a._delivery||999;vb=b._delivery||999;break;default:va=a.name;vb=b.name;}return f.dir==="asc"?(va<vb?-1:1):(va>vb?-1:1);});
   const si=col=>f.sort===col?(f.dir==="asc"?" ↑":" ↓"):"";
   return `
-    <div class="filters">
-      <input placeholder="Rechercher..." value="${esc(f.search)}" oninput="prodFilters.search=this.value;renderContent()"/>
-      <select onchange="prodFilters.type=this.value;renderContent()"><option value="all">Tous types</option><option value="Classe A" ${f.type==='Classe A'?'selected':''}>Classe A</option><option value="Nouveautés Q4+Q1" ${f.type==='Nouveautés Q4+Q1'?'selected':''}>Nouveautés</option><option value="Deals exclus" ${f.type==='Deals exclus'?'selected':''}>Deals exclus</option></select>
-      <select onchange="prodFilters.avail=this.value;renderContent()"><option value="all">Dispo + Indispo</option><option value="dispo" ${f.avail==='dispo'?'selected':''}>Disponible</option><option value="indispo" ${f.avail==='indispo'?'selected':''}>Indisponible</option></select>
-      <select onchange="prodFilters.page1=this.value;renderContent()"><option value="all">Toutes positions</option><option value="yes" ${f.page1==='yes'?'selected':''}>En page 1</option><option value="no" ${f.page1==='no'?'selected':''}>Pas en page 1</option></select>
-      <select onchange="prodFilters.tag=this.value;renderContent()"><option value="all">Toutes variations</option><option value="prix_up">Prix ↑</option><option value="prix_down">Prix ↓</option><option value="delai_up">Délai ↑</option><option value="delai_down">Délai ↓</option><option value="note_up">Note ↑</option><option value="note_down">Note ↓</option></select>
-      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--txS);cursor:pointer;white-space:nowrap"><input type="checkbox" ${filterOnlySales?"checked":""} onchange="filterOnlySales=this.checked;renderContent()" style="cursor:pointer"> Avec ventes uniquement</label> <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--txS);cursor:pointer;white-space:nowrap"><input type="checkbox" id="filter-deal-cb" ${filterOnlyDeal?"checked":""} onchange="filterOnlyDeal=this.checked;renderProduitsTable()" style="cursor:pointer"> Deal actif uniquement</label>
-    </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <div style="font-size:12px;color:var(--txS)">${list.length} produit${list.length>1?'s':''}</div>
       <div style="display:flex;align-items:center;gap:8px">
@@ -1073,7 +1066,21 @@ function renderProduits() {
       </tr>`).join('')}
       </tbody></table></div></div>`;
 }
-function toggleProdSort(col){if(prodFilters.sort===col)prodFilters.dir=prodFilters.dir==="asc"?"desc":"asc";else{prodFilters.sort=col;prodFilters.dir="asc";}renderContent();}
+function renderProduitsTable(){const el=document.getElementById("produits-table-container");if(el)el.innerHTML=buildProduitsTableHTML();}
+function renderProduits() {
+  const f=prodFilters;
+  return `
+    <div class="filters">
+      <input placeholder="Rechercher..." value="${esc(f.search)}" oninput="prodFilters.search=this.value;renderProduitsTable()"/>
+      <select onchange="prodFilters.type=this.value;renderProduitsTable()"><option value="all">Tous types</option><option value="Classe A" ${f.type==='Classe A'?'selected':''}>Classe A</option><option value="Nouveautés Q4+Q1" ${f.type==='Nouveautés Q4+Q1'?'selected':''}>Nouveautés</option><option value="Deals exclus" ${f.type==='Deals exclus'?'selected':''}>Deals exclus</option></select>
+      <select onchange="prodFilters.avail=this.value;renderProduitsTable()"><option value="all">Dispo + Indispo</option><option value="dispo" ${f.avail==='dispo'?'selected':''}>Disponible</option><option value="indispo" ${f.avail==='indispo'?'selected':''}>Indisponible</option></select>
+      <select onchange="prodFilters.page1=this.value;renderProduitsTable()"><option value="all">Toutes positions</option><option value="yes" ${f.page1==='yes'?'selected':''}>En page 1</option><option value="no" ${f.page1==='no'?'selected':''}>Pas en page 1</option></select>
+      <select onchange="prodFilters.tag=this.value;renderProduitsTable()"><option value="all">Toutes variations</option><option value="prix_up">Prix ↑</option><option value="prix_down">Prix ↓</option><option value="delai_up">Délai ↑</option><option value="delai_down">Délai ↓</option><option value="note_up">Note ↑</option><option value="note_down">Note ↓</option></select>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--txS);cursor:pointer;white-space:nowrap"><input type="checkbox" ${filterOnlySales?"checked":""} onchange="filterOnlySales=this.checked;renderProduitsTable()" style="cursor:pointer"> Avec ventes uniquement</label> <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--txS);cursor:pointer;white-space:nowrap"><input type="checkbox" id="filter-deal-cb" ${filterOnlyDeal?"checked":""} onchange="filterOnlyDeal=this.checked;renderProduitsTable()" style="cursor:pointer"> Deal actif uniquement</label>
+    </div>
+    <div id="produits-table-container">${buildProduitsTableHTML()}</div>`;
+}
+function toggleProdSort(col){if(prodFilters.sort===col)prodFilters.dir=prodFilters.dir==="asc"?"desc":"asc";else{prodFilters.sort=col;prodFilters.dir="asc";}renderProduitsTable();}
 
 function exportCSV() {
   const sessions = STATE.dates.slice(-exportSessions);
