@@ -1,0 +1,20 @@
+Remarques rapides avant git push :
+
+- Votre branche 'main' est en avance de 2 commits par rapport à origin/main.
+- Il y a un fichier non tracké `.gitignore`. Si vous voulez l'inclure, ajoutez-le puis commitez avant de pousser.
+
+Commandes recommandées (exécutez depuis la racine du dépôt) :
+
+# 1) Vérifier l'état
+git status
+
+# 2) (Optionnel) Ajouter .gitignore si vous voulez le suivre
+git add .gitignore && git commit -m "chore: add .gitignore"
+
+# 3) Pousser vos commits locaux vers le remote 'origin' branche 'main'
+git push origin main
+
+Notes :
+- Si votre remote par défaut et la branche sont déjà configurés, `git push` suffit.
+- Si vous avez configuré un autre remote/branche, remplacez `origin main` par le remote/branche approprié.
+- Après le push, utilisez `git fetch` / `git status` sur d'autres postes pour synchroniser.
