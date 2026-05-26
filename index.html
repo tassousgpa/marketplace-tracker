@@ -485,11 +485,13 @@ async function loadData() {
         prodByScraper[k] = p;
         var kc = stripUrlParams(k);
         if (kc !== k) prodByScraper[kc] = p;
+        var mr = extractMdmRef(kc || k); if (mr && !prodByScraper[mr]) prodByScraper[mr] = p;
       }
       // Indexer aussi par URL produit (stripped) — couvre les MPs où product_id = URL complète
       if (p.url) {
         var ku = stripUrlParams(p.url.toLowerCase());
         if (!prodByScraper[ku]) prodByScraper[ku] = p;
+        var mru = extractMdmRef(ku); if (mru && !prodByScraper[mru]) prodByScraper[mru] = p;
       }
     });
     function lookupByScraper(pid) {
@@ -596,10 +598,16 @@ async function loadData() {
       if (p.product_id_scraper) {
         var k = p.product_id_scraper.toLowerCase();
         bmScraperIds.add(k);
-        bmScraperIds.add(stripUrlParams(k));
+        var ks = stripUrlParams(k);
+        bmScraperIds.add(ks);
+        var mr = extractMdmRef(ks || k); if (mr) bmScraperIds.add(mr);
       }
       // Indexer aussi par URL (stripped) pour MdM et tout MP à URL dans product_id
-      if (p.url) bmScraperIds.add(stripUrlParams(p.url.toLowerCase()));
+      if (p.url) {
+        var ku = stripUrlParams(p.url.toLowerCase());
+        bmScraperIds.add(ku);
+        var mru = extractMdmRef(ku); if (mru) bmScraperIds.add(mru);
+      }
     });
     const trackedByScraperId = {};
     products.forEach(p => {
@@ -608,11 +616,13 @@ async function loadData() {
         trackedByScraperId[k] = p;
         var kc = stripUrlParams(k);
         if (kc !== k) trackedByScraperId[kc] = p;
+        var mr = extractMdmRef(kc || k); if (mr && !trackedByScraperId[mr]) trackedByScraperId[mr] = p;
       }
       // Indexer aussi par URL (stripped)
       if (p.url) {
         var ku = stripUrlParams(p.url.toLowerCase());
         if (!trackedByScraperId[ku]) trackedByScraperId[ku] = p;
+        var mru = extractMdmRef(ku); if (mru && !trackedByScraperId[mru]) trackedByScraperId[mru] = p;
       }
     });
     function lookupTracked(pid) {
@@ -1538,7 +1548,11 @@ async function showPositionDetail(kw) {
   var bmItems = allItems.filter(function(i) {
     if (BM_SELLERS.has(i.seller)) return true;
     if (i.seller && BM_SELLERS_LOWER.has(i.seller.toLowerCase())) return true;
-    return STATE.bmScraperIds && (STATE.bmScraperIds.has((i.product_id||"").toLowerCase()) || STATE.bmScraperIds.has(stripUrlParams((i.product_id||"").toLowerCase())));
+    if (!STATE.bmScraperIds) return false;
+    var pid = (i.product_id||"").toLowerCase();
+    if (STATE.bmScraperIds.has(pid) || STATE.bmScraperIds.has(stripUrlParams(pid))) return true;
+    var mRef = (function(u){var m=String(u||"").match(/-(M\d+)\.htm/i);return m?m[1].toLowerCase():null;})(pid);
+    return mRef ? STATE.bmScraperIds.has(mRef) : false;
   });
   var spoCount = bmItems.filter(function(i) { return i.is_sponsored === true; }).length;
   var totalToday = allItems.length;
