@@ -1011,7 +1011,7 @@ async function deleteRevenue(label) {
 // =============================================
 // TAB 1: PRODUITS
 // =============================================
-let prodFilters={search:"",type:"all",avail:"all",page1:"all",tag:"all",sort:"name",dir:"asc"};
+let prodFilters={search:"",type:"all",avail:"all",page1:"all",tag:"all",canal:"all",sort:"name",dir:"asc"};
 let exportSessions = 4;
 let filterOnlySales = false;
 let filterOnlyDeal = false;
@@ -1026,6 +1026,7 @@ function buildProduitsTableHTML() {
   if(f.tag!=="all")list=list.filter(p=>p._tags.includes(f.tag));
   if(filterOnlySales)list=list.filter(p=>(STATE.productSalesWeekly||[]).some(r=>r.ref===p.sku&&r.qty>0));
   if(filterOnlyDeal)list=list.filter(p=>getActiveDeal(p.sku));
+  if(f.canal!=="all")list=list.filter(p=>p.canal_attribue===f.canal);
   list.sort((a,b)=>{let va,vb;switch(f.sort){case"price":va=a._price||0;vb=b._price||0;break;case"rating":va=a._rating||0;vb=b._rating||0;break;case"delivery":va=a._delivery||999;vb=b._delivery||999;break;default:va=a.name;vb=b.name;}return f.dir==="asc"?(va<vb?-1:1):(va>vb?-1:1);});
   const si=col=>f.sort===col?(f.dir==="asc"?" ↑":" ↓"):"";
   return `
@@ -1045,7 +1046,7 @@ function buildProduitsTableHTML() {
     </div>
     <div class="card" style="padding:0;overflow:hidden"><div class="scroll-table"><table style="min-width:1000px">
       <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)">
-        <th style="cursor:pointer" onclick="toggleProdSort('name')">Produit${si('name')}</th><th>Réfs</th><th style="text-align:center">Type</th>
+        <th style="cursor:pointer" onclick="toggleProdSort('name')">Produit${si('name')}</th><th>Réfs</th><th style="text-align:center">Type</th><th style="text-align:center">Canal</th>
         <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('price')">Prix${si('price')}</th>
         <th style="text-align:center">Dispo</th><th style="cursor:pointer;text-align:right" onclick="toggleProdSort('rating')">Note${si('rating')}</th>
         <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('delivery')">Délai${si('delivery')}</th>
@@ -1055,6 +1056,7 @@ function buildProduitsTableHTML() {
         <td style="font-weight:500;max-width:240px"><div style="line-height:1.3">${esc(p.name)}</div></td>
         <td style="font-size:11px;color:var(--txS);white-space:nowrap"><div>${esc(p.product_id)}</div><div>${esc(p.sku)}</div><div style="color:var(--txT)">${esc(p.sku_marketplace)}</div></td>
         <td style="text-align:center">${pill(p.type==="Nouveautés Q4+Q1"?"Nvtés":p.type==="Deals exclus"?"Deals":p.type,p.type==="Classe A"?"green":p.type==="Deals exclus"?"amber":"accent")}</td>
+        <td style="text-align:center">${p.canal_attribue?pill(p.canal_attribue,'accent'):'<span style="color:var(--txT)">—</span>'}</td>
         <td style="text-align:right;font-weight:500">${p._price!=null?Math.round(p._price)+'€':'—'}</td>
         <td style="text-align:center">${p._available!=null?pill(p._available?'Dispo':'Indispo',p._available?'green':'red'):'—'}</td>
         <td style="text-align:right">${p._rating!=null?p._rating:'—'}</td>
@@ -1069,10 +1071,12 @@ function buildProduitsTableHTML() {
 function renderProduitsTable(){const el=document.getElementById("produits-table-container");if(el)el.innerHTML=buildProduitsTableHTML();}
 function renderProduits() {
   const f=prodFilters;
+  const canaux=[...new Set((STATE.products||[]).map(p=>p.canal_attribue).filter(Boolean))];
   return `
     <div class="filters">
       <input placeholder="Rechercher..." value="${esc(f.search)}" oninput="prodFilters.search=this.value;renderProduitsTable()"/>
       <select onchange="prodFilters.type=this.value;renderProduitsTable()"><option value="all">Tous types</option><option value="Classe A" ${f.type==='Classe A'?'selected':''}>Classe A</option><option value="Nouveautés Q4+Q1" ${f.type==='Nouveautés Q4+Q1'?'selected':''}>Nouveautés</option><option value="Deals exclus" ${f.type==='Deals exclus'?'selected':''}>Deals exclus</option></select>
+      <select onchange="prodFilters.canal=this.value;renderProduitsTable()"><option value="all">Tous canaux</option>${canaux.map(c=>'<option value="'+esc(c)+'"'+(f.canal===c?' selected':'')+'>'+esc(c)+'</option>').join('')}</select>
       <select onchange="prodFilters.avail=this.value;renderProduitsTable()"><option value="all">Dispo + Indispo</option><option value="dispo" ${f.avail==='dispo'?'selected':''}>Disponible</option><option value="indispo" ${f.avail==='indispo'?'selected':''}>Indisponible</option></select>
       <select onchange="prodFilters.page1=this.value;renderProduitsTable()"><option value="all">Toutes positions</option><option value="yes" ${f.page1==='yes'?'selected':''}>En page 1</option><option value="no" ${f.page1==='no'?'selected':''}>Pas en page 1</option></select>
       <select onchange="prodFilters.tag=this.value;renderProduitsTable()"><option value="all">Toutes variations</option><option value="prix_up">Prix ↑</option><option value="prix_down">Prix ↓</option><option value="delai_up">Délai ↑</option><option value="delai_down">Délai ↓</option><option value="note_up">Note ↑</option><option value="note_down">Note ↓</option></select>
@@ -2080,9 +2084,11 @@ function renderAnomalies() {
 // TAB 6: GESTION
 // =============================================
 let gestionSearch="";
+let gestionNoUrl=false;
 function renderGestion() {
   let list=STATE.allProducts||STATE.products;
   if(gestionSearch){const s=gestionSearch.toLowerCase();list=list.filter(p=>p.name.toLowerCase().includes(s)||p.product_id.includes(s)||(p.sku||"").toLowerCase().includes(s));}
+  if(gestionNoUrl)list=list.filter(p=>!p.url);
   return `
     <div class="metrics">
       <div class="metric"><div class="metric-label">Produits actifs</div><div class="metric-value" style="color:var(--ac)">${(STATE.allProducts||[]).filter(p=>p.active!==false).length}</div></div>
@@ -2107,7 +2113,11 @@ function renderGestion() {
     </div>
     <div class="card">
       <div class="card-title">Gérer les produits</div>
-      <div class="filters"><input placeholder="Rechercher..." value="${esc(gestionSearch)}" oninput="gestionSearch=this.value;renderContent()"/></div>
+      <div class="filters" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <input placeholder="Rechercher..." value="${esc(gestionSearch)}" oninput="gestionSearch=this.value;renderContent()" style="flex:1;min-width:160px"/>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--txS);cursor:pointer;white-space:nowrap"><input type="checkbox" ${gestionNoUrl?"checked":""} onchange="gestionNoUrl=this.checked;renderContent()" style="cursor:pointer"> Sans URL uniquement</label>
+        <button onclick="exportGestionCSV()" style="padding:6px 14px;border:.5px solid var(--ac);border-radius:6px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit;white-space:nowrap">⬇ Export CSV</button>
+      </div>
       <div style="font-size:12px;color:var(--txS);margin-bottom:8px">${list.length} produit${list.length>1?'s':''}</div>
       <div class="scroll-table"><table style="min-width:900px">
         <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)"><th style="width:30%">Produit</th><th>Réfs</th><th>Type</th><th>Statut</th><th>URL</th><th style="text-align:center">Actions</th></tr></thead>
@@ -2144,6 +2154,24 @@ async function addProduct() {
 async function updateType(dbId,newType){try{await sbUpdate("products",`id=eq.${dbId}`,{type:newType});const p=STATE.products.find(p=>p.id===dbId);if(p)p.type=newType;}catch(e){alert("Erreur : "+e.message);}}
 async function toggleActive(dbId,active){try{await sbUpdate("products",`id=eq.${dbId}`,{active});await loadData();}catch(e){alert("Erreur : "+e.message);}}
 async function deleteProduct(dbId,name){if(!confirm(`Supprimer définitivement "${name}..." ?`))return;try{await sbDelete("products",`id=eq.${dbId}`);await loadData();}catch(e){alert("Erreur : "+e.message);}}
+
+function exportGestionCSV(){
+  let list=STATE.allProducts||STATE.products;
+  if(gestionSearch){const s=gestionSearch.toLowerCase();list=list.filter(p=>p.name.toLowerCase().includes(s)||p.product_id.includes(s)||(p.sku||"").toLowerCase().includes(s));}
+  if(gestionNoUrl)list=list.filter(p=>!p.url);
+  const headers=["ID produit","Nom","SKU","EAN","Marketplace","Type","Canal attribué","URL","Statut"];
+  const csvCell=function(v){const s=String(v!=null?v:"");return(s.indexOf(";")!==-1||s.indexOf('"')!==-1||s.indexOf("\n")!==-1)?'"'+s.replace(/"/g,'""')+'"':s;};
+  const rows=list.map(function(p){return[p.product_id||"",p.name||"",p.sku||"",p.ean||"",p.marketplace||MARKETPLACE,p.type||"",p.canal_attribue||"",p.url||"",p.active!==false?"Actif":"Inactif"];});
+  const csv=[headers].concat(rows).map(function(row){return row.map(csvCell).join(";");}).join("\n");
+  const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8;"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url;
+  const today=new Date().toLocaleDateString("fr-FR").replace(/\//g,"-");
+  a.download="gestion_produits_"+MARKETPLACE+"_"+today+".csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 // =============================================
 // IMPORT XLS — CA par marketplace (N vs N-1)
