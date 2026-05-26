@@ -1,0 +1,28 @@
+Voici les fichiers que je vous recommande d'ajouter au chat si vous voulez que je vous aide plus efficacement (diagnostic de build / debug / push / déploiement Vercel) — ajoutez uniquement ceux que vous êtes à l'aise de partager.
+
+1) package.json (ou tout autre manifest : package-lock.json / yarn.lock / pnpm-lock.yaml)
+   - Pourquoi : indique les scripts de build / start (ex: "build", "start", "vercel-build") et les dépendances nécessaires. Indispensable si Vercel essaie d'exécuter un build Node.
+
+2) vercel.json (ou configuration de déploiement équivalente)
+   - Pourquoi : montre la configuration de build / routes / fonctions serverless qui peuvent impacter le comportement en prod.
+
+3) /api/* ou tout dossier de fonctions serverless
+   - Pourquoi : si votre projet a des fonctions côté serveur, Vercel les exécute ; erreurs dans ces fichiers peuvent bloquer le chargement.
+
+4) tout fichier JS/CSS externe référencé par index.html (ex: main.js, app.js, styles/*.css)
+   - Pourquoi : index.html embarque beaucoup de logique inline, mais si d'autres fichiers sont chargés dynamiquement, il faut les voir.
+
+5) logs de build Vercel (console de déploiement)
+   - Pourquoi : le log de build/deploy contient l'erreur exacte renvoyée par Vercel (et la ligne/fichier si c'est côté build). Copiez-collez le log ou téléchargez-le en .txt.
+
+6) .vercel/* ou configuration CI (si vous avez) — uniquement si vous voulez
+   - Pourquoi : contient parfois des réglages de projet qui modifient la façon dont Vercel build/déploie.
+
+7) tout fichier de configuration de bundler/superviseur (vite.config.js, webpack.config.js, rollup.config.js)
+   - Pourquoi : si un bundler est utilisé, une mauvaise config peut injecter du contenu ou échouer.
+
+Remarques de sécurité :
+- Ne partagez pas de secrets sensibles si vous ne voulez pas qu'ils apparaissent ici (clefs privées, tokens). Par exemple SB_KEY dans index.html est déjà visible — si c'est sensible, pensez à le révoquer côté Supabase.
+- Si vous préférez, fournissez seulement les extraits pertinents (logs d'erreur complets, package.json, vercel.json) plutôt que l'intégralité d'un dossier.
+
+Si vous ajoutez certains (ou tous) fichiers listés ci‑dessus, dites-moi lesquels vous avez ajoutés et je préparerai des modifications / diagnostics précis.
