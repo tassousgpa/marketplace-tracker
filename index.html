@@ -628,7 +628,9 @@ async function loadData() {
     function lookupTracked(pid) {
       if (!pid) return null;
       var k = (pid||"").toLowerCase();
-      return trackedByScraperId[k] || trackedByScraperId[stripUrlParams(k)] || null;
+      var r = trackedByScraperId[k] || trackedByScraperId[stripUrlParams(k)];
+      if (r) return r;
+      var mr = extractMdmRef(k); return mr ? (trackedByScraperId[mr] || null) : null;
     }
 
     // Un product est BM si : seller === "BestMobilier" OU son product_id matche un product_id_scraper suivi
@@ -643,7 +645,15 @@ async function loadData() {
       const pid = (p.product_id||"").toLowerCase();
       if (bmScraperIds.has(pid) || bmScraperIds.has(stripUrlParams(pid))) return true;
       var mRef = extractMdmRef(pid);
-      return mRef ? bmScraperIds.has(mRef) : false;
+      if (mRef && bmScraperIds.has(mRef)) return true;
+      // Fallback via positions.url (produits sponsorisés MdM : product_id ≠ url)
+      var purl = (p.url||"").toLowerCase();
+      if (purl) {
+        if (bmScraperIds.has(purl) || bmScraperIds.has(stripUrlParams(purl))) return true;
+        var mRefUrl = extractMdmRef(purl);
+        if (mRefUrl && bmScraperIds.has(mRefUrl)) return true;
+      }
+      return false;
     }
 
     // bmByKeyword : nombre de produits BM en page 1 par keyword
@@ -1429,7 +1439,7 @@ function renderPositions() {
       <div class="metric"><div class="metric-label">Total apparitions P1</div><div class="metric-value" style="color:var(--gn)">${totalBM}</div></div>
     </div>
     <div class="card"><div class="card-title">Présence BestMobilier par catégorie</div>
-      <div class="cat-grid">${keywords.map(kw=>{const c=STATE.bmByKeyword[kw]||0;const BM_S=new Set(['BestMobilier','Best Mobilier','Lisa Design']);const BM_S_L=new Set(['bestmobilier','best mobilier','lisa design']);const spo=(STATE.keywordData[kw]||[]).filter(i=>(BM_S.has(i.seller)||(i.seller&&BM_S_L.has(i.seller.toLowerCase()))||(STATE.bmScraperIds&&STATE.bmScraperIds.has((i.product_id||'').toLowerCase())))&&i.is_sponsored===true).length;return'<div class="cat-card '+(c===0?'cat-card-zero':'')+'" onclick="showPositionDetail(\''+esc(kw).replace(/'/g,"\\x27")+'\')">'+'<div class="cat-card-header"><span class="cat-card-name">'+esc(kw)+'</span><span class="cat-card-count">'+c+'</span></div>'+(spo>0?'<div style="font-size:10px;color:var(--am);margin-top:2px">dont '+spo+' sponsorisé'+(spo>1?'s':'')+'</div>':'')+(c>0?'<div style="margin-top:5px;height:4px;background:var(--borderL);border-radius:2px;overflow:hidden"><div style="height:100%;width:'+Math.min(c/(maxBM+1)*100,100)+'%;background:var(--ac);border-radius:2px"></div></div>':'')+'</div>';}).join('')}</div>
+      <div class="cat-grid">${keywords.map(kw=>{const c=STATE.bmByKeyword[kw]||0;const BM_S=new Set(['BestMobilier','Best Mobilier','Lisa Design']);const BM_S_L=new Set(['bestmobilier','best mobilier','lisa design']);const spo=(STATE.keywordData[kw]||[]).filter(i=>{if(!i.is_sponsored)return false;if(BM_S.has(i.seller)||(i.seller&&BM_S_L.has(i.seller.toLowerCase())))return true;if(!STATE.bmScraperIds)return false;var pid=(i.product_id||'').toLowerCase();if(STATE.bmScraperIds.has(pid)||STATE.bmScraperIds.has(stripUrlParams(pid)))return true;var mr=(function(u){var m=String(u||'').match(/-(M\d+)\.htm/i);return m?m[1].toLowerCase():null;})(pid);if(mr&&STATE.bmScraperIds.has(mr))return true;var purl=(i.url||'').toLowerCase();if(purl){if(STATE.bmScraperIds.has(purl)||STATE.bmScraperIds.has(stripUrlParams(purl)))return true;var mru=(function(u){var m=String(u||'').match(/-(M\d+)\.htm/i);return m?m[1].toLowerCase():null;})(purl);if(mru&&STATE.bmScraperIds.has(mru))return true;}return false;}).length;return'<div class="cat-card '+(c===0?'cat-card-zero':'')+'" onclick="showPositionDetail(\''+esc(kw).replace(/'/g,"\\x27")+'\')">'+'<div class="cat-card-header"><span class="cat-card-name">'+esc(kw)+'</span><span class="cat-card-count">'+c+'</span></div>'+(spo>0?'<div style="font-size:10px;color:var(--am);margin-top:2px">dont '+spo+' sponsorisé'+(spo>1?'s':'')+'</div>':'')+(c>0?'<div style="margin-top:5px;height:4px;background:var(--borderL);border-radius:2px;overflow:hidden"><div style="height:100%;width:'+Math.min(c/(maxBM+1)*100,100)+'%;background:var(--ac);border-radius:2px"></div></div>':'')+'</div>';}).join('')}</div>
       ${!keywords.length?'<div style="color:var(--txT);font-size:12px;padding:20px;text-align:center">Aucune donnée de position disponible.</div>':''}
     </div>
     <div class="card"><div class="card-title">Leader par catégorie</div><div class="grid-2">${(()=>{
@@ -2760,7 +2770,7 @@ function resolveOdooMp(ch) {
 }
 const ODOO_SKIP = ["Livraison","Retrait","Bon de réduction","Remise"];
 
-async function parseOdooXLS(file) {
+async function parseOdooXLS(file, defaultMp = null) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -2783,7 +2793,8 @@ async function parseOdooXLS(file) {
             const name = desc.replace(/\[[^\]]+\]\s*/, "").trim().slice(0, 100);
             const qty = parseInt(qtyRaw) || 0;
             const caHt = parseFloat(String(row[1] || 0).replace(",", ".")) || 0;
-            const mp = currentChannel ? resolveOdooMp(currentChannel) : null;
+            // Si pas d'entête canal (export monocanal), on utilise defaultMp (= MARKETPLACE courant)
+            const mp = currentChannel ? resolveOdooMp(currentChannel) : (defaultMp || null);
             if (mp && qty > 0) {
               const key = ref + "|" + mp;
               if (!agg[key]) agg[key] = { ref, name, marketplace: mp, qty: 0, ca_ht: 0 };
@@ -2832,7 +2843,7 @@ async function previewImport() {
     let productSales = [];
     const fileOdoo = document.getElementById("imp-file-odoo")?.files[0];
     if (fileOdoo) {
-      try { productSales = await parseOdooXLS(fileOdoo); console.log("✅ Odoo:", productSales.length, "lignes"); }
+      try { productSales = await parseOdooXLS(fileOdoo, MARKETPLACE); console.log("✅ Odoo:", productSales.length, "lignes"); }
       catch(e) { console.warn("⚠ Odoo:", e.message); }
     }
     _importData = { totalsN, totalsN1, start, end, label,
