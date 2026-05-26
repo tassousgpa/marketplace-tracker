@@ -1298,31 +1298,159 @@ function renderPositions() {
     </div>
   </div>`;
 }
-  function showPositionDetail(kw) {
-  // Tous les items BM de ce keyword : seller=BestMobilier OU product_id_scraper connu
-  const allItems = STATE.keywordData[kw] || [];
-  const BM_SELLERS = new Set(["BestMobilier", "Best Mobilier", "Lisa Design"]);
-  const bmItems = allItems.filter(i => BM_SELLERS.has(i.seller) || STATE.bmScraperIds?.has((i.product_id||"").toLowerCase()));
-  if (!bmItems.length) {
-    openModal(`Positions — ${kw}`, '<div style="padding:20px;text-align:center;color:var(--txT)">Aucun produit BestMobilier en page 1</div>');
+async function showPositionDetail(kw) {
+  var allItems = STATE.keywordData[kw] || [];
+  var BM_SELLERS = new Set(["BestMobilier", "Best Mobilier", "Lisa Design"]);
+  var bmItems = allItems.filter(function(i) {
+    return BM_SELLERS.has(i.seller) || (STATE.bmScraperIds && STATE.bmScraperIds.has((i.product_id||"").toLowerCase()));
+  });
+  var spoCount = bmItems.filter(function(i) { return i.is_sponsored === true; }).length;
+
+  var v1Title = bmItems.length + ' produit' + (bmItems.length > 1 ? 's' : '') + ' en page 1'
+    + (spoCount > 0 ? ' (dont ' + spoCount + ' sponsorisé' + (spoCount > 1 ? 's' : '') + ')' : '');
+  var v1Html = '<div style="font-weight:600;font-size:13px;margin-bottom:10px">' + v1Title + '</div>';
+  if (bmItems.length === 0) {
+    v1Html += '<div style="color:var(--txT);font-size:13px">Aucun produit BestMobilier en page 1</div>';
+  } else {
+    v1Html += bmItems.map(function(i) {
+      var tracked = STATE.trackedByScraperId && STATE.trackedByScraperId[(i.product_id||"").toLowerCase()];
+      var name = tracked ? esc(tracked.name) : esc(i.product_id||"—");
+      var url = tracked ? tracked.url : (i.url || "");
+      var spoTag = i.is_sponsored === true
+        ? ' <span style="display:inline-block;padding:2px 7px;border-radius:99px;font-size:11px;font-weight:600;background:#fff3e0;color:#e65100">⚡ Sponso</span>'
+        : '';
+      return '<div class="product-row">'
+        + '<div class="product-row-name">' + name + spoTag + '</div>'
+        + '<div class="product-row-refs">'
+        + '<span>Position : ' + (i.position||'—') + '</span>'
+        + (url ? '<a href="' + esc(url) + '" target="_blank" class="link">Voir ↗</a>' : '')
+        + '</div>'
+        + '</div>';
+    }).join('');
+  }
+
+  var sep = '<hr style="border:none;border-top:1px solid var(--border);margin:16px 0">';
+  var histHeader = '<div style="font-weight:600;font-size:13px;margin-bottom:10px">Historique des positions</div>';
+
+  openModal('Positions — ' + kw, v1Html + sep + histHeader + '<div style="color:var(--txT);font-size:12px">Chargement...</div>');
+
+  // Trouver le keyword brut (avant normalisation) depuis STATE.positions
+  var posArr = STATE.positions || [];
+  var kw_raw = kw;
+  for (var pi = 0; pi < posArr.length; pi++) {
+    if (normalizeKeyword(posArr[pi].keyword) === kw) { kw_raw = posArr[pi].keyword; break; }
+  }
+
+  var histRows;
+  try {
+    histRows = await sb("positions",
+      "marketplace=eq." + MARKETPLACE
+      + "&keyword=eq." + encodeURIComponent(kw_raw)
+      + "&seller=in.(BestMobilier,Best Mobilier,Lisa Design)"
+      + "&select=date,product_id,is_sponsored"
+      + "&order=date.desc&limit=2000"
+    );
+  } catch(e) {
+    document.getElementById("modal-body").innerHTML =
+      v1Html + sep + histHeader
+      + '<div style="color:var(--rd);font-size:12px">Erreur : ' + esc(e.message) + '</div>';
     return;
   }
-  const html = bmItems.map(i => {
-    // Chercher le produit suivi correspondant
-    const tracked = STATE.trackedByScraperId?.[(i.product_id||"").toLowerCase()];
-    if (tracked) return productRowHTML(tracked);
-    // Fallback : afficher les infos de la position directement
-    return '<div class="product-row">'
-      + '<div class="product-row-name">'+esc(i.product_id)+'</div>'
-      + '<div class="product-row-refs">'
-      + '<span>Position: '+(i.position||'—')+'</span>'
-      + '<span>Vendeur: '+esc(i.seller)+'</span>'
-      + (i.url ? '<a href="'+esc(i.url)+'" target="_blank" class="link">Voir ↗</a>' : '')
-      + (i.is_sponsored===true ? ' <span style="display:inline-block;padding:2px 7px;border-radius:99px;font-size:11px;font-weight:600;background:#fff3e0;color:#e65100">⚡ Sponso</span>' : '')
-      + '</div>'
-      + '</div>';
-  }).join("");
-  openModal(`Produits BM en page 1 — ${kw} (${bmItems.length})`, html);
+
+  window._posHistRows = histRows;
+  window._posHistKw = kw;
+
+  // Grouper par date (YYYY-MM-DD)
+  var byDate = {};
+  for (var ri = 0; ri < histRows.length; ri++) {
+    var r = histRows[ri];
+    var d = r.date ? r.date.slice(0, 10) : null;
+    if (!d) continue;
+    if (!byDate[d]) byDate[d] = { prods: new Set(), spos: new Set() };
+    if (r.product_id) {
+      byDate[d].prods.add(r.product_id);
+      if (r.is_sponsored === true) byDate[d].spos.add(r.product_id);
+    }
+  }
+
+  var days = Object.keys(byDate).sort(function(a, b) { return a > b ? -1 : 1; });
+
+  var histHtml;
+  if (!days.length) {
+    histHtml = '<div style="color:var(--txT);font-size:12px;padding:8px 0">Aucun historique disponible.</div>';
+  } else {
+    histHtml = '<div class="scroll-table"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+      + '<thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)">'
+      + '<th style="text-align:left;padding:6px 8px;color:var(--txS);font-weight:500">Date</th>'
+      + '<th style="text-align:center;padding:6px 8px;color:var(--txS);font-weight:500">Produits en P1</th>'
+      + '<th style="text-align:center;padding:6px 8px;color:var(--txS);font-weight:500">Sponsorisés</th>'
+      + '</tr></thead><tbody>'
+      + days.map(function(d) {
+          var nb = byDate[d].prods.size;
+          var spo = byDate[d].spos.size;
+          var dt = new Date(d + "T12:00:00Z");
+          var label = dt.toLocaleDateString("fr-FR", {day:"2-digit", month:"2-digit", year:"2-digit"});
+          return '<tr style="border-bottom:1px solid var(--borderL);cursor:pointer" onclick="showPositionHistoryDay(\'' + d + '\')" onmouseover="this.style.background=\'var(--borderL)\'" onmouseout="this.style.background=\'\'">'
+            + '<td style="padding:6px 8px;color:var(--ac);text-decoration:underline;text-underline-offset:2px">' + label + '</td>'
+            + '<td style="text-align:center;padding:6px 8px;font-weight:600">' + nb + '</td>'
+            + '<td style="text-align:center;padding:6px 8px;' + (spo > 0 ? 'color:var(--am);font-weight:600' : 'color:var(--txT)') + '">' + (spo > 0 ? spo : '—') + '</td>'
+            + '</tr>';
+        }).join('')
+      + '</tbody></table></div>';
+  }
+
+  document.getElementById("modal-body").innerHTML = v1Html + sep + histHeader + histHtml;
+}
+
+function showPositionHistoryDay(date) {
+  var kw = window._posHistKw || "";
+  var allRows = window._posHistRows || [];
+
+  // Dédupliquer par product_id pour ce jour (is_sponsored=true si au moins une ligne l'est)
+  var byPid = {};
+  for (var ri = 0; ri < allRows.length; ri++) {
+    var r = allRows[ri];
+    if (!r.date || r.date.slice(0, 10) !== date) continue;
+    var pid = r.product_id || "";
+    if (!pid) continue;
+    if (!byPid[pid]) byPid[pid] = { product_id: pid, is_sponsored: false };
+    if (r.is_sponsored === true) byPid[pid].is_sponsored = true;
+  }
+  var rows = Object.values(byPid);
+
+  // Lookup URL depuis positions du jour actuel
+  var urlByPid = {};
+  (STATE.positions || []).forEach(function(p) {
+    if (p.product_id && p.url) urlByPid[p.product_id] = p.url;
+  });
+
+  var dt = new Date(date + "T12:00:00Z");
+  var dateLabel = dt.toLocaleDateString("fr-FR", {day:"2-digit", month:"2-digit", year:"numeric"});
+  var title = "Produits en page 1 le " + dateLabel + " — " + kw;
+
+  var html;
+  if (!rows.length) {
+    html = '<div style="padding:20px;text-align:center;color:var(--txT)">Aucune donnée pour ce jour.</div>';
+  } else {
+    html = rows.map(function(r) {
+      var pid = r.product_id;
+      var tracked = STATE.trackedByScraperId && STATE.trackedByScraperId[pid.toLowerCase()];
+      var name = tracked ? esc(tracked.name) : esc(pid);
+      var url = tracked ? tracked.url : (urlByPid[pid] || "");
+      var spoTag = r.is_sponsored
+        ? ' <span style="display:inline-block;padding:2px 7px;border-radius:99px;font-size:11px;font-weight:600;background:#fff3e0;color:#e65100">⚡ Sponso</span>'
+        : '';
+      return '<div class="product-row">'
+        + '<div class="product-row-name">' + name + spoTag + '</div>'
+        + '<div class="product-row-refs">'
+        + '<span style="color:var(--txT);font-size:11px">' + esc(pid) + '</span>'
+        + (url ? '<a href="' + esc(url) + '" target="_blank" class="link">Voir ↗</a>' : '')
+        + '</div>'
+        + '</div>';
+    }).join('');
+  }
+
+  openModal(title, html);
 }
 
 function cleanUrl(url) {
