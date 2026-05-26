@@ -394,7 +394,7 @@ function normalizeKeyword(kw) {
 const TAB_NAMES = ["Synthèse","Produits","Historique","Positions","Concurrents","Anomalies","Audit","Opé. Commerciales","Gestion"];
 const TAB_NAMES_LIGHT = ["Synthèse","Produits","Historique","Anomalies","Audit","Opé. Commerciales","Gestion"];
 const TAB_NAMES_MINIMAL = ["Synthèse","Audit","Opé. Commerciales","Gestion"];
-const LAREDOUTE_TABS = ["Synthèse","Positions","Audit","Opé. Commerciales","Gestion"];
+const LAREDOUTE_TABS = ["Synthèse","Positions","Concurrents","Audit","Opé. Commerciales","Gestion"];
 const MINIMAL_MP = new Set(["leroymerlin","manomano"]);
 const SEA_MP = new Set(["cdiscount","but","maisonsdumonde"]);
 const TAB_NAMES_SEA = ["Synthèse","Produits","Historique","Positions","Concurrents","Anomalies","Audit","Opé. Commerciales","Gestion","SEA"];
@@ -624,8 +624,10 @@ async function loadData() {
     // Un product est BM si : seller === "BestMobilier" OU son product_id matche un product_id_scraper suivi
     // Noms de vendeurs reconnus comme appartenant au groupe
     const BM_SELLER_NAMES = new Set(["BestMobilier", "Best Mobilier", "Lisa Design"]);
+    const BM_SELLER_NAMES_LOWER = new Set(["bestmobilier", "best mobilier", "lisa design"]);
     function isBMPosition(p) {
       if (BM_SELLER_NAMES.has(p.seller)) return true;
+      if (p.seller && BM_SELLER_NAMES_LOWER.has(p.seller.toLowerCase())) return true;
       const useScraperId = (MARKETPLACE === "cdiscount" || MARKETPLACE === "amazon" || MARKETPLACE === "laredoute" || MARKETPLACE === "maisonsdumonde");
       if (!useScraperId) return false;
       const pid = (p.product_id||"").toLowerCase();
@@ -737,9 +739,10 @@ function renderContent() {
     switch(STATE.tab) {
       case 0: el.innerHTML = renderSynthese(); break;
       case 1: el.innerHTML = renderPositions(); break;
-      case 2: renderAudit(); break;
-      case 3: renderOpeCommerciales(); break;
-      case 4: el.innerHTML = renderGestion(); break;
+      case 2: el.innerHTML = renderConcurrents(); break;
+      case 3: renderAudit(); break;
+      case 4: renderOpeCommerciales(); break;
+      case 5: el.innerHTML = renderGestion(); break;
       default: el.innerHTML = '';
     }
     return;
@@ -1416,7 +1419,7 @@ function renderPositions() {
       <div class="metric"><div class="metric-label">Total apparitions P1</div><div class="metric-value" style="color:var(--gn)">${totalBM}</div></div>
     </div>
     <div class="card"><div class="card-title">Présence BestMobilier par catégorie</div>
-      <div class="cat-grid">${keywords.map(kw=>{const c=STATE.bmByKeyword[kw]||0;const BM_S=new Set(['BestMobilier','Best Mobilier','Lisa Design']);const spo=(STATE.keywordData[kw]||[]).filter(i=>(BM_S.has(i.seller)||(STATE.bmScraperIds&&STATE.bmScraperIds.has((i.product_id||'').toLowerCase())))&&i.is_sponsored===true).length;return'<div class="cat-card '+(c===0?'cat-card-zero':'')+'" onclick="showPositionDetail(\''+esc(kw).replace(/'/g,"\\x27")+'\')">'+'<div class="cat-card-header"><span class="cat-card-name">'+esc(kw)+'</span><span class="cat-card-count">'+c+'</span></div>'+(spo>0?'<div style="font-size:10px;color:var(--am);margin-top:2px">dont '+spo+' sponsorisé'+(spo>1?'s':'')+'</div>':'')+(c>0?'<div style="margin-top:5px;height:4px;background:var(--borderL);border-radius:2px;overflow:hidden"><div style="height:100%;width:'+Math.min(c/(maxBM+1)*100,100)+'%;background:var(--ac);border-radius:2px"></div></div>':'')+'</div>';}).join('')}</div>
+      <div class="cat-grid">${keywords.map(kw=>{const c=STATE.bmByKeyword[kw]||0;const BM_S=new Set(['BestMobilier','Best Mobilier','Lisa Design']);const BM_S_L=new Set(['bestmobilier','best mobilier','lisa design']);const spo=(STATE.keywordData[kw]||[]).filter(i=>(BM_S.has(i.seller)||(i.seller&&BM_S_L.has(i.seller.toLowerCase()))||(STATE.bmScraperIds&&STATE.bmScraperIds.has((i.product_id||'').toLowerCase())))&&i.is_sponsored===true).length;return'<div class="cat-card '+(c===0?'cat-card-zero':'')+'" onclick="showPositionDetail(\''+esc(kw).replace(/'/g,"\\x27")+'\')">'+'<div class="cat-card-header"><span class="cat-card-name">'+esc(kw)+'</span><span class="cat-card-count">'+c+'</span></div>'+(spo>0?'<div style="font-size:10px;color:var(--am);margin-top:2px">dont '+spo+' sponsorisé'+(spo>1?'s':'')+'</div>':'')+(c>0?'<div style="margin-top:5px;height:4px;background:var(--borderL);border-radius:2px;overflow:hidden"><div style="height:100%;width:'+Math.min(c/(maxBM+1)*100,100)+'%;background:var(--ac);border-radius:2px"></div></div>':'')+'</div>';}).join('')}</div>
       ${!keywords.length?'<div style="color:var(--txT);font-size:12px;padding:20px;text-align:center">Aucune donnée de position disponible.</div>':''}
     </div>
     <div class="card"><div class="card-title">Leader par catégorie</div><div class="grid-2">${(()=>{
@@ -1531,8 +1534,11 @@ function isHistBMProduct(pid, seller) {
 async function showPositionDetail(kw) {
   var allItems = STATE.keywordData[kw] || [];
   var BM_SELLERS = new Set(["BestMobilier", "Best Mobilier", "Lisa Design"]);
+  var BM_SELLERS_LOWER = new Set(["bestmobilier", "best mobilier", "lisa design"]);
   var bmItems = allItems.filter(function(i) {
-    return BM_SELLERS.has(i.seller) || (STATE.bmScraperIds && (STATE.bmScraperIds.has((i.product_id||"").toLowerCase()) || STATE.bmScraperIds.has(stripUrlParams((i.product_id||"").toLowerCase()))));
+    if (BM_SELLERS.has(i.seller)) return true;
+    if (i.seller && BM_SELLERS_LOWER.has(i.seller.toLowerCase())) return true;
+    return STATE.bmScraperIds && (STATE.bmScraperIds.has((i.product_id||"").toLowerCase()) || STATE.bmScraperIds.has(stripUrlParams((i.product_id||"").toLowerCase())));
   });
   var spoCount = bmItems.filter(function(i) { return i.is_sponsored === true; }).length;
   var totalToday = allItems.length;
