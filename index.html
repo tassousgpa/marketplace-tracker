@@ -474,6 +474,11 @@ async function loadData() {
     }
 
     const prodByScraper = {};
+    // Extrait la référence MXXXXXXXX d'une URL MdM (ex : ...diane-M26041258.htm?offer=…)
+    function extractMdmRef(url) {
+      var m = String(url||"").match(/-(M\d+)\.htm/i);
+      return m ? m[1].toLowerCase() : null;
+    }
     products.forEach(p => {
       if (p.product_id_scraper) {
         var k = p.product_id_scraper.toLowerCase();
@@ -481,11 +486,19 @@ async function loadData() {
         var kc = stripUrlParams(k);
         if (kc !== k) prodByScraper[kc] = p;
       }
+      // Indexer aussi par URL produit (stripped) — couvre les MPs où product_id = URL complète
+      if (p.url) {
+        var ku = stripUrlParams(p.url.toLowerCase());
+        if (!prodByScraper[ku]) prodByScraper[ku] = p;
+      }
     });
     function lookupByScraper(pid) {
       if (!pid) return null;
       var k = (pid||"").toLowerCase();
-      return prodByScraper[k] || prodByScraper[stripUrlParams(k)] || null;
+      var r = prodByScraper[k] || prodByScraper[stripUrlParams(k)];
+      if (r) return r;
+      var mRef = extractMdmRef(k); // fallback M-ref pour MdM
+      return mRef ? (prodByScraper[mRef] || null) : null;
     }
     snapshots.forEach(s => { s._product = lookupByScraper(s.product_id); });
 
@@ -585,14 +598,21 @@ async function loadData() {
         bmScraperIds.add(k);
         bmScraperIds.add(stripUrlParams(k));
       }
+      // Indexer aussi par URL (stripped) pour MdM et tout MP à URL dans product_id
+      if (p.url) bmScraperIds.add(stripUrlParams(p.url.toLowerCase()));
     });
-    const trackedByScraperId = {}; // product_id_scraper → product row (avec et sans query params)
+    const trackedByScraperId = {};
     products.forEach(p => {
       if (p.product_id_scraper) {
         var k = p.product_id_scraper.toLowerCase();
         trackedByScraperId[k] = p;
         var kc = stripUrlParams(k);
         if (kc !== k) trackedByScraperId[kc] = p;
+      }
+      // Indexer aussi par URL (stripped)
+      if (p.url) {
+        var ku = stripUrlParams(p.url.toLowerCase());
+        if (!trackedByScraperId[ku]) trackedByScraperId[ku] = p;
       }
     });
     function lookupTracked(pid) {
@@ -609,7 +629,9 @@ async function loadData() {
       const useScraperId = (MARKETPLACE === "cdiscount" || MARKETPLACE === "amazon" || MARKETPLACE === "laredoute" || MARKETPLACE === "maisonsdumonde");
       if (!useScraperId) return false;
       const pid = (p.product_id||"").toLowerCase();
-      return bmScraperIds.has(pid) || bmScraperIds.has(stripUrlParams(pid));
+      if (bmScraperIds.has(pid) || bmScraperIds.has(stripUrlParams(pid))) return true;
+      var mRef = extractMdmRef(pid);
+      return mRef ? bmScraperIds.has(mRef) : false;
     }
 
     // bmByKeyword : nombre de produits BM en page 1 par keyword
@@ -1493,7 +1515,11 @@ function lookupTrackedProduct(pid) {
   if (!pid) return null;
   var k = (pid||"").toLowerCase();
   var tbs = STATE.trackedByScraperId || {};
-  return tbs[k] || tbs[stripUrlParams(k)] || null;
+  var r = tbs[k] || tbs[stripUrlParams(k)];
+  if (r) return r;
+  // Fallback M-ref pour MdM (ex: ...diane-M26041258.htm?offer=... → M26041258)
+  var mRef = function(url) { var m = String(url||"").match(/-(M\d+)\.htm/i); return m ? m[1].toLowerCase() : null; }(k);
+  return mRef ? (tbs[mRef] || null) : null;
 }
 // Helper global : un product_id/seller appartient-il à BM ?
 function isHistBMProduct(pid, seller) {
@@ -1516,31 +1542,21 @@ async function showPositionDetail(kw) {
     + ' <span style="color:var(--txS);font-weight:400;font-size:12px">(' + pctBM + '%)</span>'
     + (spoCount > 0 ? ' <span style="color:#e65100;font-size:12px">(dont ' + spoCount + ' sponso)</span>' : '');
   var v1Html = '<div style="font-size:13px;margin-bottom:10px">' + v1Title + '</div>';
-  if (!allItems.length) {
-    v1Html += '<div style="color:var(--txT);font-size:13px">Aucun produit en page 1</div>';
+  if (bmItems.length === 0) {
+    v1Html += '<div style="color:var(--txT);font-size:13px">Aucun produit BestMobilier en page 1</div>';
   } else {
-    var sorted = allItems.slice().sort(function(a, b) {
-      var aBM = BM_SELLERS.has(a.seller) || (STATE.bmScraperIds && (STATE.bmScraperIds.has((a.product_id||"").toLowerCase()) || STATE.bmScraperIds.has(stripUrlParams((a.product_id||"").toLowerCase()))));
-      var bBM = BM_SELLERS.has(b.seller) || (STATE.bmScraperIds && (STATE.bmScraperIds.has((b.product_id||"").toLowerCase()) || STATE.bmScraperIds.has(stripUrlParams((b.product_id||"").toLowerCase()))));
-      return (bBM ? 1 : 0) - (aBM ? 1 : 0);
-    });
-    v1Html += sorted.map(function(i) {
-      var isBM = BM_SELLERS.has(i.seller) || (STATE.bmScraperIds && (STATE.bmScraperIds.has((i.product_id||"").toLowerCase()) || STATE.bmScraperIds.has(stripUrlParams((i.product_id||"").toLowerCase()))));
+    v1Html += bmItems.map(function(i) {
       var tracked = lookupTrackedProduct(i.product_id);
-      var name = tracked ? esc(tracked.name) : (i.seller ? esc(i.seller) + ' — ' + esc(i.product_id||'—') : esc(i.product_id||'—'));
-      var url = tracked ? tracked.url : (i.url || "");
-      var bmTag = isBM
-        ? ' <span style="display:inline-block;padding:2px 7px;border-radius:99px;font-size:11px;font-weight:600;background:var(--acBg);color:var(--ac)">✓ BM</span>'
-        : '';
+      var name = tracked ? esc(tracked.name) : esc(i.product_id||'—');
+      var url = tracked ? tracked.url : (i.url || '');
       var spoTag = i.is_sponsored === true
         ? ' <span style="display:inline-block;padding:2px 7px;border-radius:99px;font-size:11px;font-weight:600;background:#fff3e0;color:#e65100">⚡ Sponso</span>'
         : '';
       var untrackedTag = !tracked
         ? ' <span style="display:inline-block;padding:2px 7px;border-radius:99px;font-size:11px;background:var(--amBg);color:var(--am)">non suivi</span>'
         : '';
-      var rowBg = isBM ? 'background:var(--acBg)' : '';
-      return '<div class="product-row" style="' + rowBg + '">'
-        + '<div class="product-row-name">' + name + bmTag + spoTag + untrackedTag + '</div>'
+      return '<div class="product-row">'
+        + '<div class="product-row-name">' + name + spoTag + untrackedTag + '</div>'
         + '<div class="product-row-refs">'
         + '<span>Position : ' + (i.position||'—') + '</span>'
         + (url ? '<a href="' + esc(url) + '" target="_blank" class="link">Voir ↗</a>' : '')
@@ -2701,7 +2717,27 @@ const ODOO_CHANNEL_MAP = {
   "conforama":"conforama",
   "manomano_fr":"manomano","manomano_fr_b2b":"manomano",
   "but_mirakl":"but",
+  "leroymerlin_mirakl":"leroymerlin","leroy_merlin_mirakl":"leroymerlin",
+  "leroymerlin":"leroymerlin","leroy merlin":"leroymerlin",
 };
+// Résolution souple du canal Odoo : exact d'abord, puis inclusion partielle
+function resolveOdooMp(ch) {
+  if (!ch) return null;
+  var direct = ODOO_CHANNEL_MAP[ch];
+  if (direct) return direct;
+  var d = ch.toLowerCase().replace(/\s+/g,'_');
+  for (var k in ODOO_CHANNEL_MAP) { if (d.includes(k) || k.includes(d)) return ODOO_CHANNEL_MAP[k]; }
+  // Fallback générique par mot-clé
+  if (d.includes('leroy')) return 'leroymerlin';
+  if (d.includes('amazon')) return 'amazon';
+  if (d.includes('cdiscount')) return 'cdiscount';
+  if (d.includes('maison')) return 'maisonsdumonde';
+  if (d.includes('redoute')) return 'laredoute';
+  if (d.includes('conforama')) return 'conforama';
+  if (d.includes('manomano')) return 'manomano';
+  if (/\bbut\b/.test(d) || d.includes('but_')) return 'but';
+  return null;
+}
 const ODOO_SKIP = ["Livraison","Retrait","Bon de réduction","Remise"];
 
 async function parseOdooXLS(file) {
@@ -2727,7 +2763,7 @@ async function parseOdooXLS(file) {
             const name = desc.replace(/\[[^\]]+\]\s*/, "").trim().slice(0, 100);
             const qty = parseInt(qtyRaw) || 0;
             const caHt = parseFloat(String(row[1] || 0).replace(",", ".")) || 0;
-            const mp = currentChannel ? ODOO_CHANNEL_MAP[currentChannel] : null;
+            const mp = currentChannel ? resolveOdooMp(currentChannel) : null;
             if (mp && qty > 0) {
               const key = ref + "|" + mp;
               if (!agg[key]) agg[key] = { ref, name, marketplace: mp, qty: 0, ca_ht: 0 };
@@ -3521,7 +3557,7 @@ function normalizeAuditMp(mp) {
   if (m.includes("maison")) return "maisonsdumonde";
   if (m.includes("but")) return "but";
   if (m.includes("redoute")) return "laredoute";
-  if (m.includes("leroy")) return "leredoute"; // hors dashboard
+  if (m.includes("leroy")) return "leroymerlin";
   if (m.includes("amazon")) return "amazon";
   if (m.includes("conforama")) return "conforama";
   if (m.includes("manomano")) return "manomano";
