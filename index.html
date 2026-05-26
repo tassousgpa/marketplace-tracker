@@ -4646,51 +4646,31 @@ async function parseSEAXLS(file) {
       try {
         var wb = XLSX.read(e.target.result, { type: 'binary' });
         var ws = wb.Sheets[wb.SheetNames[0]];
-        var data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+        // raw:false pour obtenir les erreurs Excel (#N/A) sous forme de chaîne
+        var data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
         var dataRows = data.slice(1).filter(function(r) { return r[0] !== '' && r[0] != null; });
         var mp = MARKETPLACE;
         var results = [];
-        var aggMap = {};
         var horsLigneCount = 0;
-        var eanToSku = {}, scraperToSku = {};
-        (STATE.products||[]).forEach(function(p) {
-          if (p.ean && p.sku && p.marketplace === mp) eanToSku[p.ean] = p.sku;
-          if (p.product_id_scraper && p.sku && p.marketplace === mp) scraperToSku[p.product_id_scraper] = p.sku;
-        });
-        function pf(v) { return parseFloat(String(v||"").replace(/\s/g,'').replace(',','.')) || 0; }
+        // Détecte une cellule erreur Excel (#N/A, #REF!, etc.) ou code erreur numérique XLSX
         function isNA(v) {
           if (v == null || v === '') return false;
-          var s = String(v).trim().toUpperCase();
-          return s === '#N/A' || s === '#REF!' || s === '#VALUE!' || s === '#NAME?' || s === '#ERROR!';
+          if (typeof v === 'number' && (v === 42 || v === 0 || v === 7 || v === 15 || v === 23 || v === 29 || v === 36 || v === 43)) return true;
+          return String(v).trim().startsWith('#');
         }
+        // Format "Fichiers correspondance - SEA.xlsx" :
+        //   col A (r[0]) = SKU BestMobilier  |  col B (r[1]) = id interne (ignoré)
+        //   col C (r[2]) = réf SEA MdM       |  col D (r[3]) = réf SEA BUT
+        //   col E (r[4]) = réf SEA Cdiscount
+        // Si la colonne marketplace est #N/A → produit hors ligne sur cette MP
+        var seaRefCol = mp === 'maisonsdumonde' ? 2 : mp === 'but' ? 3 : 4; // cdiscount = col E
         dataRows.forEach(function(r) {
-          var ref, imp, clics, budget, conv;
-          if (mp === 'maisonsdumonde') {
-            if (isNA(r[2])) { horsLigneCount++; return; }
-            ref = scraperToSku[String(r[2]||"").trim()] || null;
-            imp = pf(r[6]); clics = pf(r[7]); budget = pf(r[8]); conv = pf(r[9]);
-          } else if (mp === 'but') {
-            if (isNA(r[9])) { horsLigneCount++; return; }
-            var rawRef = String(r[9]||"").trim();
-            var eanBut = rawRef.includes("_") ? rawRef.split("_").slice(1).join("_") : rawRef;
-            ref = eanToSku[eanBut] || null;
-            imp = pf(r[11]); clics = pf(r[13]); budget = pf(r[16]); conv = 0;
-          } else {
-            if (isNA(r[0])) { horsLigneCount++; return; }
-            var rawSku = String(r[0]||"").trim();
-            var ean = rawSku.replace("BES","");
-            ref = eanToSku[ean] || (rawSku && !rawSku.startsWith("BES") ? rawSku : null);
-            imp = pf(r[2]); clics = pf(r[3]); budget = pf(r[5]); conv = pf(r[7]);
-          }
-          if (!ref) return;
-          if (mp === 'but') {
-            if (!aggMap[ref]) aggMap[ref] = { ref:ref, impressions:0, clics:0, budget:0, conversions:0 };
-            aggMap[ref].impressions += imp; aggMap[ref].clics += clics; aggMap[ref].budget += budget;
-          } else {
-            results.push({ ref:ref, impressions:imp, clics:clics, budget:budget, conversions:conv });
-          }
+          var sku = String(r[0]||"").trim();
+          if (!sku) return;
+          var seaRef = r[seaRefCol];
+          if (isNA(seaRef) || seaRef === '' || seaRef == null) { horsLigneCount++; return; }
+          results.push({ ref: sku, impressions: 0, clics: 0, budget: 0, conversions: 0 });
         });
-        if (mp === 'but') Object.values(aggMap).forEach(function(v) { results.push(v); });
         resolve({ rows: results, horsLigneCount: horsLigneCount });
       } catch(err) { reject(err); }
     };
