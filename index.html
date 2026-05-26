@@ -122,19 +122,17 @@ tr.stripe{background:var(--bg)}
 <body>
 
 <div class="header">
-  <div class="header-top">
-    <div>
-      <div class="title">Marketplace tracker</div>
-      <div class="subtitle" id="header-subtitle">Chargement...</div>
+  <div class="header-top" style="display:flex;justify-content:space-between;align-items:center;">
+    <div class="header-left">
+      <div class="title-small">Marketplace Tracker</div>
     </div>
-    <div class="mp-btns" id="mp-btns">
-      <button class="mp-btn active" onclick="switchMarketplace('cdiscount',this)">Cdiscount</button>
-      <button class="mp-btn" onclick="switchMarketplace('amazon',this)">Amazon</button>
-      <button class="mp-btn" onclick="switchMarketplace('maisonsdumonde',this)">Maisons du Monde</button>
-      <button class="mp-btn" onclick="switchMarketplace('conforama',this)">Conforama</button>
-      <button class="mp-btn" onclick="switchMarketplace('laredoute',this)">La Redoute</button>
-      <button class="mp-btn" onclick="switchMarketplace('but',this)">BUT</button>
-      <button class="mp-btn" onclick="switchMarketplace('manomano',this)">ManoMano</button>
+    <div class="header-center">
+      <div class="mp-active-name" id="mp-active-name">Cdiscount</div>
+      <div class="mp-active-date subtitle" id="header-subtitle">Chargement...</div>
+    </div>
+    <div class="header-right">
+      <button class="btn-changer" onclick="toggleMpPanel()" id="btn-changer">Changer</button>
+      <div class="mp-panel hidden" id="mp-panel"></div>
     </div>
   </div>
   <!-- Indicateurs de scraping par marketplace -->
@@ -169,14 +167,15 @@ const MARKETPLACES = [
   { id: "amazon", label: "Amazon" },
   { id: "maisonsdumonde", label: "Maisons du Monde" },
   { id: "conforama", label: "Conforama" },
+  { id: "leroymerlin", label: "Leroy Merlin" },
   { id: "laredoute", label: "La Redoute" },
   { id: "but", label: "BUT" },
   { id: "manomano", label: "ManoMano" },
 ];
 
-// Marketplaces sans onglet Positions ni Concurrents
-const NO_POSITIONS_MP = new Set(["manomano"]);
-const NO_COMPETITORS_MP = new Set(["manomano"]);
+ // Marketplaces sans onglet Positions ni Concurrents
+ const NO_POSITIONS_MP = new Set(["manomano","leroymerlin"]);
+ const NO_COMPETITORS_MP = new Set(["manomano","leroymerlin"]);
 
 // Cache des derniers timestamps de scraping par marketplace (pour l'indicateur)
 const MP_LAST_SCRAPING = {};
@@ -282,10 +281,60 @@ function formatRelativeDate(dateStr) {
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" });
 }
 
-// Rafraîchir les indicateurs toutes les 20s (pour détecter un scraping en cours)
-setInterval(() => {
-  loadScrapingIndicators();
-}, 60000);
+ // Rafraîchir les indicateurs toutes les 20s (pour détecter un scraping en cours)
+ setInterval(() => {
+   loadScrapingIndicators();
+   // also refresh the mp panel badges if visible
+   try { renderMpPanel(); } catch(e) {}
+ }, 60000);
+
+ // Marketplace selector panel helpers
+ function toggleMpPanel() {
+   var panel = document.getElementById('mp-panel');
+   if (!panel) return;
+   panel.classList.toggle('hidden');
+   // render content each time to keep badges fresh
+   try { renderMpPanel(); } catch(e) {}
+ }
+ function closeMpPanel() {
+   var panel = document.getElementById('mp-panel');
+   if (!panel) return;
+   panel.classList.add('hidden');
+ }
+ function renderMpPanel() {
+   var panel = document.getElementById('mp-panel');
+   if (!panel) return;
+   var html = '';
+   for (var i = 0; i < MARKETPLACES.length; i++) {
+     var mp = MARKETPLACES[i];
+     var label = mp.label || mp.id;
+     var lastDate = MP_LAST_SCRAPING[mp.id];
+     var badge = '<span class="mp-panel-badge mp-panel-badge-none">Aucune donnée</span>';
+     if (lastDate) {
+       var lastMs = new Date(lastDate).getTime();
+       var diffSec = Math.round((Date.now() - lastMs) / 1000);
+       if (diffSec < 90) {
+         badge = '<span class="mp-panel-badge mp-panel-badge-live"><span class="dot"></span>Scraping en cours</span>';
+       } else {
+         badge = '<span class="mp-panel-badge mp-panel-badge-ok">✓ ' + formatRelativeDate(lastDate) + '</span>';
+       }
+     }
+     html += '<div class="mp-panel-item" onclick="switchMarketplace(\\'' + mp.id + '\\', this)">' +
+               '<div class="mp-panel-name">' + label + '</div>' +
+               '<div>' + badge + '</div>' +
+             '</div>';
+   }
+   panel.innerHTML = html;
+ }
+ // Close panel on outside click
+ document.addEventListener('click', function(e) {
+   var panel = document.getElementById('mp-panel');
+   var btn = document.getElementById('btn-changer');
+   if (!panel) return;
+   if (panel.classList.contains('hidden')) return;
+   if (panel.contains(e.target) || (btn && btn.contains(e.target))) return;
+   panel.classList.add('hidden');
+ });
 
 let STATE = { products:[], snapshots:[], positions:[], dates:[], sellerStats:[], tab:0 };
 
@@ -321,16 +370,36 @@ function normalizeKeyword(kw) {
   return kw;
 }
 
-const TAB_NAMES = ["Synthèse","Produits","Historique","Positions","Concurrents","Anomalies","Audit","Opé. Commerciales","SEA","Gestion"];
-const TAB_NAMES_LIGHT = ["Synthèse","Produits","Historique","Anomalies","Audit","Opé. Commerciales","SEA","Gestion"];
+const TAB_NAMES = ["Synthèse","Produits","Historique","Positions","Concurrents","Anomalies","Audit","Opé. Commerciales","Gestion"];
+const TAB_NAMES_LIGHT = ["Synthèse","Produits","Historique","Anomalies","Audit","Opé. Commerciales","Gestion"];
+const TAB_NAMES_MINIMAL = ["Synthèse","Audit","Opé. Commerciales","Gestion"];
+const LAREDOUTE_TABS = ["Synthèse","Positions","Audit","Opé. Commerciales","Gestion"];
+const MINIMAL_MP = new Set(["leroymerlin","manomano"]);
 
 function isLightMp() { return NO_POSITIONS_MP.has(MARKETPLACE); }
-function getTabNames() { return isLightMp() ? TAB_NAMES_LIGHT : TAB_NAMES; }
+function isMinimalMp() { return MINIMAL_MP.has(MARKETPLACE); }
+function getTabNames() {
+  if (isMinimalMp()) return TAB_NAMES_MINIMAL;
+  if (MARKETPLACE === "laredoute") return LAREDOUTE_TABS;
+  return isLightMp() ? TAB_NAMES_LIGHT : TAB_NAMES;
+}
 
 function switchMarketplace(mp, btn) {
   MARKETPLACE = mp;
-  document.querySelectorAll('.mp-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
+  // cleanup old "mp-btn" active state if present
+  try {
+    document.querySelectorAll('.mp-btn').forEach(function(b){ b.classList.remove('active'); });
+  } catch(e){}
+  // Add active styling to the clicked element when available
+  if (btn && btn.classList) {
+    try { btn.classList.add('active'); } catch(e){}
+  }
+  // Update center display
+  var mpLabel = (MARKETPLACES.find(function(x){ return x.id === MARKETPLACE; }) || {label: MARKETPLACE}).label;
+  var nameEl = document.getElementById('mp-active-name');
+  if (nameEl) nameEl.textContent = mpLabel;
+  // Close selector panel if open
+  try { closeMpPanel(); } catch(e){}
   STATE.tab = 0;
   loadData();
 }
@@ -560,31 +629,58 @@ function renderTabs() {
 function switchTab(i) { STATE.tab=i; renderTabs(); renderContent(); }
 function renderContent() {
   const el = document.getElementById("content");
-  if (isLightMp()) {
+  // Minimal marketplaces (Leroy Merlin, ManoMano) -> Synthèse (CA), Audit, Opé., Gestion
+  if (isMinimalMp()) {
     switch(STATE.tab) {
-      case 0: el.innerHTML=renderSynthese(); break;
-      case 1: el.innerHTML=renderProduits(); break;
-      case 2: el.innerHTML=renderHistorique(); break;
-      case 3: el.innerHTML=renderAnomalies(); break;
-      case 4: renderAudit(); break;
-      case 5: renderOpeCommerciales(); break;
-      case 6: renderSEA(); break;
-      case 7: el.innerHTML=renderGestion(); break;
-      default: el.innerHTML='';
+      case 0: el.innerHTML = renderSynthese(); break;
+      case 1: renderAudit(); break;
+      case 2: renderOpeCommerciales(); break;
+      case 3: el.innerHTML = renderGestion(); break;
+      default: el.innerHTML = '';
     }
     return;
   }
+
+  // La Redoute : custom tab set
+  if (MARKETPLACE === "laredoute") {
+    switch(STATE.tab) {
+      case 0: el.innerHTML = renderSynthese(); break;
+      case 1: el.innerHTML = renderPositions(); break;
+      case 2: renderAudit(); break;
+      case 3: renderOpeCommerciales(); break;
+      case 4: el.innerHTML = renderGestion(); break;
+      default: el.innerHTML = '';
+    }
+    return;
+  }
+
+  // Light marketplaces (no Positions / no Concurrents)
+  if (isLightMp()) {
+    switch(STATE.tab) {
+      case 0: el.innerHTML = renderSynthese(); break;
+      case 1: el.innerHTML = renderProduits(); break;
+      case 2: el.innerHTML = renderHistorique(); break;
+      case 3: el.innerHTML = renderAnomalies(); break;
+      case 4: renderAudit(); break;
+      case 5: renderOpeCommerciales(); break;
+      case 6: el.innerHTML = renderGestion(); break;
+      default: el.innerHTML = '';
+    }
+    return;
+  }
+
+  // Full marketplaces
   switch(STATE.tab) {
-    case 0: el.innerHTML=renderSynthese(); break;
-    case 1: el.innerHTML=renderProduits(); break;
-    case 2: el.innerHTML=renderHistorique(); break;
-    case 3: el.innerHTML=renderPositions(); break;
-    case 4: el.innerHTML=renderConcurrents(); break;
-    case 5: el.innerHTML=renderAnomalies(); break;
+    case 0: el.innerHTML = renderSynthese(); break;
+    case 1: el.innerHTML = renderProduits(); break;
+    case 2: el.innerHTML = renderHistorique(); break;
+    case 3: el.innerHTML = renderPositions(); break;
+    case 4: el.innerHTML = renderConcurrents(); break;
+    case 5: el.innerHTML = renderAnomalies(); break;
     case 6: renderAudit(); break;
     case 7: renderOpeCommerciales(); break;
-    case 8: renderSEA(); break;
-    case 9: el.innerHTML=renderGestion(); break;
+    case 8: el.innerHTML = renderGestion(); break;
+    default: el.innerHTML = '';
   }
 }
 
@@ -2334,6 +2430,7 @@ const MP_MATCHING = {
   maisonsdumonde: ["maisonsdumonde"],
   laredoute:      ["laredoute"],
   conforama:      ["conforama"],
+  leroymerlin:    ["leroymerlin"],
   manomano:       ["manomano_de","manomano_fr","manomano_fr_b2b","manomano_fr_mmf","manomano"],
   but:            ["but_mirakl","but"],
 };
@@ -2343,6 +2440,7 @@ const MP_LABELS = {
   maisonsdumonde: "Maisons du Monde",
   laredoute:      "La Redoute",
   conforama:      "Conforama",
+  leroymerlin:    "Leroy Merlin",
   manomano:       "ManoMano",
   but:            "BUT",
 };
@@ -4037,9 +4135,10 @@ async function confirmOpeEdit(id) {
   } catch(e) { statusEl.innerHTML='<span style="color:var(--rd)">Erreur : '+e.message+'</span>'; }
 }
   
-// =============================================
-// TAB SEA — CAMPAGNES & PRODUITS SPONSORISÉS
-// =============================================
+/*
+ // =============================================
+ // TAB SEA — CAMPAGNES & PRODUITS SPONSORISÉS
+ // =============================================
 let seaSortCol = 'budget';
 let seaSortDir = 'desc';
 
@@ -4473,8 +4572,9 @@ async function parseSEAXLS(file) {
   });
 }
 
-// Init
-if (MAINTENANCE_MODE) {
+*/
+ // Init
+ if (MAINTENANCE_MODE) {
   const stored = sessionStorage.getItem("admin_access");
   if (stored !== ADMIN_CODE) {
     document.body.innerHTML = `
