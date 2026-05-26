@@ -319,7 +319,7 @@ function formatRelativeDate(dateStr) {
          badge = '<span class="mp-panel-badge mp-panel-badge-ok">✓ ' + formatRelativeDate(lastDate) + '</span>';
        }
      }
-     html += '<div class="mp-panel-item" onclick="switchMarketplace(\\'' + mp.id + '\\', this)">' +
+     html += '<div class="mp-panel-item" onclick="switchMarketplace(\\'' + mp.id + '\\', this)">' ?
                '<div class="mp-panel-name">' + label + '</div>' +
                '<div>' + badge + '</div>' +
              '</div>';
