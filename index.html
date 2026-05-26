@@ -396,6 +396,8 @@ const TAB_NAMES_LIGHT = ["Synthèse","Produits","Historique","Anomalies","Audit"
 const TAB_NAMES_MINIMAL = ["Synthèse","Audit","Opé. Commerciales","Gestion"];
 const LAREDOUTE_TABS = ["Synthèse","Positions","Audit","Opé. Commerciales","Gestion"];
 const MINIMAL_MP = new Set(["leroymerlin","manomano"]);
+const SEA_MP = new Set(["cdiscount","but","maisonsdumonde"]);
+const TAB_NAMES_SEA = ["Synthèse","Produits","Historique","Positions","Concurrents","Anomalies","Audit","Opé. Commerciales","Gestion","SEA"];
 
 function isLightMp() { return NO_POSITIONS_MP.has(MARKETPLACE); }
 function isMinimalMp() { return MINIMAL_MP.has(MARKETPLACE); }
@@ -412,7 +414,9 @@ function stripUrlParams(s) {
 function getTabNames() {
   if (isMinimalMp()) return TAB_NAMES_MINIMAL;
   if (MARKETPLACE === "laredoute") return LAREDOUTE_TABS;
-  return isLightMp() ? TAB_NAMES_LIGHT : TAB_NAMES;
+  if (isLightMp()) return TAB_NAMES_LIGHT;
+  if (SEA_MP.has(MARKETPLACE)) return TAB_NAMES_SEA;
+  return TAB_NAMES;
 }
 
 function switchMarketplace(mp, btn) {
@@ -745,6 +749,7 @@ function renderContent() {
     case 6: renderAudit(); break;
     case 7: renderOpeCommerciales(); break;
     case 8: el.innerHTML = renderGestion(); break;
+    case 9: if (SEA_MP.has(MARKETPLACE)) renderSEA(); break;
     default: el.innerHTML = '';
   }
 }
@@ -897,7 +902,7 @@ function renderProductSalesBlocks() {
       + "<td style='padding:5px 10px;text-align:right;font-weight:700;width:70px'>" + r.qty + "</td>"
       + "<td style='padding:5px 10px;text-align:right;color:var(--txS);width:70px'>" + basket + "</td>"
       + "<td style='padding:5px 10px;text-align:center;width:90px'>"+(getActiveDealForWeek(r.ref, currentWeek)?'<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:#fff3e0;color:#e65100">✓ Deal</span>':'<span style="font-size:10px;color:var(--txT)">—</span>')+"</td>"
-      + "<td style='padding:5px 10px;text-align:center;width:90px'>"+(getSeaActive(r.ref, currentWeek)?'<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:var(--amBg);color:var(--am)">⚡ SEA</span>':'<span style="font-size:10px;color:var(--txT)">—</span>')+"</td>"
+      + "<td style='padding:5px 10px;text-align:center;width:90px'>"+(getSeaActive(r.ref, currentWeek)?'<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:var(--amBg);color:var(--am)">⚡ Sponso</span>':'<span style="font-size:10px;color:var(--txT)">—</span>')+"</td>"
       + "</tr>";
   }
 
@@ -910,7 +915,7 @@ function renderProductSalesBlocks() {
       + "<th style='padding:5px 10px;text-align:right;font-weight:600;color:var(--txS);width:70px'>Ventes</th>"
       + "<th style='padding:5px 10px;text-align:right;font-weight:600;color:var(--txS);width:70px'>PM TTC</th>"
       + "<th style='padding:5px 10px;text-align:center;font-weight:600;color:var(--txS);width:90px'>Opé. commerciale</th>"
-      + "<th style='padding:5px 10px;text-align:center;font-weight:600;color:var(--txS);width:90px'>SEA activé</th>"
+      + "<th style='padding:5px 10px;text-align:center;font-weight:600;color:var(--txS);width:90px'>Sponso</th>"
       + "</tr></thead><tbody>"
       + rows.map(function(r,i) { return salesRow(r, i, weekLabel); }).join("")
       + "</tbody></table></div>";
@@ -1511,21 +1516,31 @@ async function showPositionDetail(kw) {
     + ' <span style="color:var(--txS);font-weight:400;font-size:12px">(' + pctBM + '%)</span>'
     + (spoCount > 0 ? ' <span style="color:#e65100;font-size:12px">(dont ' + spoCount + ' sponso)</span>' : '');
   var v1Html = '<div style="font-size:13px;margin-bottom:10px">' + v1Title + '</div>';
-  if (bmItems.length === 0) {
-    v1Html += '<div style="color:var(--txT);font-size:13px">Aucun produit BestMobilier en page 1</div>';
+  if (!allItems.length) {
+    v1Html += '<div style="color:var(--txT);font-size:13px">Aucun produit en page 1</div>';
   } else {
-    v1Html += bmItems.map(function(i) {
+    var sorted = allItems.slice().sort(function(a, b) {
+      var aBM = BM_SELLERS.has(a.seller) || (STATE.bmScraperIds && (STATE.bmScraperIds.has((a.product_id||"").toLowerCase()) || STATE.bmScraperIds.has(stripUrlParams((a.product_id||"").toLowerCase()))));
+      var bBM = BM_SELLERS.has(b.seller) || (STATE.bmScraperIds && (STATE.bmScraperIds.has((b.product_id||"").toLowerCase()) || STATE.bmScraperIds.has(stripUrlParams((b.product_id||"").toLowerCase()))));
+      return (bBM ? 1 : 0) - (aBM ? 1 : 0);
+    });
+    v1Html += sorted.map(function(i) {
+      var isBM = BM_SELLERS.has(i.seller) || (STATE.bmScraperIds && (STATE.bmScraperIds.has((i.product_id||"").toLowerCase()) || STATE.bmScraperIds.has(stripUrlParams((i.product_id||"").toLowerCase()))));
       var tracked = lookupTrackedProduct(i.product_id);
-      var name = tracked ? esc(tracked.name) : esc(i.product_id||"—");
+      var name = tracked ? esc(tracked.name) : (i.seller ? esc(i.seller) + ' — ' + esc(i.product_id||'—') : esc(i.product_id||'—'));
       var url = tracked ? tracked.url : (i.url || "");
+      var bmTag = isBM
+        ? ' <span style="display:inline-block;padding:2px 7px;border-radius:99px;font-size:11px;font-weight:600;background:var(--acBg);color:var(--ac)">✓ BM</span>'
+        : '';
       var spoTag = i.is_sponsored === true
         ? ' <span style="display:inline-block;padding:2px 7px;border-radius:99px;font-size:11px;font-weight:600;background:#fff3e0;color:#e65100">⚡ Sponso</span>'
         : '';
       var untrackedTag = !tracked
         ? ' <span style="display:inline-block;padding:2px 7px;border-radius:99px;font-size:11px;background:var(--amBg);color:var(--am)">non suivi</span>'
         : '';
-      return '<div class="product-row">'
-        + '<div class="product-row-name">' + name + spoTag + untrackedTag + '</div>'
+      var rowBg = isBM ? 'background:var(--acBg)' : '';
+      return '<div class="product-row" style="' + rowBg + '">'
+        + '<div class="product-row-name">' + name + bmTag + spoTag + untrackedTag + '</div>'
         + '<div class="product-row-refs">'
         + '<span>Position : ' + (i.position||'—') + '</span>'
         + (url ? '<a href="' + esc(url) + '" target="_blank" class="link">Voir ↗</a>' : '')
@@ -4235,10 +4250,9 @@ async function confirmOpeEdit(id) {
   } catch(e) { statusEl.innerHTML='<span style="color:var(--rd)">Erreur : '+e.message+'</span>'; }
 }
   
-/*
- // =============================================
- // TAB SEA — CAMPAGNES & PRODUITS SPONSORISÉS
- // =============================================
+// =============================================
+// TAB SEA — CAMPAGNES & PRODUITS SPONSORISÉS
+// =============================================
 let seaSortCol = 'budget';
 let seaSortDir = 'desc';
 
@@ -4591,8 +4605,11 @@ async function confirmSEAImport() {
   if (!file || !label || !debut || !fin) { statusEl.innerHTML='<span style="color:var(--rd)">Tous les champs sont obligatoires.</span>'; return; }
   statusEl.innerHTML='<span style="color:var(--txS)">Lecture du fichier...</span>';
   try {
-    var rows = await parseSEAXLS(file);
-    if (!rows.length) { statusEl.innerHTML='<span style="color:var(--am)">Aucune ligne reconnue dans le fichier.</span>'; return; }
+    var parsed = await parseSEAXLS(file);
+    var rows = parsed.rows;
+    var horsLigneCount = parsed.horsLigneCount;
+    if (!rows.length && !horsLigneCount) { statusEl.innerHTML='<span style="color:var(--am)">Aucune ligne reconnue dans le fichier.</span>'; return; }
+    if (!rows.length) { statusEl.innerHTML='<span style="color:var(--am)">0 produit sponsorisé — '+horsLigneCount+' produit(s) hors ligne (#N/A).</span>'; return; }
     // Détection doublons
     var existingQ = periodType === 'month'
       ? "marketplace=eq."+MARKETPLACE+"&period_start=gte."+debut+"&period_end=lte."+fin+"&period_type=eq.week&select=id"
@@ -4616,8 +4633,9 @@ async function confirmSEAImport() {
         body:JSON.stringify(insertRows.slice(i, i+200))
       });
     }
-    statusEl.innerHTML='<span style="color:var(--gn)">'+rows.length+' produits importes !</span>';
-    setTimeout(function() { closeModal(); loadData(); }, 1000);
+    var horsLigneMsg = horsLigneCount > 0 ? ' · '+horsLigneCount+' hors ligne (#N/A)' : '';
+    statusEl.innerHTML='<span style="color:var(--gn)">'+rows.length+' produits Sponso importés'+horsLigneMsg+'</span>';
+    setTimeout(function() { closeModal(); loadData(); }, 1200);
   } catch(e) { statusEl.innerHTML='<span style="color:var(--rd)">Erreur : '+e.message+'</span>'; }
 }
 
@@ -4633,23 +4651,32 @@ async function parseSEAXLS(file) {
         var mp = MARKETPLACE;
         var results = [];
         var aggMap = {};
+        var horsLigneCount = 0;
         var eanToSku = {}, scraperToSku = {};
         (STATE.products||[]).forEach(function(p) {
           if (p.ean && p.sku && p.marketplace === mp) eanToSku[p.ean] = p.sku;
           if (p.product_id_scraper && p.sku && p.marketplace === mp) scraperToSku[p.product_id_scraper] = p.sku;
         });
         function pf(v) { return parseFloat(String(v||"").replace(/\s/g,'').replace(',','.')) || 0; }
+        function isNA(v) {
+          if (v == null || v === '') return false;
+          var s = String(v).trim().toUpperCase();
+          return s === '#N/A' || s === '#REF!' || s === '#VALUE!' || s === '#NAME?' || s === '#ERROR!';
+        }
         dataRows.forEach(function(r) {
           var ref, imp, clics, budget, conv;
           if (mp === 'maisonsdumonde') {
+            if (isNA(r[2])) { horsLigneCount++; return; }
             ref = scraperToSku[String(r[2]||"").trim()] || null;
             imp = pf(r[6]); clics = pf(r[7]); budget = pf(r[8]); conv = pf(r[9]);
           } else if (mp === 'but') {
+            if (isNA(r[9])) { horsLigneCount++; return; }
             var rawRef = String(r[9]||"").trim();
             var eanBut = rawRef.includes("_") ? rawRef.split("_").slice(1).join("_") : rawRef;
             ref = eanToSku[eanBut] || null;
             imp = pf(r[11]); clics = pf(r[13]); budget = pf(r[16]); conv = 0;
           } else {
+            if (isNA(r[0])) { horsLigneCount++; return; }
             var rawSku = String(r[0]||"").trim();
             var ean = rawSku.replace("BES","");
             ref = eanToSku[ean] || (rawSku && !rawSku.startsWith("BES") ? rawSku : null);
@@ -4664,7 +4691,7 @@ async function parseSEAXLS(file) {
           }
         });
         if (mp === 'but') Object.values(aggMap).forEach(function(v) { results.push(v); });
-        resolve(results);
+        resolve({ rows: results, horsLigneCount: horsLigneCount });
       } catch(err) { reject(err); }
     };
     reader.onerror = reject;
@@ -4672,8 +4699,7 @@ async function parseSEAXLS(file) {
   });
 }
 
-*/
- // Init
+// Init
  if (MAINTENANCE_MODE) {
   const stored = sessionStorage.getItem("admin_access");
   if (stored !== ADMIN_CODE) {
