@@ -319,10 +319,11 @@ function formatRelativeDate(dateStr) {
          badge = '<span class="mp-panel-badge mp-panel-badge-ok">✓ ' + formatRelativeDate(lastDate) + '</span>';
        }
      }
-     html += '<div class="mp-panel-item" onclick="switchMarketplace(\\'' + mp.id + '\\', this)">' +
-               '<div class="mp-panel-name">' + label + '</div>' +
-               '<div>' + badge + '</div>' +
-             '</div>';
+     var isActive = mp.id === MARKETPLACE;
+     html += '<div class="mp-panel-item' + (isActive ? ' mp-panel-item-active' : '') + '" onclick="switchMarketplace(\'' + mp.id + '\')">'
+           + '<div class="mp-panel-name">' + label + '</div>'
+           + '<div>' + badge + '</div>'
+           + '</div>';
    }
    panel.innerHTML = html;
  }
@@ -629,10 +630,10 @@ function renderTabs() {
 function switchTab(i) { STATE.tab=i; renderTabs(); renderContent(); }
 function renderContent() {
   const el = document.getElementById("content");
-  // Minimal marketplaces (Leroy Merlin, ManoMano) -> Synthèse (CA), Audit, Opé., Gestion
+  // Minimal marketplaces (Leroy Merlin, ManoMano) -> Synthèse CA uniquement, Audit, Opé., Gestion
   if (isMinimalMp()) {
     switch(STATE.tab) {
-      case 0: el.innerHTML = renderSynthese(); break;
+      case 0: el.innerHTML = renderSyntheseMinimal(); break;
       case 1: renderAudit(); break;
       case 2: renderOpeCommerciales(); break;
       case 3: el.innerHTML = renderGestion(); break;
@@ -780,6 +781,10 @@ function renderSynthese() {
     ].map(k=>`<div class="kpi-row"><span class="kpi-label">${k.l}</span><div><span class="kpi-value" ${k.color?`style="color:${k.color}"`:''}>${k.v}</span>${k.click?`<button class="btn-see" onclick="${k.click}">voir</button>`:''}</div></div>`).join("")}</div></div>
     ${renderRevenueBlock()}
     ${renderProductSalesBlocks()}`;
+}
+
+function renderSyntheseMinimal() {
+  return renderRevenueBlock() + renderProductSalesBlocks();
 }
 
 function showVariation(tag) {
