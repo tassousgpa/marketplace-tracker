@@ -4762,7 +4762,7 @@ function renderSEAProductsTable() {
     var conv = sea ? sea.conversions : 0;
     var budget = sea ? sea.budget : 0;
     var ctr = imp > 0 ? clics/imp*100 : 0;
-    var tauxConv = clics > 0 ? conv/clics*100 : 0;
+    var tauxConv = imp > 0 ? conv/imp*100 : 0;
     var hasData = imp > 0 || clics > 0 || conv > 0;
     return {
       sku: p.sku||'', name: p.name||'', type: p.type||'', product_id: p.product_id||'',
@@ -4803,7 +4803,7 @@ function renderSEAProductsTable() {
 
   var tbody = rows.map(function(r, i) {
     var ctrFmt = r.impressions > 0 ? r.ctr.toFixed(2)+'%' : '—';
-    var convFmt = r.clics > 0 ? r.tauxConv.toFixed(2)+'%' : '—';
+    var convFmt = r.impressions > 0 ? r.tauxConv.toFixed(2)+'%' : '—';
     var typeLbl = r.type==="Nouveautés Q4+Q1"?"Nvtés":r.type==="Deals exclus"?"Deals":r.type;
     var typeCol = r.type==="Classe A"?"green":r.type==="Deals exclus"?"amber":"accent";
     var rowStyle = (i%2?"background:var(--bg);":"")+(r.hasData?"":"opacity:0.42;")+"border-bottom:1px solid var(--borderL);cursor:pointer";
@@ -4882,7 +4882,7 @@ async function openSEAProductDetail(ref) {
   function fmtNum(v) { return v != null ? Number(v).toLocaleString("fr-FR") : "—"; }
   function rowHtml(r, indent) {
     var ctr = r.impressions > 0 ? (r.clics/r.impressions*100).toFixed(2)+"%" : "—";
-    var conv = r.clics > 0 ? (r.conversions/r.clics*100).toFixed(2)+"%" : "—";
+    var conv = r.impressions > 0 ? (r.conversions/r.impressions*100).toFixed(2)+"%" : "—";
     return '<tr style="'+(indent?"background:var(--bg)":"")+';border-bottom:1px solid var(--borderL)">'
       + '<td style="padding:5px 10px;font-size:11px;color:var(--txS);padding-left:'+(indent?20:10)+'px">'+esc(r.period_label||r.period_start)+'</td>'
       + '<td style="padding:5px 10px;text-align:right;font-weight:'+(indent?400:600)+'">'+(r.budget?Math.round(r.budget).toLocaleString("fr-FR")+"€":"—")+'</td>'
