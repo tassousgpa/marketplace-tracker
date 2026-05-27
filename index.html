@@ -5059,13 +5059,14 @@ async function confirmSEAImport() {
         : "marketplace=eq."+MARKETPLACE+"&period_start=eq."+debut+"&period_type=eq."+periodType;
       await sbDelete("sea_product_stats", delQ);
     }
-    // Construction du payload
+    // Construction du payload — impressions/clics/conversions arrondis à l'entier (bigint Supabase)
+    var toInt = function(v) { return Math.round(v)||0; };
     var insertRows = rows.map(function(r) {
-      return { marketplace: MARKETPLACE, ref: r.ref, period_start: debut, period_end: fin, period_type: periodType, period_label: label, budget: r.budget||null, impressions: r.impressions||0, clics: r.clics||0, conversions: r.conversions||0 };
+      return { marketplace: MARKETPLACE, ref: r.ref, period_start: debut, period_end: fin, period_type: periodType, period_label: label, budget: r.budget||null, impressions: toInt(r.impressions), clics: toInt(r.clics), conversions: toInt(r.conversions) };
     });
     // Ligne "Autres produits" (produits hors catalogue suivi)
     if (autresData.impressions > 0 || autresData.clics > 0) {
-      insertRows.push({ marketplace: MARKETPLACE, ref: '__AUTRES__', period_start: debut, period_end: fin, period_type: periodType, period_label: label, budget: autresData.budget||null, impressions: autresData.impressions||0, clics: autresData.clics||0, conversions: autresData.conversions||0 });
+      insertRows.push({ marketplace: MARKETPLACE, ref: '__AUTRES__', period_start: debut, period_end: fin, period_type: periodType, period_label: label, budget: autresData.budget||null, impressions: toInt(autresData.impressions), clics: toInt(autresData.clics), conversions: toInt(autresData.conversions) });
     }
     console.log('[SEA Import] Insertion de', insertRows.length, 'lignes. Échantillon :', JSON.stringify(insertRows.slice(0,2)));
     statusEl.innerHTML='<span style="color:var(--txS)">Insertion de '+insertRows.length+' lignes dans Supabase...</span>';
