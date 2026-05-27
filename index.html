@@ -4624,6 +4624,14 @@ function renderSeaProductsOnly() {
   if (el) el.innerHTML = renderSEAProductsTable();
 }
 
+function seaSearchChange(val) {
+  seaFilter.search = val;
+  renderSeaProductsOnly();
+  // Restaurer le focus + position curseur après re-render
+  var inp = document.querySelector('#sea-products-container input[placeholder="Rechercher..."]');
+  if (inp) { inp.focus(); inp.setSelectionRange(val.length, val.length); }
+}
+
 function buildSEACampaignsHTML() {
   var campaigns = STATE.seaCampaigns || [];
   var now = new Date();
@@ -4854,7 +4862,7 @@ function renderSEAProductsTable() {
     + '</div>'
     + noDataBanner
     + '<div class="filters" style="margin-bottom:12px">'
-    + '<input placeholder="Rechercher..." value="'+esc(seaFilter.search)+'" oninput="seaFilter.search=this.value;renderSeaProductsOnly()" style="flex:1;min-width:180px"/>'
+    + '<input placeholder="Rechercher..." value="'+esc(seaFilter.search)+'" oninput="seaSearchChange(this.value)" style="flex:1;min-width:180px"/>'
     + '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--txS);cursor:pointer;white-space:nowrap"><input type="checkbox" '+(seaFilter.onlyWithData?'checked':'')+' onchange="seaFilter.onlyWithData=this.checked;renderSeaProductsOnly()" style="cursor:pointer"> Avec données uniquement</label>'
     + '</div>'
     + '<div class="card" style="padding:0;overflow:hidden"><div class="scroll-table"><table style="min-width:1050px">'
@@ -5173,7 +5181,25 @@ async function parseSEAXLS(file) {
         function isNA(v) { var s = String(v||'').trim(); return !s || s === '#N/A' || s.startsWith('#'); }
         function parseNum(v) {
           if (v == null || v === '') return 0;
-          var n = parseFloat(String(v).replace(/[^\d.,-]/g,'').replace(',','.'));
+          // Supprime espaces, symboles monétaires, %
+          var s = String(v).trim().replace(/[€$%\s ]/g, '');
+          if (!s || s === '-') return 0;
+          var commas = (s.match(/,/g)||[]).length;
+          var dots   = (s.match(/\./g)||[]).length;
+          if (commas > 1) {
+            s = s.replace(/,/g, '');                        // "1,234,567" → 1234567
+          } else if (commas === 1 && dots === 0) {
+            if (/,\d{3}$/.test(s)) s = s.replace(',', ''); // "288,597"  → 288597
+            else s = s.replace(',', '.');                   // "1,5"      → 1.5
+          } else if (commas === 1 && dots >= 1) {
+            if (s.lastIndexOf(',') > s.lastIndexOf('.'))
+              s = s.replace(/\./g, '').replace(',', '.');   // "1.234,56" → 1234.56
+            else
+              s = s.replace(/,/g, '');                      // "1,234.56" → 1234.56
+          } else if (dots > 1) {
+            s = s.replace(/\./g, '');                       // "1.234.567" → 1234567
+          }
+          var n = parseFloat(s);
           return isNaN(n) ? 0 : Math.max(0, n);
         }
         function addTo(obj, imp, clic, conv, bud) {
