@@ -4820,6 +4820,25 @@ function renderSEAProductsTable() {
       + '</tr>';
   }).join('');
 
+  // Ligne "Autres produits" — cumul des produits non suivis dans le catalogue
+  var autresSeaAgg = seaMap['__AUTRES__'];
+  if (autresSeaAgg && (autresSeaAgg.impressions > 0 || autresSeaAgg.clics > 0)) {
+    var aImp = autresSeaAgg.impressions, aClics = autresSeaAgg.clics, aConv = autresSeaAgg.conversions;
+    var aCtr = aImp > 0 ? (aClics/aImp*100).toFixed(2)+'%' : '—';
+    var aConvFmt = aClics > 0 ? (aConv/aClics*100).toFixed(2)+'%' : '—';
+    tbody += '<tr style="border-top:2px solid var(--border);background:var(--bg);font-style:italic;color:var(--txS)">'
+      + '<td style="padding:7px 10px;font-weight:600;color:var(--txS)">Autres produits</td>'
+      + '<td style="padding:7px 10px;font-size:11px;color:var(--txT)">Non suivis dans le catalogue</td>'
+      + '<td style="padding:7px 10px;text-align:center">—</td>'
+      + '<td style="padding:7px 10px;text-align:right">'+(aImp>0?aImp.toLocaleString('fr-FR'):'—')+'</td>'
+      + '<td style="padding:7px 10px;text-align:right">'+(aClics>0?aClics.toLocaleString('fr-FR'):'—')+'</td>'
+      + '<td style="padding:7px 10px;text-align:right">'+(aConv>0?aConv:'—')+'</td>'
+      + '<td style="padding:7px 10px;text-align:right;font-weight:500">'+aCtr+'</td>'
+      + '<td style="padding:7px 10px;text-align:right;font-weight:500">'+aConvFmt+'</td>'
+      + '<td style="padding:7px 10px;text-align:center">—</td>'
+      + '</tr>';
+  }
+
   var noDataBanner = stats.length === 0
     ? '<div style="background:var(--acBg);border-radius:8px;padding:12px 16px;font-size:12px;color:var(--ac);margin-bottom:12px">Aucune donnée SEA importée pour '+curYear+'. Importez un fichier brut via <strong>Import SEA</strong>.</div>'
     : '';
@@ -4973,6 +4992,18 @@ async function confirmSEACreate() {
   } catch(e) { statusEl.innerHTML='<span style="color:var(--rd)">Erreur : '+e.message+'</span>'; }
 }
 
+// Génère automatiquement un label lisible pour la période SEA
+function generateSeaLabel(type, debut, fin) {
+  if (type === 'month') {
+    var d = new Date(debut + 'T12:00:00Z');
+    return d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  }
+  var fmtD = function(s) {
+    return new Date(s + 'T12:00:00Z').toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', timeZone: 'UTC' });
+  };
+  return fmtD(debut) + ' – ' + fmtD(fin);
+}
+
 function openSEAImport() {
   var today = new Date().toISOString().slice(0,10);
   var mpLabel = (MARKETPLACES.find(function(m){return m.id===MARKETPLACE;})||{label:MARKETPLACE}).label;
@@ -4983,15 +5014,12 @@ function openSEAImport() {
   }[MARKETPLACE] || 'Fichier brut SEA spécifique à la marketplace';
   openModal("Import SEA — "+mpLabel, '<div style="display:grid;gap:10px">'
     + '<div style="background:var(--acBg);border-radius:8px;padding:10px 12px;font-size:11px;color:var(--ac)"><strong>Format attendu :</strong> '+fmtInfo+'<br><span style="color:var(--txS)">La table de correspondance est chargée automatiquement depuis le dépôt.</span></div>'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Type de période *</label><select id="sea-imp-type" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"><option value="week">Semaine</option><option value="month">Mois</option></select></div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
-    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Type de periode *</label><select id="sea-imp-type" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"><option value="week">Semaine</option><option value="month">Mois</option></select></div>'
-    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Label periode *</label><input id="sea-imp-label" placeholder="ex: S20 2026" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
-    + '</div>'
-    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
-    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Date debut *</label><input id="sea-imp-debut" type="date" value="'+today+'" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Date début *</label><input id="sea-imp-debut" type="date" value="'+today+'" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
     + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Date fin *</label><input id="sea-imp-fin" type="date" value="'+today+'" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
     + '</div>'
-    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Fichier brut SEA *</label><input id="sea-imp-file" type="file" accept=".xls,.xlsx" style="width:100%;padding:6px;border:.5px solid var(--border);border-radius:6px;font-size:11px;font-family:inherit;background:var(--card)"></div>'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Fichier brut SEA *</label><input id="sea-imp-file" type="file" accept=".xls,.xlsx,.csv" style="width:100%;padding:6px;border:.5px solid var(--border);border-radius:6px;font-size:11px;font-family:inherit;background:var(--card)"></div>'
     + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Mot de passe admin *</label><input id="sea-imp-pwd" type="password" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
     + '<button onclick="confirmSEAImport()" style="padding:10px;background:var(--pu);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Importer</button>'
     + '<div id="sea-imp-status" style="font-size:12px;text-align:center;min-height:16px"></div>'
@@ -5003,61 +5031,95 @@ async function confirmSEAImport() {
   var pwd = document.getElementById("sea-imp-pwd")?.value;
   var file = document.getElementById("sea-imp-file")?.files[0];
   var periodType = document.getElementById("sea-imp-type")?.value;
-  var label = document.getElementById("sea-imp-label")?.value?.trim();
   var debut = document.getElementById("sea-imp-debut")?.value;
   var fin = document.getElementById("sea-imp-fin")?.value;
   if (pwd !== ADMIN_PASSWORD) { statusEl.innerHTML='<span style="color:var(--rd)">Mot de passe incorrect.</span>'; return; }
-  if (!file || !label || !debut || !fin) { statusEl.innerHTML='<span style="color:var(--rd)">Tous les champs sont obligatoires.</span>'; return; }
-  statusEl.innerHTML='<span style="color:var(--txS)">Lecture du fichier...</span>';
+  if (!file || !debut || !fin) { statusEl.innerHTML='<span style="color:var(--rd)">Tous les champs sont obligatoires.</span>'; return; }
+  var label = generateSeaLabel(periodType, debut, fin);
+  statusEl.innerHTML='<span style="color:var(--txS)">Lecture du fichier en cours...</span>';
   try {
     var parsed = await parseSEAXLS(file);
     var rows = parsed.rows;
+    var autresData = parsed.autresData;
     var horsLigneCount = parsed.horsLigneCount;
-    if (!rows.length && !horsLigneCount) { statusEl.innerHTML='<span style="color:var(--am)">Aucune ligne reconnue dans le fichier.</span>'; return; }
-    if (!rows.length) { statusEl.innerHTML='<span style="color:var(--am)">0 produit sponsorisé — '+horsLigneCount+' produit(s) hors ligne (#N/A).</span>'; return; }
+    console.log('[SEA Import] Résultat parsing :', rows.length, 'produits suivis matchés,', horsLigneCount, 'lignes invalides, autresData:', JSON.stringify(autresData));
+    if (!rows.length && autresData.impressions === 0) {
+      statusEl.innerHTML='<span style="color:var(--am)">Aucune ligne reconnue ('+ horsLigneCount +' lignes invalides). Vérifiez la console (F12) pour le détail.</span>';
+      return;
+    }
     // Détection doublons
     var existingQ = periodType === 'month'
       ? "marketplace=eq."+MARKETPLACE+"&period_start=gte."+debut+"&period_end=lte."+fin+"&period_type=eq.week&select=id"
-      : "marketplace=eq."+MARKETPLACE+"&period_start=eq."+debut+"&period_type=eq.week&select=id";
+      : "marketplace=eq."+MARKETPLACE+"&period_start=eq."+debut+"&period_type=eq."+periodType+"&select=id";
     var existing = await sb("sea_product_stats", existingQ);
     if (existing.length > 0) {
-      if (!confirm(existing.length+" entrees existantes seront remplacees. Continuer ?")) { statusEl.innerHTML=''; return; }
+      if (!confirm(existing.length+" entrée(s) existante(s) pour cette période seront remplacées. Continuer ?")) { statusEl.innerHTML=''; return; }
       var delQ = periodType === 'month'
         ? "marketplace=eq."+MARKETPLACE+"&period_start=gte."+debut+"&period_end=lte."+fin+"&period_type=eq.week"
-        : "marketplace=eq."+MARKETPLACE+"&period_start=eq."+debut+"&period_type=eq.week";
+        : "marketplace=eq."+MARKETPLACE+"&period_start=eq."+debut+"&period_type=eq."+periodType;
       await sbDelete("sea_product_stats", delQ);
     }
-    statusEl.innerHTML='<span style="color:var(--txS)">Import de '+rows.length+' lignes...</span>';
+    // Construction du payload
     var insertRows = rows.map(function(r) {
-      return { marketplace: MARKETPLACE, ref: r.ref, period_start: debut, period_end: fin, period_type: periodType, period_label: label, budget: r.budget, impressions: r.impressions, clics: r.clics, conversions: r.conversions };
+      return { marketplace: MARKETPLACE, ref: r.ref, period_start: debut, period_end: fin, period_type: periodType, period_label: label, budget: r.budget||null, impressions: r.impressions||0, clics: r.clics||0, conversions: r.conversions||0 };
     });
+    // Ligne "Autres produits" (produits hors catalogue suivi)
+    if (autresData.impressions > 0 || autresData.clics > 0) {
+      insertRows.push({ marketplace: MARKETPLACE, ref: '__AUTRES__', period_start: debut, period_end: fin, period_type: periodType, period_label: label, budget: autresData.budget||null, impressions: autresData.impressions||0, clics: autresData.clics||0, conversions: autresData.conversions||0 });
+    }
+    console.log('[SEA Import] Insertion de', insertRows.length, 'lignes. Échantillon :', JSON.stringify(insertRows.slice(0,2)));
+    statusEl.innerHTML='<span style="color:var(--txS)">Insertion de '+insertRows.length+' lignes dans Supabase...</span>';
+    var totalInserted = 0;
     for (var i = 0; i < insertRows.length; i += 200) {
-      await fetch(SB_URL+"/rest/v1/sea_product_stats", {
+      var batch = insertRows.slice(i, i+200);
+      var resp = await fetch(SB_URL+"/rest/v1/sea_product_stats", {
         method:"POST",
         headers:{"Content-Type":"application/json",apikey:SB_KEY,Authorization:"Bearer "+SB_KEY,Prefer:"return=minimal"},
-        body:JSON.stringify(insertRows.slice(i, i+200))
+        body:JSON.stringify(batch)
       });
+      if (!resp.ok) {
+        var errText = await resp.text();
+        console.error('[SEA Import] Erreur Supabase batch', Math.floor(i/200)+1, ':', resp.status, errText);
+        throw new Error('Supabase ' + resp.status + ' : ' + errText);
+      }
+      totalInserted += batch.length;
+      console.log('[SEA Import] Batch', Math.floor(i/200)+1, 'OK —', batch.length, 'lignes (total:', totalInserted+')');
     }
-    var horsLigneMsg = horsLigneCount > 0 ? ' · '+horsLigneCount+' hors ligne (#N/A)' : '';
-    statusEl.innerHTML='<span style="color:var(--gn)">'+rows.length+' produits Sponso importés'+horsLigneMsg+'</span>';
-    setTimeout(function() { closeModal(); loadData(); }, 1200);
-  } catch(e) { statusEl.innerHTML='<span style="color:var(--rd)">Erreur : '+e.message+'</span>'; }
+    var autresMsg = (autresData.impressions > 0) ? ' · Autres produits : '+autresData.impressions.toLocaleString('fr-FR')+' impr.' : '';
+    var horsLigneMsg = horsLigneCount > 0 ? ' · '+horsLigneCount+' lignes invalides ignorées' : '';
+    statusEl.innerHTML='<span style="color:var(--gn)">✓ '+rows.length+' produits importés'+autresMsg+horsLigneMsg+'</span>';
+    setTimeout(function() { closeModal(); loadData(); }, 1400);
+  } catch(e) {
+    console.error('[SEA Import] Erreur globale :', e);
+    statusEl.innerHTML='<span style="color:var(--rd)">Erreur : '+esc(e.message)+'</span>';
+  }
 }
 
 // Charge et met en cache la table de correspondance SEA depuis le repo
 async function loadSeaCorrespondence() {
   if (_seaCorrespCache) return _seaCorrespCache;
-  var resp = await fetch('/Fichiers correspondance - SEA.xlsx');
-  if (!resp.ok) throw new Error('Impossible de charger la table de correspondance SEA (HTTP '+resp.status+')');
+  // Essayer les deux formes d'URL (avec et sans encodage des espaces)
+  var urls = ['/Fichiers%20correspondance%20-%20SEA.xlsx', '/Fichiers correspondance - SEA.xlsx'];
+  var resp, lastErr;
+  for (var ui = 0; ui < urls.length; ui++) {
+    console.log('[SEA Corresp] Tentative chargement :', urls[ui]);
+    try { resp = await fetch(urls[ui]); if (resp.ok) break; lastErr = 'HTTP '+resp.status; } catch(e) { lastErr = e.message; }
+    resp = null;
+  }
+  if (!resp || !resp.ok) throw new Error('Impossible de charger la table de correspondance SEA (' + lastErr + ')');
   var buf = await resp.arrayBuffer();
   var wb = XLSX.read(new Uint8Array(buf), { type: 'array' });
   var ws = wb.Sheets[wb.SheetNames[0]];
   var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+  console.log('[SEA Corresp] Feuille lue :', rows.length, 'lignes (dont 1 en-tête)');
+  if (rows.length > 0) console.log('[SEA Corresp] En-tête :', JSON.stringify(rows[0]).slice(0,200));
+  if (rows.length > 1) console.log('[SEA Corresp] Ligne 1 :', JSON.stringify(rows[1]).slice(0,200));
   var maps = { mdm: {}, but: {}, cds: {} };
   function isNA(v) { var s = String(v||'').trim(); return !s || s === '#N/A' || s.startsWith('#'); }
   rows.slice(1).forEach(function(r) {
     var sku = String(r[0]||'').trim();
     if (!sku) return;
+    // col A(0)=sku · col C(2)=réf MdM · col D(3)=réf BUT · col E(4)=réf CDS
     var mdmRef = String(r[2]||'').trim();
     var butRef = String(r[3]||'').trim();
     var cdsRef = String(r[4]||'').trim();
@@ -5065,17 +5127,23 @@ async function loadSeaCorrespondence() {
     if (!isNA(butRef)) maps.but[butRef] = sku;
     if (!isNA(cdsRef)) maps.cds[cdsRef] = sku;
   });
+  console.log('[SEA Corresp] Maps construites — MdM:', Object.keys(maps.mdm).length, '/ BUT:', Object.keys(maps.but).length, '/ CDS:', Object.keys(maps.cds).length);
+  var cdsKeys = Object.keys(maps.cds).slice(0,3);
+  console.log('[SEA Corresp] Exemples CDS :', cdsKeys.map(function(k){ return k+'→'+maps.cds[k]; }).join(', '));
   _seaCorrespCache = maps;
   return maps;
 }
 
 async function parseSEAXLS(file) {
-  // Charge la table de correspondance, puis parse le fichier brut SEA
   var corresp = await loadSeaCorrespondence();
   var mp = MARKETPLACE;
   var refMap = mp === 'maisonsdumonde' ? corresp.mdm : mp === 'but' ? corresp.but : corresp.cds;
+  console.log('[SEA Parse] Marketplace:', mp, '— taille refMap:', Object.keys(refMap).length);
 
-  // Table des prix courants pour reconstruire les conversions BUT (CA TTC / prix)
+  // Set des SKUs suivis dans le catalogue
+  var trackedSkus = new Set((STATE.products||[]).map(function(p) { return p.sku; }).filter(Boolean));
+
+  // Table des prix courants pour conversions BUT (CA TTC / prix)
   var priceMap = {};
   (STATE.products||[]).forEach(function(p) {
     if (p.sku && p._price != null) priceMap[p.sku] = p._price;
@@ -5085,83 +5153,85 @@ async function parseSEAXLS(file) {
     var reader = new FileReader();
     reader.onload = function(e) {
       try {
-        var wb = XLSX.read(e.target.result, { type: 'binary' });
+        var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
         var ws = wb.Sheets[wb.SheetNames[0]];
         var data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
-        // Saute la ligne d'en-tête, ignore les lignes totalement vides
+        console.log('[SEA Parse] Fichier lu :', data.length, 'lignes (avec en-tête)');
+        if (data.length > 0) console.log('[SEA Parse] En-tête :', JSON.stringify(data[0]).slice(0,300));
+        if (data.length > 1) console.log('[SEA Parse] Ligne 1 :', JSON.stringify(data[1]).slice(0,300));
+
         var dataRows = data.slice(1).filter(function(r) {
           return r.some(function(v) { return v !== '' && v != null; });
         });
+        console.log('[SEA Parse] Lignes de données non vides :', dataRows.length);
 
-        function isNA(v) {
-          var s = String(v||'').trim();
-          return !s || s === '#N/A' || s.startsWith('#');
-        }
+        function isNA(v) { var s = String(v||'').trim(); return !s || s === '#N/A' || s.startsWith('#'); }
         function parseNum(v) {
           if (v == null || v === '') return 0;
-          var n = parseFloat(String(v).replace(/[\s ]/g,'').replace(',','.'));
+          var n = parseFloat(String(v).replace(/[^\d.,-]/g,'').replace(',','.'));
           return isNaN(n) ? 0 : Math.max(0, n);
+        }
+        function addTo(obj, imp, clic, conv, bud) {
+          obj.impressions += imp; obj.clics += clic; obj.conversions += conv; obj.budget += bud;
         }
 
         var aggMap = {};
-        var horsLigneCount = 0;
+        var autresAgg = { impressions:0, clics:0, conversions:0, budget:0 };
+        var horsLigneCount = 0, matchCount = 0, noMatchCount = 0;
+
+        function handleRow(seaRef, imp, clic, conv, bud) {
+          if (!seaRef || isNA(seaRef)) { horsLigneCount++; return; }
+          var sku = refMap[seaRef];
+          if (!sku || !trackedSkus.has(sku)) {
+            noMatchCount++;
+            addTo(autresAgg, imp, clic, conv, bud);
+            if (noMatchCount <= 5) console.log('[SEA Parse] Non suivi — ref:', seaRef, '/ sku:', sku||'?');
+            return;
+          }
+          matchCount++;
+          if (!aggMap[sku]) aggMap[sku] = { impressions:0, clics:0, conversions:0, budget:0 };
+          addTo(aggMap[sku], imp, clic, conv, bud);
+        }
 
         if (mp === 'cdiscount') {
-          // col A(0)=réf SEA · col C(2)=Imp · col D(3)=Clics · col F(5)=Budget · col H(7)=Conv
+          // col A(0)=ref SEA (BES...) . col C(2)=Imp . col D(3)=Clics . col F(5)=Budget . col H(7)=Conv
           dataRows.forEach(function(r) {
-            var seaRef = String(r[0]||'').trim();
-            if (!seaRef || isNA(seaRef)) return;
-            var sku = refMap[seaRef];
-            if (!sku) { horsLigneCount++; return; }
-            if (!aggMap[sku]) aggMap[sku] = { impressions:0, clics:0, conversions:0, budget:0 };
-            aggMap[sku].impressions += parseNum(r[2]);
-            aggMap[sku].clics      += parseNum(r[3]);
-            aggMap[sku].budget     += parseNum(r[5]);
-            aggMap[sku].conversions+= parseNum(r[7]);
+            handleRow(String(r[0]||'').trim(), parseNum(r[2]), parseNum(r[3]), parseNum(r[7]), parseNum(r[5]));
           });
         } else if (mp === 'maisonsdumonde') {
-          // col B(1)=réf SEA (OfferSKU) · col G(6)=Imp · col H(7)=Clics · col I(8)=Budget · col J(9)=Conv
+          // col B(1)=ref SEA . col G(6)=Imp . col H(7)=Clics . col I(8)=Budget . col J(9)=Conv
           dataRows.forEach(function(r) {
-            var seaRef = String(r[1]||'').trim();
-            if (!seaRef || isNA(seaRef)) return;
-            var sku = refMap[seaRef];
-            if (!sku) { horsLigneCount++; return; }
-            if (!aggMap[sku]) aggMap[sku] = { impressions:0, clics:0, conversions:0, budget:0 };
-            aggMap[sku].impressions += parseNum(r[6]);
-            aggMap[sku].clics      += parseNum(r[7]);
-            aggMap[sku].budget     += parseNum(r[8]);
-            aggMap[sku].conversions+= parseNum(r[9]);
+            handleRow(String(r[1]||'').trim(), parseNum(r[6]), parseNum(r[7]), parseNum(r[9]), parseNum(r[8]));
           });
         } else if (mp === 'but') {
-          // col J(9)=réf SEA (préfixe 2177_ supprimé) · col M(12)=Imp · col N(13)=Clics · col S(18)=CA TTC
+          // col J(9)=ref SEA (prefixe 2177_ supprime) . col M(12)=Imp . col N(13)=Clics . col S(18)=CA TTC
           dataRows.forEach(function(r) {
             var seaRef = String(r[9]||'').trim().replace(/^2177_/,'');
-            if (!seaRef || isNA(seaRef)) return;
-            var sku = refMap[seaRef];
-            if (!sku) { horsLigneCount++; return; }
             var caTtc = parseNum(r[18]);
-            var price = priceMap[sku];
+            var sku = refMap[seaRef];
+            var price = sku ? priceMap[sku] : null;
             var conv = (price && price > 0) ? Math.round(caTtc / price) : 0;
-            if (!aggMap[sku]) aggMap[sku] = { impressions:0, clics:0, conversions:0, budget:0 };
-            aggMap[sku].impressions += parseNum(r[12]);
-            aggMap[sku].clics      += parseNum(r[13]);
-            aggMap[sku].conversions+= conv;
-            aggMap[sku].budget     += caTtc; // CA TTC comme indicateur de performance
+            handleRow(seaRef, parseNum(r[12]), parseNum(r[13]), conv, caTtc);
           });
         }
+
+        console.log('[SEA Parse] Resume :', matchCount, 'matches,', noMatchCount, '-> Autres,', horsLigneCount, 'invalides');
+        console.log('[SEA Parse] SKUs matches:', Object.keys(aggMap).length, '-- autresAgg:', JSON.stringify(autresAgg));
 
         var rows = Object.keys(aggMap).map(function(sku) {
           var d = aggMap[sku];
           return { ref: sku, impressions: d.impressions, clics: d.clics, conversions: d.conversions, budget: d.budget };
         });
-        resolve({ rows: rows, horsLigneCount: horsLigneCount });
-      } catch(err) { reject(err); }
+        resolve({ rows: rows, autresData: autresAgg, horsLigneCount: horsLigneCount });
+      } catch(err) {
+        console.error('[SEA Parse] Exception :', err);
+        reject(err);
+      }
     };
-    reader.onerror = reject;
-    reader.readAsBinaryString(file);
+    reader.onerror = function(e) { reject(new Error('Erreur lecture fichier')); };
+    reader.readAsArrayBuffer(file);
   });
 }
-
 // Init
  if (MAINTENANCE_MODE) {
   const stored = sessionStorage.getItem("admin_access");
