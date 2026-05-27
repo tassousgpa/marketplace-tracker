@@ -4589,13 +4589,22 @@ async function confirmOpeEdit(id) {
 // =============================================
 // TAB SEA — CAMPAGNES & PRODUITS SPONSORISÉS
 // =============================================
-let seaSortCol = 'budget';
+let seaSortCol = 'impressions';
 let seaSortDir = 'desc';
+let seaFilter = { search: '', onlyWithData: false };
+let _seaCorrespCache = null;
 
-function seaGrade(ctr, tauxConv) {
-  if (ctr >= 0.8 && tauxConv >= 5) return 'A';
-  if (ctr >= 0.5 && tauxConv >= 3) return 'B';
-  if (ctr >= 0.3 && tauxConv >= 1) return 'C';
+// Note SEA : score CTR (0-3 pts) + score conv (0-3 pts) + bonus volume (1 pt)
+// Grille : A ≥ 5pts · B ≥ 3pts · C ≥ 1pt · D = 0pt
+function seaGrade(ctr, tauxConv, conversions) {
+  if (!ctr && !tauxConv) return 'D';
+  var score = 0;
+  if (ctr >= 1.5) score += 3; else if (ctr >= 0.7) score += 2; else if (ctr >= 0.3) score += 1;
+  if (tauxConv >= 10) score += 3; else if (tauxConv >= 5) score += 2; else if (tauxConv >= 1) score += 1;
+  if ((conversions||0) >= 5) score += 1;
+  if (score >= 5) return 'A';
+  if (score >= 3) return 'B';
+  if (score >= 1) return 'C';
   return 'D';
 }
 function seaGradeColor(g) {
@@ -4607,7 +4616,12 @@ function seaGradeColor(g) {
 
 async function renderSEA() {
   var el = document.getElementById("content");
-  el.innerHTML = buildSEACampaignsHTML() + renderSEAProductsTable();
+  el.innerHTML = buildSEACampaignsHTML() + '<div id="sea-products-container">'+renderSEAProductsTable()+'</div>';
+}
+
+function renderSeaProductsOnly() {
+  var el = document.getElementById("sea-products-container");
+  if (el) el.innerHTML = renderSEAProductsTable();
 }
 
 function buildSEACampaignsHTML() {
@@ -4727,57 +4741,106 @@ function buildSEACampaignsHTML() {
 
 function renderSEAProductsTable() {
   var stats = STATE.seaProductStats || [];
-  if (!stats.length) return '<div class="card" style="margin-top:20px;padding:24px;text-align:center;color:var(--txT);font-size:13px">Aucune donnee SEA produits. Importez un fichier via Import SEA.</div>';
   var curYear = new Date().getFullYear();
-  var aggMap = {};
+
+  // Aggrégation YTD par SKU catalogue
+  var seaMap = {};
   stats.forEach(function(r) {
     if (!r.period_start || String(r.period_start).slice(0,4) !== String(curYear)) return;
-    if (!aggMap[r.ref]) aggMap[r.ref] = { ref: r.ref, budget: 0, impressions: 0, clics: 0, conversions: 0 };
-    aggMap[r.ref].budget += r.budget || 0;
-    aggMap[r.ref].impressions += r.impressions || 0;
-    aggMap[r.ref].clics += r.clics || 0;
-    aggMap[r.ref].conversions += r.conversions || 0;
+    if (!seaMap[r.ref]) seaMap[r.ref] = { impressions: 0, clics: 0, conversions: 0, budget: 0 };
+    seaMap[r.ref].impressions += (r.impressions||0);
+    seaMap[r.ref].clics += (r.clics||0);
+    seaMap[r.ref].conversions += (r.conversions||0);
+    seaMap[r.ref].budget += (r.budget||0);
   });
-  var skuToName = {};
-  (STATE.products||[]).forEach(function(p) { if (p.sku) skuToName[p.sku] = p.name; });
-  var rows = Object.values(aggMap).map(function(r) {
-    var ctr = r.impressions > 0 ? r.clics / r.impressions * 100 : 0;
-    var tauxConv = r.clics > 0 ? r.conversions / r.clics * 100 : 0;
-    return Object.assign({}, r, { ctr: ctr, tauxConv: tauxConv, grade: seaGrade(ctr, tauxConv), name: skuToName[r.ref] || "" });
+
+  // Base : TOUS les produits suivis (même sans données SEA)
+  var allRows = (STATE.products||[]).map(function(p) {
+    var sea = p.sku ? (seaMap[p.sku]||null) : null;
+    var imp = sea ? sea.impressions : 0;
+    var clics = sea ? sea.clics : 0;
+    var conv = sea ? sea.conversions : 0;
+    var budget = sea ? sea.budget : 0;
+    var ctr = imp > 0 ? clics/imp*100 : 0;
+    var tauxConv = clics > 0 ? conv/clics*100 : 0;
+    var hasData = imp > 0 || clics > 0 || conv > 0;
+    return {
+      sku: p.sku||'', name: p.name||'', type: p.type||'', product_id: p.product_id||'',
+      impressions: imp, clics: clics, conversions: conv, budget: budget,
+      ctr: ctr, tauxConv: tauxConv,
+      grade: hasData ? seaGrade(ctr, tauxConv, conv) : null,
+      hasData: hasData
+    };
   });
-  rows.sort(function(a, b) {
-    var va = a[seaSortCol] !== undefined ? a[seaSortCol] : 0;
-    var vb = b[seaSortCol] !== undefined ? b[seaSortCol] : 0;
-    if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb||"").toLowerCase(); }
+
+  // Filtres
+  var f = seaFilter;
+  var rows = allRows;
+  if (f.onlyWithData) rows = rows.filter(function(r) { return r.hasData; });
+  if (f.search) {
+    var s = f.search.toLowerCase();
+    rows = rows.filter(function(r) {
+      return r.name.toLowerCase().indexOf(s) !== -1 || r.sku.toLowerCase().indexOf(s) !== -1;
+    });
+  }
+
+  // Tri
+  rows = rows.slice().sort(function(a, b) {
+    var va = a[seaSortCol]; var vb = b[seaSortCol];
+    if (va == null) va = typeof vb === 'string' ? '' : 0;
+    if (vb == null) vb = typeof va === 'string' ? '' : 0;
+    if (typeof va === 'string') { va = va.toLowerCase(); vb = String(vb).toLowerCase(); }
     if (seaSortDir === 'asc') return va < vb ? -1 : va > vb ? 1 : 0;
     return va > vb ? -1 : va < vb ? 1 : 0;
   });
+
+  var withDataCount = allRows.filter(function(r) { return r.hasData; }).length;
+
   function si(col) { return seaSortCol === col ? (seaSortDir === 'asc' ? ' ↑' : ' ↓') : ''; }
   function th(col, label, align) {
     return '<th style="cursor:pointer;padding:8px 10px;font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;letter-spacing:.03em;white-space:nowrap;text-align:'+(align||'right')+'" onclick="toggleSeaSort(\''+col+'\')">'+label+si(col)+'</th>';
   }
+
   var tbody = rows.map(function(r, i) {
-    var ctrFmt = r.impressions > 0 ? r.ctr.toFixed(2)+"%" : "—";
-    var convFmt = r.clics > 0 ? r.tauxConv.toFixed(2)+"%" : "—";
-    return '<tr style="'+(i%2?"background:var(--bg)":"")+';border-bottom:1px solid var(--borderL);cursor:pointer" onclick="openSEAProductDetail(\''+esc(r.ref)+'\')">'
-      + '<td style="padding:7px 10px;font-weight:600;white-space:nowrap">'+esc(r.ref)+'</td>'
-      + '<td style="padding:7px 10px;color:var(--txS);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r.name)+'</td>'
-      + '<td style="padding:7px 10px;text-align:right;font-weight:600">'+(r.budget?Math.round(r.budget).toLocaleString("fr-FR")+"€":"—")+'</td>'
-      + '<td style="padding:7px 10px;text-align:right">'+(r.impressions?r.impressions.toLocaleString("fr-FR"):"—")+'</td>'
-      + '<td style="padding:7px 10px;text-align:right">'+(r.clics?r.clics.toLocaleString("fr-FR"):"—")+'</td>'
-      + '<td style="padding:7px 10px;text-align:right">'+(r.conversions||0)+'</td>'
+    var ctrFmt = r.impressions > 0 ? r.ctr.toFixed(2)+'%' : '—';
+    var convFmt = r.clics > 0 ? r.tauxConv.toFixed(2)+'%' : '—';
+    var typeLbl = r.type==="Nouveautés Q4+Q1"?"Nvtés":r.type==="Deals exclus"?"Deals":r.type;
+    var typeCol = r.type==="Classe A"?"green":r.type==="Deals exclus"?"amber":"accent";
+    var rowStyle = (i%2?"background:var(--bg);":"")+(r.hasData?"":"opacity:0.42;")+"border-bottom:1px solid var(--borderL);cursor:pointer";
+    return '<tr style="'+rowStyle+'" onclick="openSEAProductDetail(\''+esc(r.sku)+'\')">'
+      + '<td style="padding:7px 10px;font-weight:500;max-width:240px"><div style="line-height:1.3">'+esc(r.name)+'</div></td>'
+      + '<td style="padding:7px 10px;font-size:11px;color:var(--txS);white-space:nowrap"><div>'+esc(r.product_id)+'</div><div style="font-weight:600">'+esc(r.sku)+'</div></td>'
+      + '<td style="padding:7px 10px;text-align:center">'+(r.type?pill(typeLbl,typeCol):'')+'</td>'
+      + '<td style="padding:7px 10px;text-align:right">'+(r.impressions>0?r.impressions.toLocaleString('fr-FR'):'—')+'</td>'
+      + '<td style="padding:7px 10px;text-align:right">'+(r.clics>0?r.clics.toLocaleString('fr-FR'):'—')+'</td>'
+      + '<td style="padding:7px 10px;text-align:right">'+(r.conversions>0?r.conversions:'—')+'</td>'
       + '<td style="padding:7px 10px;text-align:right;font-weight:500">'+ctrFmt+'</td>'
       + '<td style="padding:7px 10px;text-align:right;font-weight:500">'+convFmt+'</td>'
-      + '<td style="padding:7px 10px;text-align:center">'+pill(r.grade, seaGradeColor(r.grade))+'</td>'
+      + '<td style="padding:7px 10px;text-align:center">'+(r.grade?pill(r.grade,seaGradeColor(r.grade)):'<span style="color:var(--txT);font-size:11px">—</span>')+'</td>'
       + '</tr>';
-  }).join("");
+  }).join('');
+
+  var noDataBanner = stats.length === 0
+    ? '<div style="background:var(--acBg);border-radius:8px;padding:12px 16px;font-size:12px;color:var(--ac);margin-bottom:12px">Aucune donnée SEA importée pour '+curYear+'. Importez un fichier brut via <strong>Import SEA</strong>.</div>'
+    : '';
+
   return '<div style="margin-top:20px">'
-    + '<div style="font-size:13px;font-weight:700;margin-bottom:12px">Produits sponsorisés — YTD '+curYear+'</div>'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">'
+    + '<div style="font-size:13px;font-weight:700">Produits sponsorisés — YTD '+curYear+'</div>'
+    + '<div style="font-size:12px;color:var(--txS)">'+withDataCount+' / '+allRows.length+' produits avec données SEA</div>'
+    + '</div>'
+    + noDataBanner
+    + '<div class="filters" style="margin-bottom:12px">'
+    + '<input placeholder="Rechercher..." value="'+esc(seaFilter.search)+'" oninput="seaFilter.search=this.value;renderSeaProductsOnly()" style="flex:1;min-width:180px"/>'
+    + '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--txS);cursor:pointer;white-space:nowrap"><input type="checkbox" '+(seaFilter.onlyWithData?'checked':'')+' onchange="seaFilter.onlyWithData=this.checked;renderSeaProductsOnly()" style="cursor:pointer"> Avec données uniquement</label>'
+    + '</div>'
     + '<div class="card" style="padding:0;overflow:hidden"><div class="scroll-table"><table style="min-width:900px">'
     + '<thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)">'
-    + th('ref','Ref','left')+th('name','Produit','left')
-    + th('budget','Budget YTD')+th('impressions','Impressions')+th('clics','Clics')+th('conversions','Conversions')
-    + th('ctr','CTR%')+th('tauxConv','Taux conv%')
+    + th('name','Produit','left')
+    + '<th style="padding:8px 10px;font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;text-align:left">Réfs</th>'
+    + '<th style="padding:8px 10px;font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;text-align:center">Type</th>'
+    + th('impressions','Impressions')+th('clics','Clics')+th('conversions','Conversions')
+    + th('ctr','CTR%')+th('tauxConv','Conv%')
     + '<th style="padding:8px 10px;font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;text-align:center">Note</th>'
     + '</tr></thead><tbody>'+tbody+'</tbody></table></div></div></div>';
 }
@@ -4785,7 +4848,7 @@ function renderSEAProductsTable() {
 function toggleSeaSort(col) {
   if (seaSortCol === col) seaSortDir = seaSortDir === 'asc' ? 'desc' : 'asc';
   else { seaSortCol = col; seaSortDir = 'desc'; }
-  renderSEA();
+  renderSeaProductsOnly();
 }
 
 async function openSEAProductDetail(ref) {
@@ -4912,8 +4975,14 @@ async function confirmSEACreate() {
 
 function openSEAImport() {
   var today = new Date().toISOString().slice(0,10);
-  openModal("Import SEA — Produits sponsorisés", '<div style="display:grid;gap:10px">'
-    + '<div style="background:var(--acBg);border-radius:8px;padding:10px 12px;font-size:11px;color:var(--ac)">Formats : <b>Cdiscount</b> SKU|Lib|Imp|Clics|CTR|Dep|CPC|Conv · <b>MdM</b> idx|OfferSKU|ProdSKU|Nom|Cat|Marque|Imp|Clics|Dep|Conv · <b>BUT</b> team|...|ref|prod|displays|views|clicks|ctr|vctr|spend|sales</div>'
+  var mpLabel = (MARKETPLACES.find(function(m){return m.id===MARKETPLACE;})||{label:MARKETPLACE}).label;
+  var fmtInfo = {
+    cdiscount: 'col A = réf SEA (BES...) · col C = Imp · col D = Clics · col F = Budget · col H = Conv',
+    maisonsdumonde: 'col B = réf SEA (M...) · col G = Imp · col H = Clics · col I = Budget · col J = Conv',
+    but: 'col J = réf SEA (préfixe 2177_ supprimé auto.) · col M = Imp · col N = Clics · col S = CA TTC'
+  }[MARKETPLACE] || 'Fichier brut SEA spécifique à la marketplace';
+  openModal("Import SEA — "+mpLabel, '<div style="display:grid;gap:10px">'
+    + '<div style="background:var(--acBg);border-radius:8px;padding:10px 12px;font-size:11px;color:var(--ac)"><strong>Format attendu :</strong> '+fmtInfo+'<br><span style="color:var(--txS)">La table de correspondance est chargée automatiquement depuis le dépôt.</span></div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
     + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Type de periode *</label><select id="sea-imp-type" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"><option value="week">Semaine</option><option value="month">Mois</option></select></div>'
     + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Label periode *</label><input id="sea-imp-label" placeholder="ex: S20 2026" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
@@ -4922,7 +4991,7 @@ function openSEAImport() {
     + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Date debut *</label><input id="sea-imp-debut" type="date" value="'+today+'" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
     + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Date fin *</label><input id="sea-imp-fin" type="date" value="'+today+'" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
     + '</div>'
-    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Fichier Excel *</label><input id="sea-imp-file" type="file" accept=".xls,.xlsx" style="width:100%;padding:6px;border:.5px solid var(--border);border-radius:6px;font-size:11px;font-family:inherit;background:var(--card)"></div>'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Fichier brut SEA *</label><input id="sea-imp-file" type="file" accept=".xls,.xlsx" style="width:100%;padding:6px;border:.5px solid var(--border);border-radius:6px;font-size:11px;font-family:inherit;background:var(--card)"></div>'
     + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Mot de passe admin *</label><input id="sea-imp-pwd" type="password" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
     + '<button onclick="confirmSEAImport()" style="padding:10px;background:var(--pu);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Importer</button>'
     + '<div id="sea-imp-status" style="font-size:12px;text-align:center;min-height:16px"></div>'
@@ -4975,39 +5044,117 @@ async function confirmSEAImport() {
   } catch(e) { statusEl.innerHTML='<span style="color:var(--rd)">Erreur : '+e.message+'</span>'; }
 }
 
+// Charge et met en cache la table de correspondance SEA depuis le repo
+async function loadSeaCorrespondence() {
+  if (_seaCorrespCache) return _seaCorrespCache;
+  var resp = await fetch('/Fichiers correspondance - SEA.xlsx');
+  if (!resp.ok) throw new Error('Impossible de charger la table de correspondance SEA (HTTP '+resp.status+')');
+  var buf = await resp.arrayBuffer();
+  var wb = XLSX.read(new Uint8Array(buf), { type: 'array' });
+  var ws = wb.Sheets[wb.SheetNames[0]];
+  var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+  var maps = { mdm: {}, but: {}, cds: {} };
+  function isNA(v) { var s = String(v||'').trim(); return !s || s === '#N/A' || s.startsWith('#'); }
+  rows.slice(1).forEach(function(r) {
+    var sku = String(r[0]||'').trim();
+    if (!sku) return;
+    var mdmRef = String(r[2]||'').trim();
+    var butRef = String(r[3]||'').trim();
+    var cdsRef = String(r[4]||'').trim();
+    if (!isNA(mdmRef)) maps.mdm[mdmRef] = sku;
+    if (!isNA(butRef)) maps.but[butRef] = sku;
+    if (!isNA(cdsRef)) maps.cds[cdsRef] = sku;
+  });
+  _seaCorrespCache = maps;
+  return maps;
+}
+
 async function parseSEAXLS(file) {
+  // Charge la table de correspondance, puis parse le fichier brut SEA
+  var corresp = await loadSeaCorrespondence();
+  var mp = MARKETPLACE;
+  var refMap = mp === 'maisonsdumonde' ? corresp.mdm : mp === 'but' ? corresp.but : corresp.cds;
+
+  // Table des prix courants pour reconstruire les conversions BUT (CA TTC / prix)
+  var priceMap = {};
+  (STATE.products||[]).forEach(function(p) {
+    if (p.sku && p._price != null) priceMap[p.sku] = p._price;
+  });
+
   return new Promise(function(resolve, reject) {
     var reader = new FileReader();
     reader.onload = function(e) {
       try {
         var wb = XLSX.read(e.target.result, { type: 'binary' });
         var ws = wb.Sheets[wb.SheetNames[0]];
-        // raw:false pour obtenir les erreurs Excel (#N/A) sous forme de chaîne
         var data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: false });
-        var dataRows = data.slice(1).filter(function(r) { return r[0] !== '' && r[0] != null; });
-        var mp = MARKETPLACE;
-        var results = [];
-        var horsLigneCount = 0;
-        // Détecte une cellule erreur Excel (#N/A, #REF!, etc.) ou code erreur numérique XLSX
-        function isNA(v) {
-          if (v == null || v === '') return false;
-          if (typeof v === 'number' && (v === 42 || v === 0 || v === 7 || v === 15 || v === 23 || v === 29 || v === 36 || v === 43)) return true;
-          return String(v).trim().startsWith('#');
-        }
-        // Format "Fichiers correspondance - SEA.xlsx" :
-        //   col A (r[0]) = SKU BestMobilier  |  col B (r[1]) = id interne (ignoré)
-        //   col C (r[2]) = réf SEA MdM       |  col D (r[3]) = réf SEA BUT
-        //   col E (r[4]) = réf SEA Cdiscount
-        // Si la colonne marketplace est #N/A → produit hors ligne sur cette MP
-        var seaRefCol = mp === 'maisonsdumonde' ? 2 : mp === 'but' ? 3 : 4; // cdiscount = col E
-        dataRows.forEach(function(r) {
-          var sku = String(r[0]||"").trim();
-          if (!sku) return;
-          var seaRef = r[seaRefCol];
-          if (isNA(seaRef) || seaRef === '' || seaRef == null) { horsLigneCount++; return; }
-          results.push({ ref: sku, impressions: 0, clics: 0, budget: 0, conversions: 0 });
+        // Saute la ligne d'en-tête, ignore les lignes totalement vides
+        var dataRows = data.slice(1).filter(function(r) {
+          return r.some(function(v) { return v !== '' && v != null; });
         });
-        resolve({ rows: results, horsLigneCount: horsLigneCount });
+
+        function isNA(v) {
+          var s = String(v||'').trim();
+          return !s || s === '#N/A' || s.startsWith('#');
+        }
+        function parseNum(v) {
+          if (v == null || v === '') return 0;
+          var n = parseFloat(String(v).replace(/[\s ]/g,'').replace(',','.'));
+          return isNaN(n) ? 0 : Math.max(0, n);
+        }
+
+        var aggMap = {};
+        var horsLigneCount = 0;
+
+        if (mp === 'cdiscount') {
+          // col A(0)=réf SEA · col C(2)=Imp · col D(3)=Clics · col F(5)=Budget · col H(7)=Conv
+          dataRows.forEach(function(r) {
+            var seaRef = String(r[0]||'').trim();
+            if (!seaRef || isNA(seaRef)) return;
+            var sku = refMap[seaRef];
+            if (!sku) { horsLigneCount++; return; }
+            if (!aggMap[sku]) aggMap[sku] = { impressions:0, clics:0, conversions:0, budget:0 };
+            aggMap[sku].impressions += parseNum(r[2]);
+            aggMap[sku].clics      += parseNum(r[3]);
+            aggMap[sku].budget     += parseNum(r[5]);
+            aggMap[sku].conversions+= parseNum(r[7]);
+          });
+        } else if (mp === 'maisonsdumonde') {
+          // col B(1)=réf SEA (OfferSKU) · col G(6)=Imp · col H(7)=Clics · col I(8)=Budget · col J(9)=Conv
+          dataRows.forEach(function(r) {
+            var seaRef = String(r[1]||'').trim();
+            if (!seaRef || isNA(seaRef)) return;
+            var sku = refMap[seaRef];
+            if (!sku) { horsLigneCount++; return; }
+            if (!aggMap[sku]) aggMap[sku] = { impressions:0, clics:0, conversions:0, budget:0 };
+            aggMap[sku].impressions += parseNum(r[6]);
+            aggMap[sku].clics      += parseNum(r[7]);
+            aggMap[sku].budget     += parseNum(r[8]);
+            aggMap[sku].conversions+= parseNum(r[9]);
+          });
+        } else if (mp === 'but') {
+          // col J(9)=réf SEA (préfixe 2177_ supprimé) · col M(12)=Imp · col N(13)=Clics · col S(18)=CA TTC
+          dataRows.forEach(function(r) {
+            var seaRef = String(r[9]||'').trim().replace(/^2177_/,'');
+            if (!seaRef || isNA(seaRef)) return;
+            var sku = refMap[seaRef];
+            if (!sku) { horsLigneCount++; return; }
+            var caTtc = parseNum(r[18]);
+            var price = priceMap[sku];
+            var conv = (price && price > 0) ? Math.round(caTtc / price) : 0;
+            if (!aggMap[sku]) aggMap[sku] = { impressions:0, clics:0, conversions:0, budget:0 };
+            aggMap[sku].impressions += parseNum(r[12]);
+            aggMap[sku].clics      += parseNum(r[13]);
+            aggMap[sku].conversions+= conv;
+            aggMap[sku].budget     += caTtc; // CA TTC comme indicateur de performance
+          });
+        }
+
+        var rows = Object.keys(aggMap).map(function(sku) {
+          var d = aggMap[sku];
+          return { ref: sku, impressions: d.impressions, clics: d.clics, conversions: d.conversions, budget: d.budget };
+        });
+        resolve({ rows: rows, horsLigneCount: horsLigneCount });
       } catch(err) { reject(err); }
     };
     reader.onerror = reject;
