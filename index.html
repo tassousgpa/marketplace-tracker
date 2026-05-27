@@ -1414,11 +1414,9 @@ function openExportModal() {
   const sCb = 'cursor:pointer;width:13px;height:13px;accent-color:var(--ac);flex-shrink:0';
   const sST = 'font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--txS);margin-bottom:8px;margin-top:14px';
 
-  const dateOpts = STATE.dates.slice().reverse().map((d,i) => {
-    const dt = new Date(d+"T12:00:00Z");
-    const lbl = dt.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"2-digit"});
-    return '<option value="'+(i+1)+'"'+(exportSessions===i+1?' selected':'')+'>'+(i+1)+' date'+(i>0?'s':'')+' (jusqu\'au '+lbl+')</option>';
-  }).join("");
+  const scrapingDate = STATE.latestDate
+    ? new Date(STATE.latestDate+"T12:00:00Z").toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"})
+    : "—";
 
   const baseCols = [
     {id:'name',label:'Produit',def:true},{id:'product_id',label:'ID produit',def:true},
@@ -1456,10 +1454,7 @@ function openExportModal() {
 
     // ── Colonne gauche ──
     +'<div>'
-    +'<div style="'+sST.replace('margin-top:14px','margin-top:0')+'">Historique</div>'
-    +'<select id="exp-sessions" style="'+sField+'">'+dateOpts+'</select>'
-
-    +'<div style="'+sST+'">Colonnes de base</div>'
+    +'<div style="'+sST.replace('margin-top:14px','margin-top:0')+'">Colonnes de base</div>'
     +'<div style="display:flex;gap:6px;margin-bottom:8px">'
     +'<button style="'+sSmallBtn+'" onclick="expToggleAll(\'base\',true)">Tout cocher</button>'
     +'<button style="'+sSmallBtn+'" onclick="expToggleAll(\'base\',false)">Tout décocher</button>'
@@ -1505,7 +1500,7 @@ function openExportModal() {
     +'<button id="exp-run-btn" onclick="runExport()" style="padding:8px 20px;border:.5px solid var(--ac);border-radius:7px;font-size:12px;background:var(--ac);color:#fff;cursor:pointer;font-weight:600;font-family:inherit">⬇ Générer l\'export</button>'
     +'</div>';
 
-  openModal("Configuration de l'export", html);
+  openModal("Export — Relevé du "+scrapingDate, html);
 }
 
 function expToggleAll(group, checked) {
@@ -1634,7 +1629,7 @@ function buildExportSheetData(mpData, baseCols, metrics, sessionsCount, filters)
 }
 
 async function runExport() {
-  const sessionsCount = parseInt((document.getElementById('exp-sessions')||{}).value)||4;
+  const sessionsCount = 1;
   const baseCols = ['name','product_id','sku','sku_marketplace','type','canal','url'].filter(id=>document.getElementById('exp-col-'+id)?.checked);
   const metrics = ['dispo','prix','note','delai'].filter(id=>document.getElementById('exp-metric-'+id)?.checked);
   const selectedMps = MARKETPLACES.filter(mp=>document.getElementById('exp-mp-'+mp.id)?.checked);
@@ -1655,7 +1650,9 @@ async function runExport() {
   };
   const btn = document.getElementById('exp-run-btn');
   if (btn) { btn.textContent = "Génération..."; btn.disabled = true; }
-  const todayStr = new Date().toLocaleDateString("fr-FR").replace(/\//g,"-");
+  const scrapingDateStr = STATE.latestDate
+    ? new Date(STATE.latestDate+"T12:00:00Z").toLocaleDateString("fr-FR").replace(/\//g,"-")
+    : new Date().toLocaleDateString("fr-FR").replace(/\//g,"-");
   try {
     if (selectedMps.length === 1) {
       const mpData = await getMpExportData(selectedMps[0].id);
@@ -1664,7 +1661,7 @@ async function runExport() {
       const csv = [headers,...rows].map(row=>row.map(csvCell).join(";")).join("\n");
       const blob = new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8;"});
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a"); a.href=url; a.download="produits_"+selectedMps[0].id+"_"+todayStr+".csv"; a.click();
+      const a = document.createElement("a"); a.href=url; a.download="produits_"+selectedMps[0].id+"_"+scrapingDateStr+".csv"; a.click();
       URL.revokeObjectURL(url);
     } else {
       const wb = XLSX.utils.book_new();
@@ -1674,7 +1671,7 @@ async function runExport() {
         const ws = XLSX.utils.aoa_to_sheet([headers,...rows]);
         XLSX.utils.book_append_sheet(wb, ws, mp.label.substring(0,31));
       }
-      XLSX.writeFile(wb, "produits_export_"+todayStr+".xlsx");
+      XLSX.writeFile(wb, "produits_export_"+scrapingDateStr+".xlsx");
     }
     closeModal();
   } catch(e) {
