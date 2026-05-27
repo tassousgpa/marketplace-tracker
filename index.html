@@ -1268,15 +1268,7 @@ function buildProduitsTableHTML() {
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <div style="font-size:12px;color:var(--txS)">${list.length} produit${list.length>1?'s':''}</div>
       <div style="display:flex;align-items:center;gap:8px">
-        <span style="font-size:12px;color:var(--txS)">Historique :</span>
-        <select onchange="exportSessions=+this.value" style="padding:5px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;background:var(--card);font-family:inherit">
-          ${STATE.dates.slice().reverse().map((d,i)=>{
-            const dt=new Date(d+"T12:00:00Z");
-            const label=dt.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"2-digit"});
-            return`<option value="${i+1}" ${exportSessions===i+1?'selected':''}>${i+1} jour${i>0?'s':''} (jusqu'au ${label})</option>`;
-          }).join("")}
-        </select>
-        <button onclick="exportCSV()" style="padding:6px 14px;border:.5px solid var(--ac);border-radius:6px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">⬇ Export CSV</button>
+        <button onclick="openExportModal()" style="padding:6px 14px;border:.5px solid var(--ac);border-radius:6px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">⬇ Export</button>
       </div>
     </div>
     <div class="card" style="padding:0;overflow:hidden"><div class="scroll-table"><table style="min-width:1000px">
@@ -1409,6 +1401,286 @@ function exportDeliveryCSV() {
   a.download = `historique_delais_${MARKETPLACE}_${today}.csv`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// ==============================================
+// EXPORT PRODUITS — POPUP DE CONFIGURATION
+// ==============================================
+
+function openExportModal() {
+  const sField = 'padding:7px 10px;border:.5px solid var(--border);border-radius:7px;font-size:12px;background:var(--card);font-family:inherit;width:100%';
+  const sSmallBtn = 'padding:3px 8px;border:.5px solid var(--border);border-radius:5px;font-size:11px;background:var(--card);color:var(--txS);cursor:pointer;font-family:inherit';
+  const sLabel = 'display:flex;align-items:center;gap:7px;font-size:12px;color:var(--tx);margin-bottom:5px;cursor:pointer;user-select:none';
+  const sCb = 'cursor:pointer;width:13px;height:13px;accent-color:var(--ac);flex-shrink:0';
+  const sST = 'font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--txS);margin-bottom:8px;margin-top:14px';
+
+  const dateOpts = STATE.dates.slice().reverse().map((d,i) => {
+    const dt = new Date(d+"T12:00:00Z");
+    const lbl = dt.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"2-digit"});
+    return '<option value="'+(i+1)+'"'+(exportSessions===i+1?' selected':'')+'>'+(i+1)+' date'+(i>0?'s':'')+' (jusqu\'au '+lbl+')</option>';
+  }).join("");
+
+  const baseCols = [
+    {id:'name',label:'Produit',def:true},{id:'product_id',label:'ID produit',def:true},
+    {id:'sku',label:'SKU',def:true},{id:'sku_marketplace',label:'SKU Marketplace',def:true},
+    {id:'type',label:'Type',def:false},{id:'canal',label:'Canal',def:false},{id:'url',label:'Lien',def:true}
+  ];
+  const metrics = [
+    {id:'dispo',label:'Dispo',def:true},{id:'prix',label:'Prix',def:true},
+    {id:'note',label:'Note',def:true},{id:'delai',label:'Délai',def:true}
+  ];
+  const variations = [
+    {id:'prix_up',label:'Prix ↑'},{id:'prix_down',label:'Prix ↓'},
+    {id:'delai_up',label:'Délai ↑'},{id:'delai_down',label:'Délai ↓'},
+    {id:'note_up',label:'Note ↑'},{id:'note_down',label:'Note ↓'}
+  ];
+
+  const numRow = (field, label, step, min, max) =>
+    '<div style="margin-bottom:10px">'
+    +'<div style="font-size:11px;color:var(--txS);margin-bottom:4px">'+label+'</div>'
+    +'<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap">'
+    +'<select id="exp-'+field+'-op" onchange="expUpdateNumFilter(\''+field+'\')" style="flex:1;min-width:110px;padding:7px 8px;border:.5px solid var(--border);border-radius:7px;font-size:12px;background:var(--card);font-family:inherit">'
+    +'<option value="none">Pas de filtre</option><option value="eq">= égal à</option>'
+    +'<option value="gt">&gt; supérieur à</option><option value="lt">&lt; inférieur à</option>'
+    +'<option value="between">Entre deux valeurs</option></select>'
+    +'<input id="exp-'+field+'-v1" type="number" step="'+step+'" min="'+min+'"'+(max?' max="'+max+'"':'')
+    +' placeholder="Valeur" style="width:74px;padding:7px 8px;border:.5px solid var(--border);border-radius:7px;font-size:12px;background:var(--card);font-family:inherit">'
+    +'<span id="exp-'+field+'-v2-wrap" style="display:none;align-items:center;gap:5px">'
+    +'<span style="font-size:11px;color:var(--txS)">et</span>'
+    +'<input id="exp-'+field+'-v2" type="number" step="'+step+'" min="'+min+'"'+(max?' max="'+max+'"':'')
+    +' placeholder="Valeur" style="width:74px;padding:7px 8px;border:.5px solid var(--border);border-radius:7px;font-size:12px;background:var(--card);font-family:inherit">'
+    +'</span></div></div>';
+
+  const html =
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">'
+
+    // ── Colonne gauche ──
+    +'<div>'
+    +'<div style="'+sST.replace('margin-top:14px','margin-top:0')+'">Historique</div>'
+    +'<select id="exp-sessions" style="'+sField+'">'+dateOpts+'</select>'
+
+    +'<div style="'+sST+'">Colonnes de base</div>'
+    +'<div style="display:flex;gap:6px;margin-bottom:8px">'
+    +'<button style="'+sSmallBtn+'" onclick="expToggleAll(\'base\',true)">Tout cocher</button>'
+    +'<button style="'+sSmallBtn+'" onclick="expToggleAll(\'base\',false)">Tout décocher</button>'
+    +'</div>'
+    +baseCols.map(c=>'<label style="'+sLabel+'"><input type="checkbox" id="exp-col-'+c.id+'"'+(c.def?' checked':'')+' style="'+sCb+'"><span>'+c.label+'</span></label>').join("")
+
+    +'<div style="'+sST+'">Données par date</div>'
+    +metrics.map(m=>'<label style="'+sLabel+'"><input type="checkbox" id="exp-metric-'+m.id+'"'+(m.def?' checked':'')+' style="'+sCb+'"><span>'+m.label+'</span></label>').join("")
+    +'</div>'
+
+    // ── Colonne droite ──
+    +'<div>'
+    +'<div style="'+sST.replace('margin-top:14px','margin-top:0')+'">Marketplaces</div>'
+    +'<div style="display:flex;gap:6px;margin-bottom:8px">'
+    +'<button style="'+sSmallBtn+'" onclick="expToggleAll(\'mp\',true)">Toutes</button>'
+    +'<button style="'+sSmallBtn+'" onclick="expToggleAll(\'mp\',false)">Aucune</button>'
+    +'</div>'
+    +MARKETPLACES.map(mp=>'<label style="'+sLabel+'"><input type="checkbox" id="exp-mp-'+mp.id+'"'+(mp.id===MARKETPLACE?' checked':'')+' style="'+sCb+'"><span>'+mp.label+'</span></label>').join("")
+
+    +'<div style="'+sST+'">Disponibilité</div>'
+    +'<select id="exp-avail" style="'+sField+'">'
+    +'<option value="all">Tous les produits</option>'
+    +'<option value="dispo">Disponibles uniquement</option>'
+    +'<option value="indispo">Indisponibles uniquement</option>'
+    +'</select>'
+
+    +'<div style="'+sST+'">Filtres numériques</div>'
+    +numRow('note','Note (0 – 5)','0.1','0','5')
+    +numRow('delai','Délai de livraison (jours)','1','0','')
+
+    +'<div style="'+sST+'">Variations</div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 8px">'
+    +variations.map(v=>'<label style="'+sLabel+'"><input type="checkbox" id="exp-var-'+v.id+'" style="'+sCb+'"><span>'+v.label+'</span></label>').join("")
+    +'</div>'
+
+    +'<div style="'+sST+'">Autres filtres</div>'
+    +'<label style="'+sLabel+'"><input type="checkbox" id="exp-deal-only" style="'+sCb+'"><span>Deal actif uniquement</span></label>'
+    +'<label style="'+sLabel+'" title="Filtre applicable uniquement pour la marketplace courante"><input type="checkbox" id="exp-page1-only" style="'+sCb+'"><span>Page 1 uniquement <span style="font-size:10px;color:var(--txT)">(MP courante)</span></span></label>'
+    +'</div></div>'
+
+    +'<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px;padding-top:16px;border-top:.5px solid var(--border)">'
+    +'<button onclick="closeModal()" style="padding:8px 16px;border:.5px solid var(--border);border-radius:7px;font-size:12px;background:var(--card);color:var(--tx);cursor:pointer;font-family:inherit">Annuler</button>'
+    +'<button id="exp-run-btn" onclick="runExport()" style="padding:8px 20px;border:.5px solid var(--ac);border-radius:7px;font-size:12px;background:var(--ac);color:#fff;cursor:pointer;font-weight:600;font-family:inherit">⬇ Générer l\'export</button>'
+    +'</div>';
+
+  openModal("Configuration de l'export", html);
+}
+
+function expToggleAll(group, checked) {
+  if (group === 'base') {
+    ['name','product_id','sku','sku_marketplace','type','canal','url'].forEach(id => {
+      const el = document.getElementById('exp-col-'+id); if (el) el.checked = checked;
+    });
+  } else if (group === 'mp') {
+    MARKETPLACES.forEach(mp => {
+      const el = document.getElementById('exp-mp-'+mp.id); if (el) el.checked = checked;
+    });
+  }
+}
+
+function expUpdateNumFilter(field) {
+  const op = (document.getElementById('exp-'+field+'-op') || {}).value;
+  const wrap = document.getElementById('exp-'+field+'-v2-wrap');
+  if (wrap) wrap.style.display = op === 'between' ? 'flex' : 'none';
+}
+
+async function getMpExportData(mpId) {
+  if (mpId === MARKETPLACE) {
+    return { products: STATE.products, history: STATE.history, dates: STATE.dates,
+             productsInPage1: STATE.productsInPage1,
+             activeOps: STATE.activeOps||[], activeOpProducts: STATE.activeOpProducts||[] };
+  }
+  const [products, snapshots, activeOps, activeOpProducts] = await Promise.all([
+    sb("products", "marketplace=eq."+mpId+"&active=eq.true&select=*&order=product_id"),
+    sb("product_snapshots", "marketplace=eq."+mpId+"&select=*&order=date.desc&limit=10000"),
+    sb("commercial_operations", "marketplace=eq."+mpId+"&select=*").catch(()=>[]),
+    sb("operation_products", "marketplace=eq."+mpId+"&select=ref,operation_id").catch(()=>[]),
+  ]);
+  function dayKey(ts) { return new Date(ts).toISOString().slice(0,10); }
+  const daySet = new Set();
+  snapshots.forEach(s => { if (s.date) daySet.add(dayKey(s.date)); });
+  const dates = [...daySet].sort();
+  const history = {};
+  snapshots.forEach(s => {
+    const key = (s.product_id||"").toLowerCase();
+    if (!history[key]) history[key] = {};
+    const dk = dayKey(s.date);
+    if (dk && (!history[key][dk] || s.id > history[key][dk].id)) history[key][dk] = s;
+  });
+  const latestDate = dates[dates.length-1]||"";
+  const prevDate = dates.length >= 2 ? dates[dates.length-2] : "";
+  products.forEach(p => {
+    const key = (p.product_id_scraper||"").toLowerCase();
+    const h = history[key]||{};
+    const latest = h[latestDate], prev = h[prevDate];
+    p._latest = latest||null; p._history = h;
+    p._price = latest?.price??null; p._available = latest?.available??null;
+    p._rating = latest?.rating??null; p._delivery = latest?.delivery_days??null;
+    p._tags = [];
+    if (latest && prev) {
+      if (latest.price!=null&&prev.price!=null&&prev.price>0){const pct=(latest.price-prev.price)/prev.price;if(pct>.10)p._tags.push("prix_up");else if(pct<-.15)p._tags.push("prix_down");}
+      if (latest.delivery_days!=null&&prev.delivery_days!=null){const d=latest.delivery_days-prev.delivery_days;if(d>5)p._tags.push("delai_up");else if(d<-5)p._tags.push("delai_down");}
+      if (latest.rating!=null&&prev.rating!=null){const d=latest.rating-prev.rating;if(d>=.2)p._tags.push("note_up");else if(d<=-.2)p._tags.push("note_down");}
+    }
+  });
+  return { products, history, dates, productsInPage1: new Set(), activeOps, activeOpProducts };
+}
+
+function buildExportSheetData(mpData, baseCols, metrics, sessionsCount, filters) {
+  const { products, history, dates, productsInPage1, activeOps, activeOpProducts } = mpData;
+  const sessions = dates.slice(-sessionsCount);
+  const fmtD = d => { const dt = new Date(d+"T12:00:00Z"); return dt.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"2-digit"}); };
+  const now = new Date();
+  const activeOpIds = new Set((activeOps||[]).filter(op=>new Date(op.date_debut)<=now&&new Date(op.date_fin)>=now).map(op=>op.id));
+  const dealMap = {};
+  (activeOpProducts||[]).forEach(r => { if (activeOpIds.has(r.operation_id)) dealMap[r.ref] = true; });
+  const hasDeal = sku => sku && !!dealMap[sku];
+  const colLabels = {name:'Produit',product_id:'ID produit',sku:'SKU',sku_marketplace:'SKU Marketplace',type:'Type',canal:'Canal',url:'Lien'};
+  const metricLabels = {dispo:'Dispo',prix:'Prix',note:'Note',delai:'Délai'};
+  const headers = [
+    ...baseCols.map(c=>colLabels[c]),
+    ...sessions.flatMap(s=>metrics.map(m=>metricLabels[m]+' '+fmtD(s)))
+  ];
+  let list = [...products];
+  if (filters.avail==='dispo') list = list.filter(p=>p._available===true);
+  else if (filters.avail==='indispo') list = list.filter(p=>p._available!==true);
+  if (filters.noteOp!=='none' && !isNaN(filters.noteV1)) {
+    list = list.filter(p => {
+      if (p._rating==null) return false;
+      if (filters.noteOp==='eq') return Math.abs(p._rating-filters.noteV1)<0.001;
+      if (filters.noteOp==='gt') return p._rating>filters.noteV1;
+      if (filters.noteOp==='lt') return p._rating<filters.noteV1;
+      if (filters.noteOp==='between') return !isNaN(filters.noteV2)&&p._rating>=filters.noteV1&&p._rating<=filters.noteV2;
+      return true;
+    });
+  }
+  if (filters.delaiOp!=='none' && !isNaN(filters.delaiV1)) {
+    list = list.filter(p => {
+      if (p._delivery==null) return false;
+      if (filters.delaiOp==='eq') return p._delivery===filters.delaiV1;
+      if (filters.delaiOp==='gt') return p._delivery>filters.delaiV1;
+      if (filters.delaiOp==='lt') return p._delivery<filters.delaiV1;
+      if (filters.delaiOp==='between') return !isNaN(filters.delaiV2)&&p._delivery>=filters.delaiV1&&p._delivery<=filters.delaiV2;
+      return true;
+    });
+  }
+  if (filters.selectedVars.length>0) list = list.filter(p=>filters.selectedVars.some(v=>(p._tags||[]).includes(v)));
+  if (filters.dealOnly) list = list.filter(p=>hasDeal(p.sku));
+  if (filters.page1Only) list = list.filter(p=>productsInPage1.has((p.product_id_scraper||"").toLowerCase()));
+  const rows = list.map(p => {
+    const key = (p.product_id_scraper||"").toLowerCase();
+    const h = history[key]||{};
+    const baseVals = baseCols.map(c => {
+      if(c==='name') return p.name||""; if(c==='product_id') return p.product_id||"";
+      if(c==='sku') return p.sku||""; if(c==='sku_marketplace') return p.sku_marketplace||"";
+      if(c==='type') return p.type||""; if(c==='canal') return p.canal_attribue||"";
+      if(c==='url') return p.url||""; return "";
+    });
+    const metricVals = sessions.flatMap(sess => {
+      const snap = h[sess];
+      return metrics.map(m => {
+        if(m==='dispo') return snap?.available!=null?(snap.available?"Dispo":"Indispo"):"";
+        if(m==='prix') return snap?.price!=null?snap.price:"";
+        if(m==='note') return snap?.rating!=null?snap.rating:"";
+        if(m==='delai') return snap?.delivery_days!=null?snap.delivery_days:"";
+        return "";
+      });
+    });
+    return [...baseVals, ...metricVals];
+  });
+  return { headers, rows };
+}
+
+async function runExport() {
+  const sessionsCount = parseInt((document.getElementById('exp-sessions')||{}).value)||4;
+  const baseCols = ['name','product_id','sku','sku_marketplace','type','canal','url'].filter(id=>document.getElementById('exp-col-'+id)?.checked);
+  const metrics = ['dispo','prix','note','delai'].filter(id=>document.getElementById('exp-metric-'+id)?.checked);
+  const selectedMps = MARKETPLACES.filter(mp=>document.getElementById('exp-mp-'+mp.id)?.checked);
+  if (!selectedMps.length) { alert("Sélectionnez au moins une marketplace."); return; }
+  if (!baseCols.length && !metrics.length) { alert("Sélectionnez au moins une colonne."); return; }
+  const noteOp = (document.getElementById('exp-note-op')||{}).value||'none';
+  const noteV1 = parseFloat((document.getElementById('exp-note-v1')||{}).value);
+  const noteV2 = parseFloat((document.getElementById('exp-note-v2')||{}).value);
+  const delaiOp = (document.getElementById('exp-delai-op')||{}).value||'none';
+  const delaiV1 = parseFloat((document.getElementById('exp-delai-v1')||{}).value);
+  const delaiV2 = parseFloat((document.getElementById('exp-delai-v2')||{}).value);
+  const selectedVars = ['prix_up','prix_down','delai_up','delai_down','note_up','note_down'].filter(id=>document.getElementById('exp-var-'+id)?.checked);
+  const filters = {
+    avail: (document.getElementById('exp-avail')||{}).value||'all',
+    noteOp, noteV1, noteV2, delaiOp, delaiV1, delaiV2, selectedVars,
+    dealOnly: !!document.getElementById('exp-deal-only')?.checked,
+    page1Only: !!document.getElementById('exp-page1-only')?.checked,
+  };
+  const btn = document.getElementById('exp-run-btn');
+  if (btn) { btn.textContent = "Génération..."; btn.disabled = true; }
+  const todayStr = new Date().toLocaleDateString("fr-FR").replace(/\//g,"-");
+  try {
+    if (selectedMps.length === 1) {
+      const mpData = await getMpExportData(selectedMps[0].id);
+      const { headers, rows } = buildExportSheetData(mpData, baseCols, metrics, sessionsCount, filters);
+      const csvCell = v => { const s=String(v??""); return s.includes(";")||s.includes('"')||s.includes("\n")?'"'+s.replace(/"/g,'""')+'"':s; };
+      const csv = [headers,...rows].map(row=>row.map(csvCell).join(";")).join("\n");
+      const blob = new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8;"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href=url; a.download="produits_"+selectedMps[0].id+"_"+todayStr+".csv"; a.click();
+      URL.revokeObjectURL(url);
+    } else {
+      const wb = XLSX.utils.book_new();
+      for (const mp of selectedMps) {
+        const mpData = await getMpExportData(mp.id);
+        const { headers, rows } = buildExportSheetData(mpData, baseCols, metrics, sessionsCount, filters);
+        const ws = XLSX.utils.aoa_to_sheet([headers,...rows]);
+        XLSX.utils.book_append_sheet(wb, ws, mp.label.substring(0,31));
+      }
+      XLSX.writeFile(wb, "produits_export_"+todayStr+".xlsx");
+    }
+    closeModal();
+  } catch(e) {
+    alert("Erreur lors de l'export : "+e.message);
+    if (btn) { btn.textContent = "⬇ Générer l'export"; btn.disabled = false; }
+  }
 }
 
 // =============================================
