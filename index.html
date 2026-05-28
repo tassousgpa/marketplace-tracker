@@ -1280,12 +1280,9 @@ function buildProduitsTableHTML() {
   const total=list.length;
   const nbIndispo=list.filter(p=>p._available===false).length;
   const nbSansLien=list.filter(p=>!p.url||!p.url.startsWith("http")).length;
-  const nbSansData=list.filter(p=>p._available==null).length;
-  // Sans lien valide = pas de lien OU (lien présent mais _price null et pas indispo)
   const nbSansLienValide=list.filter(p=>!p.url||!p.url.startsWith("http")||(p.url&&p.url.startsWith("http")&&p._price==null&&p._available!==false)).length;
   const pctIndispo=total>0?Math.round(nbIndispo/total*100):0;
   const pctSansLienValide=total>0?Math.round(nbSansLienValide/total*100):0;
-  const pctSansData=total>0?Math.round(nbSansData/total*100):0;
 
   const kpiCards = `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:stretch">
     <div style="background:var(--card);border:.5px solid var(--border);border-radius:10px;padding:12px 16px;min-width:130px;flex:1">
@@ -1302,11 +1299,6 @@ function buildProduitsTableHTML() {
       <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">% Sans lien valide</div>
       <div style="font-size:24px;font-weight:700;color:${pctSansLienValide>0?"var(--am)":"var(--gn)"}">${pctSansLienValide}%</div>
       <div style="font-size:11px;color:var(--txT);margin-top:2px">${nbSansLienValide} prod. (${nbSansLien} sans URL)</div>
-    </div>
-    <div style="background:${pctSansData>5?"var(--amBg)":"var(--card)"};border:.5px solid ${pctSansData>5?"var(--am)":"var(--border)"};border-radius:10px;padding:12px 16px;min-width:130px;flex:1">
-      <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">% Sans données</div>
-      <div style="font-size:24px;font-weight:700;color:${pctSansData>0?"var(--am)":"var(--gn)"}">${pctSansData}%</div>
-      <div style="font-size:11px;color:var(--txT);margin-top:2px">${nbSansData} sans snapshot</div>
     </div>
     <div style="display:flex;align-items:center;padding:0 4px">
       <button onclick="showProduitsKpiHistory()" style="padding:8px 12px;border:.5px solid var(--ac);border-radius:8px;font-size:11px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit;white-space:nowrap">📈 Historique</button>
@@ -3554,6 +3546,7 @@ function buildAuditHTML() {
     list = list.filter(r=>(r.sku||"").toLowerCase().includes(s)||(r.nom_produit||"").toLowerCase().includes(s));
   }
 
+  const niveaux = ["🔴 Critique","🟡 À optimiser","🟢 Conforme","⭐ Excellence"];
   const categories = [...new Set(auditData.map(r=>r.categorie).filter(Boolean))];
   const types = [...new Set(auditData.map(r=>r.type_ref).filter(Boolean))];
   const canaux = [...new Set(auditData.map(r=>skuToCanal[r.sku]||"").filter(Boolean))].sort();
