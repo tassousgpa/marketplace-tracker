@@ -2018,6 +2018,87 @@ async function showPositionDetail(kw) {
 
   var days = Object.keys(byDate).sort(function(a, b) { return a > b ? -1 : 1; });
 
+  // ── Calcul Entrées / Sorties ──────────────────────────────────────────
+  var movementHtml = '';
+  if (days.length >= 2) {
+    var currDay = days[0], prevDay = days[1];
+    var currBM = byDate[currDay].bm;   // Set de product_ids BM aujourd'hui
+    var prevBM = byDate[prevDay].bm;   // Set de product_ids BM J-1
+
+    // Index détail (seller + is_sponsored) par jour+pid pour les deux dates pertinentes
+    var detailMap = {};
+    for (var ri2 = 0; ri2 < histRows.length; ri2++) {
+      var hr = histRows[ri2];
+      var hd = hr.date ? hr.date.slice(0, 10) : null;
+      if (hd !== currDay && hd !== prevDay) continue;
+      var hpid = stripUrlParams(hr.product_id || '');
+      if (!hpid) continue;
+      var hkey = hd + '||' + hpid;
+      if (!detailMap[hkey]) detailMap[hkey] = { seller: hr.seller || '', is_sponsored: false };
+      if (hr.is_sponsored === true) detailMap[hkey].is_sponsored = true;
+    }
+
+    var entrees = [], sorties = [];
+    currBM.forEach(function(pid) {
+      if (!prevBM.has(pid)) {
+        var d2 = detailMap[currDay + '||' + pid] || {};
+        entrees.push({ pid: pid, is_sponsored: d2.is_sponsored || false, seller: d2.seller || '' });
+      }
+    });
+    prevBM.forEach(function(pid) {
+      if (!currBM.has(pid)) {
+        var d2 = detailMap[prevDay + '||' + pid] || {};
+        sorties.push({ pid: pid, is_sponsored: d2.is_sponsored || false, seller: d2.seller || '' });
+      }
+    });
+
+    function movementRow(item, badge) {
+      var tracked = lookupTrackedProduct(item.pid);
+      var name = tracked ? esc(tracked.name) : esc(item.seller ? item.seller + ' — ' + item.pid : item.pid);
+      var spoTag = item.is_sponsored
+        ? ' <span style="display:inline-block;padding:1px 6px;border-radius:99px;font-size:10px;font-weight:600;background:#fff3e0;color:#e65100">⚡ Sponso</span>'
+        : '';
+      var untracked = !tracked
+        ? ' <span style="display:inline-block;padding:1px 6px;border-radius:99px;font-size:10px;background:var(--amBg);color:var(--am)">non suivi</span>'
+        : '';
+      return '<div style="padding:4px 0;border-bottom:1px solid rgba(0,0,0,.06);font-size:12px">'
+        + '<span style="font-weight:500">' + name + '</span>'
+        + badge + spoTag + untracked
+        + '</div>';
+    }
+
+    var fmtDay = function(d) {
+      return new Date(d + 'T12:00:00Z').toLocaleDateString('fr-FR', {day:'2-digit', month:'2-digit', year:'2-digit'});
+    };
+    var entreesBadge = ' <span style="display:inline-block;padding:1px 6px;border-radius:99px;font-size:10px;font-weight:600;background:var(--gnBg);color:var(--gn)">▲ Entré</span>';
+    var sortiesBadge = ' <span style="display:inline-block;padding:1px 6px;border-radius:99px;font-size:10px;font-weight:600;background:var(--rdBg);color:var(--rd)">▼ Sorti</span>';
+
+    var entreesBody = entrees.length
+      ? entrees.map(function(i) { return movementRow(i, entreesBadge); }).join('')
+      : '<div style="font-size:12px;color:var(--txT);padding:6px 0">Aucune entrée détectée</div>';
+    var sortiesBody = sorties.length
+      ? sorties.map(function(i) { return movementRow(i, sortiesBadge); }).join('')
+      : '<div style="font-size:12px;color:var(--txT);padding:6px 0">Aucune sortie détectée</div>';
+
+    var deltaLabel = fmtDay(prevDay) + ' → ' + fmtDay(currDay);
+    movementHtml = '<div style="margin-bottom:4px">'
+      + '<div style="font-weight:600;font-size:13px;margin-bottom:8px">Mouvements page 1 <span style="font-weight:400;font-size:11px;color:var(--txS)">(' + deltaLabel + ')</span></div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
+      + '<div style="background:var(--gnBg);border-radius:8px;padding:10px 12px">'
+      + '<div style="font-size:11px;font-weight:700;color:var(--gn);margin-bottom:6px;text-transform:uppercase;letter-spacing:.03em">▲ Entrées (' + entrees.length + ')</div>'
+      + entreesBody
+      + '</div>'
+      + '<div style="background:var(--rdBg);border-radius:8px;padding:10px 12px">'
+      + '<div style="font-size:11px;font-weight:700;color:var(--rd);margin-bottom:6px;text-transform:uppercase;letter-spacing:.03em">▼ Sorties (' + sorties.length + ')</div>'
+      + sortiesBody
+      + '</div>'
+      + '</div>'
+      + '</div>';
+  } else if (days.length === 1) {
+    movementHtml = '<div style="font-size:12px;color:var(--txT);padding:4px 0 12px">Mouvements : un seul scraping disponible, comparaison impossible.</div>';
+  }
+  // ─────────────────────────────────────────────────────────────────────
+
   var histHtml;
   if (!days.length) {
     histHtml = '<div style="color:var(--txT);font-size:12px;padding:8px 0">Aucun historique disponible.</div>';
@@ -2047,7 +2128,7 @@ async function showPositionDetail(kw) {
       + '</tbody></table></div>';
   }
 
-  document.getElementById("modal-body").innerHTML = v1Html + sep + histHeader + histHtml;
+  document.getElementById("modal-body").innerHTML = v1Html + sep + movementHtml + sep + histHeader + histHtml;
 }
 
 function showPositionHistoryDay(date) {
