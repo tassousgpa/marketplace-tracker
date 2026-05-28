@@ -857,9 +857,17 @@ function getSeaActive(sku) {
 // =============================================
 function renderSynthese() {
   const P=STATE.products;
-  const avail=P.filter(p=>p._available===true).length, unavail=P.filter(p=>p._available===false).length;
-  // Nombre total d'apparitions page 1 des produits suivis (1 produit sur 2 keywords = 2)
-  // = somme des pills "Page 1" dans l'onglet Produits
+  const avail=P.filter(p=>p._available===true).length;
+  const unavail=P.filter(p=>p._available===false).length;
+  const noData=P.filter(p=>p._available==null).length;
+  // Taux dispo = dispo confirmés / total produits suivis (dénominateur = P.length)
+  const tauxDispo=P.length>0?Math.round(avail/P.length*100):0;
+  const tauxIndisp=P.length>0?Math.round(unavail/P.length*100):0;
+  // Produits sans lien valide : pas d'URL ou URL ne commence pas par http
+  const sansLien=P.filter(p=>!p.url||!p.url.startsWith("http")).length;
+  // Produits avec URL mais price null et pas indispo → données manquantes
+  const sansDonnees=P.filter(p=>p.url&&p.url.startsWith("http")&&p._available==null).length;
+
   const page1 = STATE.products.reduce((sum, p) => {
     const pid = (p.product_id_scraper || "").toLowerCase();
     const kws = STATE.page1Keywords?.[pid];
@@ -879,20 +887,23 @@ function renderSynthese() {
 
   return `
     <div class="metrics">
-      <div class="metric"><div class="metric-label">Produits suivis</div><div class="metric-value">${P.length}</div></div>
+      <div class="metric"><div class="metric-label">Produits suivis</div><div class="metric-value">${P.length}</div><div class="metric-sub">${avail} dispo · ${unavail} indispo · ${noData} sans données</div></div>
+      <div class="metric"><div class="metric-label">Taux dispo</div><div class="metric-value" style="color:${tauxDispo>=80?"var(--gn)":tauxDispo>=60?"var(--am)":"var(--rd)"}">${tauxDispo}%</div><div class="metric-sub">${avail}/${P.length} confirmés dispos</div></div>
+      <div class="metric"><div class="metric-label">Indisponibles</div><div class="metric-value" style="color:var(--rd)">${unavail}</div><div class="metric-sub">${tauxIndisp}% du catalogue · ${sansLien} sans lien</div></div>
       <div class="metric"><div class="metric-label">En page 1</div><div class="metric-value" style="color:var(--ac)">${page1}</div><div class="metric-sub">${P.length>0?Math.round(page1/P.length*100):0}% du catalogue</div></div>
-      <div class="metric"><div class="metric-label">Indisponibles</div><div class="metric-value" style="color:var(--rd)">${unavail}</div></div>
-      <div class="metric"><div class="metric-label">Délai moyen</div><div class="metric-value" style="color:var(--am)">${avgDelivery}j</div></div>
-      <div class="metric"><div class="metric-label">Note moyenne</div><div class="metric-value" style="color:var(--am)">${avgRating}</div></div>
+      <div class="metric"><div class="metric-label">Note moyenne</div><div class="metric-value" style="color:var(--am)">${avgRating}</div><div class="metric-sub">Délai moy. : ${avgDelivery}j</div></div>
     </div>
 
     <div class="card"><div class="card-title">Indicateurs clés</div><div class="grid-2">${[
       {l:"Prix moyen",v:avgPrice+"€"},{l:"Délai moyen",v:avgDelivery+" jours"},{l:"Note moyenne",v:avgRating+" / 5"},
-      {l:"Taux dispo",v:(P.length>0?Math.round(avail/P.length*100):0)+"%"},{l:"Taux page 1",v:(P.length>0?Math.round(page1/P.length*100):0)+"%"},
+      {l:"Taux dispo (dispo/total)",v:tauxDispo+"%",color:tauxDispo<80?"var(--rd)":"",sub:avail+" confirmés / "+P.length+" suivis"},
+      {l:"Sans snapshot (no data)",v:noData+" produits",color:noData>0?"var(--am)":"",sub:sansDonnees+" avec lien mais pas de données scraping"},
+      {l:"Sans lien valide",v:sansLien+" produits",color:sansLien>0?"var(--am)":""},
+      {l:"Taux page 1",v:(P.length>0?Math.round(page1/P.length*100):0)+"%"},
       {l:"Prix en hausse (>10%)",v:`${pctPU}% (${pu.length})`,click:pu.length>0?"showVariation('prix_up')":null,color:pu.length>0?"var(--rd)":""},
       {l:"Délai en hausse (>5j)",v:`${pctDU}% (${du.length})`,click:du.length>0?"showVariation('delai_up')":null,color:du.length>0?"var(--rd)":""},
       {l:"Délai en baisse (>5j)",v:`${pctDD}% (${dd.length})`,click:dd.length>0?"showVariation('delai_down')":null,color:dd.length>0?"var(--gn)":""},
-    ].map(k=>`<div class="kpi-row"><span class="kpi-label">${k.l}</span><div><span class="kpi-value" ${k.color?`style="color:${k.color}"`:''}>${k.v}</span>${k.click?`<button class="btn-see" onclick="${k.click}">voir</button>`:''}</div></div>`).join("")}</div></div>
+    ].map(k=>`<div class="kpi-row"><span class="kpi-label">${k.l}${k.sub?`<br><span style="font-size:10px;color:var(--txT)">${k.sub}</span>`:""}</span><div><span class="kpi-value" ${k.color?`style="color:${k.color}"`:''}>${k.v}</span>${k.click?`<button class="btn-see" onclick="${k.click}">voir</button>`:''}</div></div>`).join("")}</div></div>
     ${renderRevenueBlock()}
     ${renderProductSalesBlocks()}`;
 }
@@ -1264,7 +1275,45 @@ function buildProduitsTableHTML() {
   if(f.canal!=="all")list=list.filter(p=>p.canal_attribue===f.canal);
   list.sort((a,b)=>{let va,vb;switch(f.sort){case"price":va=a._price||0;vb=b._price||0;break;case"rating":va=a._rating||0;vb=b._rating||0;break;case"delivery":va=a._delivery||999;vb=b._delivery||999;break;default:va=a.name;vb=b.name;}return f.dir==="asc"?(va<vb?-1:1):(va>vb?-1:1);});
   const si=col=>f.sort===col?(f.dir==="asc"?" ↑":" ↓"):"";
-  return `
+
+  // KPI cards dynamiques sur le sous-groupe filtré
+  const total=list.length;
+  const nbIndispo=list.filter(p=>p._available===false).length;
+  const nbSansLien=list.filter(p=>!p.url||!p.url.startsWith("http")).length;
+  const nbSansData=list.filter(p=>p._available==null).length;
+  // Sans lien valide = pas de lien OU (lien présent mais _price null et pas indispo)
+  const nbSansLienValide=list.filter(p=>!p.url||!p.url.startsWith("http")||(p.url&&p.url.startsWith("http")&&p._price==null&&p._available!==false)).length;
+  const pctIndispo=total>0?Math.round(nbIndispo/total*100):0;
+  const pctSansLienValide=total>0?Math.round(nbSansLienValide/total*100):0;
+  const pctSansData=total>0?Math.round(nbSansData/total*100):0;
+
+  const kpiCards = `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:stretch">
+    <div style="background:var(--card);border:.5px solid var(--border);border-radius:10px;padding:12px 16px;min-width:130px;flex:1">
+      <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">Produits suivis</div>
+      <div style="font-size:24px;font-weight:700">${total}</div>
+      <div style="font-size:11px;color:var(--txT);margin-top:2px">${STATE.products.length} au total</div>
+    </div>
+    <div style="background:${pctIndispo>10?"var(--rdBg)":"var(--card)"};border:.5px solid ${pctIndispo>10?"var(--rd)":"var(--border)"};border-radius:10px;padding:12px 16px;min-width:130px;flex:1;cursor:pointer" onclick="prodFilters.avail=prodFilters.avail==='indispo'?'all':'indispo';renderProduitsTable()">
+      <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">% Indisponibles</div>
+      <div style="font-size:24px;font-weight:700;color:${pctIndispo>0?"var(--rd)":"var(--gn)"}">${pctIndispo}%</div>
+      <div style="font-size:11px;color:var(--txT);margin-top:2px">${nbIndispo} produit${nbIndispo>1?"s":""}</div>
+    </div>
+    <div style="background:${pctSansLienValide>10?"var(--amBg)":"var(--card)"};border:.5px solid ${pctSansLienValide>10?"var(--am)":"var(--border)"};border-radius:10px;padding:12px 16px;min-width:130px;flex:1">
+      <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">% Sans lien valide</div>
+      <div style="font-size:24px;font-weight:700;color:${pctSansLienValide>0?"var(--am)":"var(--gn)"}">${pctSansLienValide}%</div>
+      <div style="font-size:11px;color:var(--txT);margin-top:2px">${nbSansLienValide} prod. (${nbSansLien} sans URL)</div>
+    </div>
+    <div style="background:${pctSansData>5?"var(--amBg)":"var(--card)"};border:.5px solid ${pctSansData>5?"var(--am)":"var(--border)"};border-radius:10px;padding:12px 16px;min-width:130px;flex:1">
+      <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">% Sans données</div>
+      <div style="font-size:24px;font-weight:700;color:${pctSansData>0?"var(--am)":"var(--gn)"}">${pctSansData}%</div>
+      <div style="font-size:11px;color:var(--txT);margin-top:2px">${nbSansData} sans snapshot</div>
+    </div>
+    <div style="display:flex;align-items:center;padding:0 4px">
+      <button onclick="showProduitsKpiHistory()" style="padding:8px 12px;border:.5px solid var(--ac);border-radius:8px;font-size:11px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit;white-space:nowrap">📈 Historique</button>
+    </div>
+  </div>`;
+
+  return kpiCards + `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <div style="font-size:12px;color:var(--txS)">${list.length} produit${list.length>1?'s':''}</div>
       <div style="display:flex;align-items:center;gap:8px">
@@ -1312,6 +1361,65 @@ function renderProduits() {
     <div id="produits-table-container">${buildProduitsTableHTML()}</div>`;
 }
 function toggleProdSort(col){if(prodFilters.sort===col)prodFilters.dir=prodFilters.dir==="asc"?"desc":"asc";else{prodFilters.sort=col;prodFilters.dir="asc";}renderProduitsTable();}
+
+function showProduitsKpiHistory() {
+  const prods = STATE.products;
+  const dates = STATE.dates;
+  if (!dates.length) { openModal("Historique KPI Produits", '<div style="padding:20px;text-align:center;color:var(--txT)">Aucune donnée historique disponible.</div>'); return; }
+
+  const fmtDate = d => { try { return new Date(d+"T12:00:00Z").toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"2-digit"}); } catch(e){ return d; } };
+
+  const rows = dates.slice().reverse().map((date, i) => {
+    let nbDispo=0, nbIndispo=0, nbSansLien=0, nbSansLienValide=0, nbSansData=0;
+    prods.forEach(p => {
+      const key = (p.product_id_scraper||"").toLowerCase();
+      const snap = (STATE.history[key]||{})[date];
+      const hasValidUrl = p.url && p.url.startsWith("http");
+      const available = snap?.available ?? null;
+      const price = snap?.price ?? null;
+      if (available === true) nbDispo++;
+      else if (available === false) nbIndispo++;
+      else nbSansData++;
+      if (!hasValidUrl) nbSansLien++;
+      if (!hasValidUrl || (hasValidUrl && price==null && available!==false)) nbSansLienValide++;
+    });
+    const total = prods.length;
+    const pctIndispo = total>0?Math.round(nbIndispo/total*100):0;
+    const pctSansLienValide = total>0?Math.round(nbSansLienValide/total*100):0;
+    const pctDispo = total>0?Math.round(nbDispo/total*100):0;
+    const isLatest = i===0;
+    const bg = isLatest?"background:var(--acBg)":(i%2===1?"background:var(--bg)":"");
+    return '<tr style="'+bg+';border-bottom:1px solid var(--borderL)">'
+      + '<td style="padding:7px 12px;font-size:11px;white-space:nowrap;font-weight:'+(isLatest?"700":"400")+'">' + fmtDate(date) + (isLatest?' <span style="font-size:10px;color:var(--ac);font-weight:600">(dernier)</span>':'')+  '</td>'
+      + '<td style="padding:7px 12px;text-align:center;font-weight:700;color:var(--gn)">' + pctDispo + '%</td>'
+      + '<td style="padding:7px 12px;text-align:center;color:var(--txS)">' + nbDispo + '</td>'
+      + '<td style="padding:7px 12px;text-align:center;font-weight:700;color:'+(pctIndispo>10?"var(--rd)":"var(--txS)")+'">' + pctIndispo + '%</td>'
+      + '<td style="padding:7px 12px;text-align:center;color:var(--txS)">' + nbIndispo + '</td>'
+      + '<td style="padding:7px 12px;text-align:center;font-weight:700;color:'+(pctSansLienValide>10?"var(--am)":"var(--txS)")+'">' + pctSansLienValide + '%</td>'
+      + '<td style="padding:7px 12px;text-align:center;color:var(--txS)">' + nbSansLienValide + '</td>'
+      + '<td style="padding:7px 12px;text-align:center;color:var(--txT);font-size:11px">' + nbSansData + '</td>'
+      + '</tr>';
+  }).join("");
+
+  const html = '<div style="font-size:11px;color:var(--txS);margin-bottom:10px">'
+    + dates.length + ' dates de scraping · ' + prods.length + ' produits suivis'
+    + '</div>'
+    + '<div style="overflow-x:auto">'
+    + '<table style="width:100%;border-collapse:collapse;font-size:12px">'
+    + '<thead><tr style="background:var(--bg);border-bottom:2px solid var(--border)">'
+    + '<th style="padding:7px 12px;text-align:left;color:var(--txS)">Date scraping</th>'
+    + '<th style="padding:7px 12px;text-align:center;color:var(--gn)">% Dispo</th>'
+    + '<th style="padding:7px 12px;text-align:center;color:var(--txS)">Nb dispo</th>'
+    + '<th style="padding:7px 12px;text-align:center;color:var(--rd)">% Indispo</th>'
+    + '<th style="padding:7px 12px;text-align:center;color:var(--txS)">Nb indispo</th>'
+    + '<th style="padding:7px 12px;text-align:center;color:var(--am)">% Sans lien valide</th>'
+    + '<th style="padding:7px 12px;text-align:center;color:var(--txS)">Nb sans lien</th>'
+    + '<th style="padding:7px 12px;text-align:center;color:var(--txT)">Sans données</th>'
+    + '</tr></thead>'
+    + '<tbody>' + rows + '</tbody>'
+    + '</table></div>';
+  openModal("Historique KPI Produits — " + MARKETPLACES.find(m=>m.id===MARKETPLACE)?.label, html);
+}
 
 function exportCSV() {
   const sessions = STATE.dates.slice(-exportSessions);
@@ -3285,7 +3393,7 @@ const AUDIT_NIVEAU_BG = (niveau) => ({
 }[niveau] || "var(--borderL)");
 
 let auditData = [];
-let auditFilters = { type: "all", categorie: "all", niveau: "all", search: "" };
+let auditFilters = { type: "all", categorie: "all", niveau: "all", canal: "all", search: "" };
 let auditSaving = {};
 
 async function loadAuditData() {
@@ -3305,36 +3413,77 @@ async function renderAudit() {
   el.innerHTML = buildAuditHTML();
 }
 
+function buildAuditKpiCardsHTML(list) {
+  const niveaux = ["🔴 Critique","🟡 À optimiser","🟢 Conforme","⭐ Excellence"];
+  const scores = list.map(r=>AUDIT_SCORE_FORMULA(r).score).filter(s=>s>0);
+  const avg = scores.length ? Math.round(scores.reduce((a,b)=>a+b,0)/scores.length) : 0;
+  const counts = {};
+  niveaux.forEach(n=>{ counts[n] = list.filter(r=>AUDIT_NIVEAU(AUDIT_SCORE_FORMULA(r).score)===n).length; });
+  return `
+    <div style="background:var(--bg);border-radius:10px;padding:14px;text-align:center">
+      <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Score IDQ moyen</div>
+      <div style="font-size:28px;font-weight:800;color:${AUDIT_NIVEAU_COLOR(AUDIT_NIVEAU(avg))}">${avg}</div>
+      <div style="font-size:11px;color:var(--txT)">/100 · ${list.length} réf.</div>
+    </div>
+    ${niveaux.map(n=>`
+    <div style="background:${AUDIT_NIVEAU_BG(n)};border-radius:10px;padding:14px;text-align:center;cursor:pointer" onclick="auditFilters.niveau=auditFilters.niveau==='${n}'?'all':'${n}';document.getElementById('content').innerHTML=buildAuditHTML()">
+      <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">${n}</div>
+      <div style="font-size:24px;font-weight:800;color:${AUDIT_NIVEAU_COLOR(n)}">${counts[n]}</div>
+      <div style="font-size:11px;color:var(--txT)">${list.length>0?Math.round(counts[n]/list.length*100):0}%</div>
+    </div>`).join("")}`;
+}
+
+function updateAuditFiltered() {
+  const skuToCanal = {};
+  (STATE.products||[]).forEach(p=>{ if(p.sku) skuToCanal[p.sku] = p.canal_attribue||""; });
+  let list = auditData;
+  if (auditFilters.type !== "all") list = list.filter(r=>r.type_ref===auditFilters.type);
+  if (auditFilters.categorie !== "all") list = list.filter(r=>r.categorie===auditFilters.categorie);
+  if (auditFilters.niveau !== "all") list = list.filter(r=>AUDIT_NIVEAU(AUDIT_SCORE_FORMULA(r).score)===auditFilters.niveau);
+  if (auditFilters.canal !== "all") list = list.filter(r=>(skuToCanal[r.sku]||"")===auditFilters.canal);
+  if (auditFilters.search) {
+    const s = auditFilters.search.toLowerCase();
+    list = list.filter(r=>(r.sku||"").toLowerCase().includes(s)||(r.nom_produit||"").toLowerCase().includes(s));
+  }
+  const kpiEl = document.getElementById("audit-kpi-section");
+  if (kpiEl) kpiEl.innerHTML = buildAuditKpiCardsHTML(list);
+  const tbodyEl = document.getElementById("audit-tbody");
+  if (tbodyEl) tbodyEl.innerHTML = buildAuditRows(list);
+  const countEl = document.querySelector("#audit-count-label");
+  if (countEl) countEl.textContent = list.length+" référence"+(list.length>1?"s":"");
+}
+
 function buildAuditHTML() {
   const mpLabel = MARKETPLACES.find(m=>m.id===MARKETPLACE)?.label || MARKETPLACE;
   const semaines = [...new Set(auditData.map(r=>r.semaine).filter(Boolean))].sort().reverse();
   const latestSemaine = semaines[0] || "—";
+
+  // Map SKU → canal depuis STATE.products
+  const skuToCanal = {};
+  (STATE.products||[]).forEach(p=>{ if(p.sku) skuToCanal[p.sku] = p.canal_attribue||""; });
 
   // Filtrage
   let list = auditData;
   if (auditFilters.type !== "all") list = list.filter(r=>r.type_ref === auditFilters.type);
   if (auditFilters.categorie !== "all") list = list.filter(r=>r.categorie === auditFilters.categorie);
   if (auditFilters.niveau !== "all") list = list.filter(r => AUDIT_NIVEAU(AUDIT_SCORE_FORMULA(r).score) === auditFilters.niveau);
+  if (auditFilters.canal !== "all") list = list.filter(r => (skuToCanal[r.sku]||"") === auditFilters.canal);
   if (auditFilters.search) {
     const s = auditFilters.search.toLowerCase();
     list = list.filter(r=>(r.sku||"").toLowerCase().includes(s)||(r.nom_produit||"").toLowerCase().includes(s));
   }
 
-  const allScores = auditData.map(r=>AUDIT_SCORE_FORMULA(r).score).filter(s=>s>0);
-  const avgScore = allScores.length ? Math.round(allScores.reduce((a,b)=>a+b,0)/allScores.length) : 0;
-  const niveaux = ["🔴 Critique","🟡 À optimiser","🟢 Conforme","⭐ Excellence"];
-  const niveauCounts = {};
-  niveaux.forEach(n => { niveauCounts[n] = auditData.filter(r=>AUDIT_NIVEAU(AUDIT_SCORE_FORMULA(r).score)===n).length; });
-
   const categories = [...new Set(auditData.map(r=>r.categorie).filter(Boolean))];
   const types = [...new Set(auditData.map(r=>r.type_ref).filter(Boolean))];
+  const canaux = [...new Set(auditData.map(r=>skuToCanal[r.sku]||"").filter(Boolean))].sort();
+  const isFiltered = auditFilters.niveau!=="all"||auditFilters.type!=="all"||auditFilters.categorie!=="all"||auditFilters.canal!=="all"||auditFilters.search;
 
   const synthese = `
   <div class="card" style="margin-bottom:14px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
       <div>
         <div class="card-title" style="margin:0">Audit Fiches Produits — ${mpLabel}</div>
-        <div style="font-size:11px;color:var(--txS);margin-top:2px">Semaine en cours : <b>${latestSemaine}</b> · ${auditData.length} références auditées</div>
+        <div style="font-size:11px;color:var(--txS);margin-top:2px">Semaine en cours : <b>${latestSemaine}</b> · ${auditData.length} références auditées${isFiltered?` · <b style="color:var(--ac)">${list.length} après filtres</b>`:""}</div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button onclick="openAuditImportModal()" style="padding:6px 14px;border:.5px solid var(--pu);border-radius:6px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">⬆ Import XLS</button>
@@ -3342,18 +3491,8 @@ function buildAuditHTML() {
         <button onclick="openAuditAddProductModal()" style="padding:6px 14px;border:.5px solid var(--ac);border-radius:6px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">+ Ajouter produit</button>
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:14px">
-      <div style="background:var(--bg);border-radius:10px;padding:14px;text-align:center">
-        <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">Score IDQ moyen</div>
-        <div style="font-size:28px;font-weight:800;color:${AUDIT_NIVEAU_COLOR(AUDIT_NIVEAU(avgScore))}">${avgScore}</div>
-        <div style="font-size:11px;color:var(--txT)">/100</div>
-      </div>
-      ${niveaux.map(n=>`
-      <div style="background:${AUDIT_NIVEAU_BG(n)};border-radius:10px;padding:14px;text-align:center;cursor:pointer" onclick="auditFilters.niveau='${n}';document.getElementById('content').innerHTML=buildAuditHTML()">
-        <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">${n}</div>
-        <div style="font-size:24px;font-weight:800;color:${AUDIT_NIVEAU_COLOR(n)}">${niveauCounts[n]}</div>
-        <div style="font-size:11px;color:var(--txT)">${auditData.length>0?Math.round(niveauCounts[n]/auditData.length*100):0}%</div>
-      </div>`).join("")}
+    <div id="audit-kpi-section" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:14px">
+      ${buildAuditKpiCardsHTML(list)}
     </div>
     ${auditData.length===0?`<div style="padding:20px;text-align:center;color:var(--txT);font-size:13px">Aucune donnée pour ${mpLabel}. Importez un fichier XLS via le bouton ci-dessus.</div>`:""}
   </div>`;
@@ -3380,7 +3519,7 @@ function buildAuditHTML() {
   </div>
   <div class="filters" style="margin-bottom:10px">
     <input placeholder="Rechercher SKU ou produit..." value="${esc(auditFilters.search)}"
-      oninput="auditFilters.search=this.value;document.getElementById('audit-tbody').innerHTML=buildAuditRows()"
+      oninput="auditFilters.search=this.value;updateAuditFiltered()"
       style="flex:1;min-width:180px"/>
     <select onchange="auditFilters.type=this.value;document.getElementById('content').innerHTML=buildAuditHTML()">
       <option value="all">Tous types</option>
@@ -3390,16 +3529,21 @@ function buildAuditHTML() {
       <option value="all">Toutes catégories</option>
       ${categories.map(c=>`<option value="${esc(c)}" ${auditFilters.categorie===c?"selected":""}>${esc(c)}</option>`).join("")}
     </select>
+    <select onchange="auditFilters.canal=this.value;document.getElementById('content').innerHTML=buildAuditHTML()">
+      <option value="all">Tous canaux</option>
+      ${canaux.map(c=>`<option value="${esc(c)}" ${auditFilters.canal===c?"selected":""}>${esc(c)}</option>`).join("")}
+    </select>
     <select onchange="auditFilters.niveau=this.value;document.getElementById('content').innerHTML=buildAuditHTML()">
       <option value="all">Tous niveaux</option>
       ${niveaux.map(n=>`<option value="${esc(n)}" ${auditFilters.niveau===n?"selected":""}>${esc(n)}</option>`).join("")}
     </select>
-    ${auditFilters.niveau!=="all"||auditFilters.type!=="all"||auditFilters.categorie!=="all"||auditFilters.search
-      ?`<button onclick="auditFilters={type:'all',categorie:'all',niveau:'all',search:''};document.getElementById('content').innerHTML=buildAuditHTML()" style="padding:6px 12px;border:.5px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg);cursor:pointer;font-family:inherit">✕ Reset</button>`:""}
+    ${isFiltered
+      ?`<button onclick="auditFilters={type:'all',categorie:'all',niveau:'all',canal:'all',search:''};document.getElementById('content').innerHTML=buildAuditHTML()" style="padding:6px 12px;border:.5px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg);cursor:pointer;font-family:inherit">✕ Reset</button>`:""}
   </div>
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
-    <div style="font-size:12px;color:var(--txS)">${list.length} référence${list.length>1?"s":""}</div>
+    <div id="audit-count-label" style="font-size:12px;color:var(--txS)">${list.length} référence${list.length>1?"s":""}</div>
     <button onclick="auditSortByScore()" style="padding:4px 10px;border:.5px solid var(--border);border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;background:var(--bg)" id="audit-sort-btn">Score ↕</button>
+    <button onclick="showAuditGroupHistory()" style="padding:4px 10px;border:.5px solid var(--ac);border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;background:var(--acBg);color:var(--ac);font-weight:600">📈 Historique du sous-groupe</button>
   </div>
   `;
 
@@ -3411,6 +3555,7 @@ function buildAuditHTML() {
       {key:"lien_mkp",label:"Lien",w:60,editable:true,isLink:true},
       {key:"categorie",label:"Catég.",w:80,editable:true},
       {key:"type_ref",label:"Type",w:90,editable:true},
+      {key:"_canal",label:"Canal",w:90,editable:false,isCanal:true},
     ]},
     { label:"TITRE (8 pts)", cols:[
       {key:"titre_longueur",label:"Long. (0-2)",w:60,editable:true,max:2},
@@ -3498,15 +3643,22 @@ function buildAuditHTML() {
 function buildAuditRows(filteredList) {
   let list = filteredList;
   if (!list) {
+    const _skuToCanal = {};
+    (STATE.products||[]).forEach(p=>{ if(p.sku) _skuToCanal[p.sku] = p.canal_attribue||""; });
     list = auditData;
     if (auditFilters.type !== "all") list = list.filter(r=>r.type_ref===auditFilters.type);
     if (auditFilters.categorie !== "all") list = list.filter(r=>r.categorie===auditFilters.categorie);
     if (auditFilters.niveau !== "all") list = list.filter(r=>AUDIT_NIVEAU(AUDIT_SCORE_FORMULA(r).score)===auditFilters.niveau);
+    if (auditFilters.canal !== "all") list = list.filter(r=>(_skuToCanal[r.sku]||"")===auditFilters.canal);
     if (auditFilters.search) {
       const s = auditFilters.search.toLowerCase();
       list = list.filter(r=>(r.sku||"").toLowerCase().includes(s)||(r.nom_produit||"").toLowerCase().includes(s));
     }
   }
+
+  // Lookup canal pour les lignes
+  const skuToCanal = {};
+  (STATE.products||[]).forEach(p=>{ if(p.sku) skuToCanal[p.sku] = p.canal_attribue||""; });
 
   const colGroups = [
     {cols:[
@@ -3515,6 +3667,7 @@ function buildAuditRows(filteredList) {
       {key:"lien_mkp",w:60,editable:true,isLink:true},
       {key:"categorie",w:80,editable:true,isSelect:true,options:["Canapé","Meubles","Outdoor","Autre"]},
       {key:"type_ref",w:90,editable:true,isSelect:true,options:["Top Ref","Nouveauté","Autre"]},
+      {key:"_canal",w:90,editable:false,isCanal:true},
     ]},
     {cols:[
       {key:"titre_longueur",w:60,editable:true,max:2},
@@ -3615,6 +3768,13 @@ function buildAuditRows(filteredList) {
         const sc = totals._score;
         const pa = sc >= 90 ? "OK — Surveiller" : sc >= 75 ? "Ajustements mineurs" : sc >= 50 ? "Optimisation contenu + visuels" : "Refonte complète urgente";
         return '<td style="padding:4px 8px;font-size:11px;color:' + AUDIT_NIVEAU_COLOR(n) + ';font-weight:600;white-space:nowrap">' + pa + '</td>';
+      }
+
+      if (c.isCanal) {
+        const cv = skuToCanal[r.sku] || "";
+        return '<td style="text-align:center;padding:4px 6px">'
+          + (cv ? '<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:var(--acBg);color:var(--ac)">' + esc(cv) + '</span>' : '<span style="color:var(--txT);font-size:10px">—</span>')
+          + '</td>';
       }
 
       if (c.isLink) {
@@ -3777,6 +3937,135 @@ async function saveAuditSnapshot(id, sku) {
     showAuditHistory(id, sku);
   } catch(e) {
     alert("Erreur : " + e.message);
+  }
+}
+
+async function showAuditGroupHistory() {
+  // Reconstruire la liste filtrée courante
+  const skuToCanal = {};
+  (STATE.products||[]).forEach(p=>{ if(p.sku) skuToCanal[p.sku] = p.canal_attribue||""; });
+  let list = auditData;
+  if (auditFilters.type !== "all") list = list.filter(r=>r.type_ref===auditFilters.type);
+  if (auditFilters.categorie !== "all") list = list.filter(r=>r.categorie===auditFilters.categorie);
+  if (auditFilters.niveau !== "all") list = list.filter(r=>AUDIT_NIVEAU(AUDIT_SCORE_FORMULA(r).score)===auditFilters.niveau);
+  if (auditFilters.canal !== "all") list = list.filter(r=>(skuToCanal[r.sku]||"")===auditFilters.canal);
+  if (auditFilters.search) {
+    const s = auditFilters.search.toLowerCase();
+    list = list.filter(r=>(r.sku||"").toLowerCase().includes(s)||(r.nom_produit||"").toLowerCase().includes(s));
+  }
+  if (!list.length) { openModal("Historique sous-groupe", '<div style="padding:20px;text-align:center;color:var(--txT)">Aucune référence dans le sous-groupe filtré.</div>'); return; }
+
+  const ids = list.map(r=>r.id);
+  const filterDesc = [
+    auditFilters.type!=="all"?"Type: "+auditFilters.type:"",
+    auditFilters.categorie!=="all"?"Catég: "+auditFilters.categorie:"",
+    auditFilters.canal!=="all"?"Canal: "+auditFilters.canal:"",
+    auditFilters.niveau!=="all"?auditFilters.niveau:"",
+    auditFilters.search?'"'+auditFilters.search+'"':"",
+  ].filter(Boolean).join(" · ") || "Toutes références";
+
+  openModal("Historique sous-groupe — "+list.length+" réf.", '<div style="padding:20px;text-align:center;color:var(--txT)">Chargement...</div>');
+
+  try {
+    const niveaux = ["🔴 Critique","🟡 À optimiser","🟢 Conforme","⭐ Excellence"];
+    const history = await sb("audit_idq_history",
+      "marketplace=eq."+MARKETPLACE+"&audit_idq_id=in.("+ids.join(",")+")&select=audit_idq_id,score_idq,semaine,recorded_at&order=recorded_at.desc&limit=2000"
+    );
+
+    // Inclure le snapshot courant comme "Actuel"
+    const currentEntries = list.map(r=>({
+      audit_idq_id: r.id,
+      score_idq: AUDIT_SCORE_FORMULA(r).score,
+      semaine: r.semaine || null,
+      recorded_at: "_current"
+    }));
+
+    // Grouper par semaine (ou par date tronquée à la semaine)
+    const grouped = {};
+    const addEntries = (entries) => {
+      entries.forEach(h => {
+        if (!h.score_idq) return;
+        let key = h.semaine;
+        if (!key && h.recorded_at && h.recorded_at !== "_current") {
+          const d = new Date(h.recorded_at);
+          key = d.toISOString().slice(0,10);
+        }
+        if (!key) key = "_actuel";
+        if (!grouped[key]) grouped[key] = { semaine: key, scores: [], ids: new Set() };
+        if (!grouped[key].ids.has(h.audit_idq_id)) {
+          grouped[key].scores.push(h.score_idq);
+          grouped[key].ids.add(h.audit_idq_id);
+        }
+      });
+    };
+    addEntries(history);
+    // Ajouter l'état actuel dans un groupe séparé
+    const currentKey = "_actuel";
+    grouped[currentKey] = { semaine: "Actuel", scores: [], ids: new Set() };
+    currentEntries.forEach(h => {
+      if (h.score_idq && !grouped[currentKey].ids.has(h.audit_idq_id)) {
+        grouped[currentKey].scores.push(h.score_idq);
+        grouped[currentKey].ids.add(h.audit_idq_id);
+      }
+    });
+
+    const sortedKeys = Object.keys(grouped).filter(k=>k!==currentKey).sort().reverse();
+    const allKeys = [currentKey, ...sortedKeys];
+
+    const fmtDate = d => {
+      if (!d || d === "_actuel") return "Actuel";
+      if (/^S\d/.test(d)) return d;
+      try { return new Date(d+"T12:00:00Z").toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"2-digit"}); } catch(e) { return d; }
+    };
+
+    const rows = allKeys.map((k, ki) => {
+      const g = grouped[k];
+      if (!g.scores.length) return "";
+      const avg = Math.round(g.scores.reduce((a,b)=>a+b,0)/g.scores.length);
+      const n = AUDIT_NIVEAU(avg);
+      const nCritique = g.scores.filter(s=>AUDIT_NIVEAU(s)==="🔴 Critique").length;
+      const nOptim = g.scores.filter(s=>AUDIT_NIVEAU(s)==="🟡 À optimiser").length;
+      const nConforme = g.scores.filter(s=>AUDIT_NIVEAU(s)==="🟢 Conforme").length;
+      const nExcellence = g.scores.filter(s=>AUDIT_NIVEAU(s)==="⭐ Excellence").length;
+      const prevKey = allKeys[ki+1];
+      const prevAvg = prevKey && grouped[prevKey]?.scores.length ? Math.round(grouped[prevKey].scores.reduce((a,b)=>a+b,0)/grouped[prevKey].scores.length) : null;
+      const delta = prevAvg !== null ? avg - prevAvg : null;
+      const deltaHtml = delta !== null
+        ? ' <span style="font-size:10px;font-weight:600;color:'+(delta>0?"var(--gn)":delta<0?"var(--rd)":"var(--txT)")+'">('+(delta>0?"+":"")+delta+')</span>'
+        : "";
+      const isActuel = k === currentKey;
+      const bg = isActuel ? "background:var(--acBg)" : (ki%2===1?"background:var(--bg)":"");
+      return '<tr style="'+bg+';border-bottom:1px solid var(--borderL)">'
+        + '<td style="padding:7px 12px;font-size:11px;color:var(--txS);white-space:nowrap;font-weight:'+(isActuel?"700":"400")+'">' + fmtDate(g.semaine) + '</td>'
+        + '<td style="padding:7px 12px;text-align:center;font-weight:600">' + g.scores.length + '</td>'
+        + '<td style="padding:7px 12px;text-align:center;font-size:15px;font-weight:800;color:'+AUDIT_NIVEAU_COLOR(n)+'">' + avg + deltaHtml + '</td>'
+        + '<td style="padding:7px 12px;text-align:center"><span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:'+AUDIT_NIVEAU_BG(n)+';color:'+AUDIT_NIVEAU_COLOR(n)+'">'+n+'</span></td>'
+        + '<td style="padding:7px 12px;text-align:center;color:var(--rd);font-weight:600">' + (nCritique||"—") + '</td>'
+        + '<td style="padding:7px 12px;text-align:center;color:var(--am);font-weight:600">' + (nOptim||"—") + '</td>'
+        + '<td style="padding:7px 12px;text-align:center;color:var(--gn);font-weight:600">' + (nConforme||"—") + '</td>'
+        + '<td style="padding:7px 12px;text-align:center;color:var(--pu);font-weight:600">' + (nExcellence||"—") + '</td>'
+        + '</tr>';
+    }).join("");
+
+    const html = '<div style="font-size:11px;color:var(--txS);margin-bottom:10px">Filtres actifs : <b>'+filterDesc+'</b></div>'
+      + '<div style="overflow-x:auto">'
+      + '<table style="width:100%;border-collapse:collapse;font-size:12px">'
+      + '<thead><tr style="background:var(--bg);border-bottom:2px solid var(--border)">'
+      + '<th style="padding:7px 12px;text-align:left;color:var(--txS)">Semaine</th>'
+      + '<th style="padding:7px 12px;text-align:center;color:var(--txS)">Nb réf.</th>'
+      + '<th style="padding:7px 12px;text-align:center;color:var(--txS)">Score IDQ moy.</th>'
+      + '<th style="padding:7px 12px;text-align:center;color:var(--txS)">Niveau</th>'
+      + '<th style="padding:7px 12px;text-align:center;color:var(--rd)">🔴 Critiques</th>'
+      + '<th style="padding:7px 12px;text-align:center;color:var(--am)">🟡 À optim.</th>'
+      + '<th style="padding:7px 12px;text-align:center;color:var(--gn)">🟢 Conformes</th>'
+      + '<th style="padding:7px 12px;text-align:center;color:var(--pu)">⭐ Excellence</th>'
+      + '</tr></thead>'
+      + '<tbody>' + (rows || '<tr><td colspan="8" style="padding:20px;text-align:center;color:var(--txT)">Aucun historique disponible pour ce sous-groupe.<br><small>Utilisez le bouton 📈 sur chaque ligne pour enregistrer des snapshots.</small></td></tr>') + '</tbody>'
+      + '</table></div>';
+
+    openModal("Historique sous-groupe — "+filterDesc, html);
+  } catch(e) {
+    openModal("Historique sous-groupe", '<div style="color:var(--rd);padding:20px">'+e.message+'</div>');
   }
 }
 
