@@ -237,12 +237,27 @@ async function main() {
   }
 
   // ── 2. Récupérer la liste des IDs de commandes ──────────────────
+  // sort=[id_DESC] : Prestashop renvoie les commandes en ASC par défaut
+  // → sans tri explicite, limit=5000 retourne les 5000 plus anciennes.
   let allIds = [];
   try {
-    const resp = await psGet("/orders?display=[id]&limit=5000");
+    const resp = await psGet("/orders?display=[id]&sort=[id_DESC]&limit=5000");
     const orders = resp.orders || [];
     allIds = orders.map(o => toInt(o.id)).filter(id => id > 0);
-    console.log(`  ✓ IDs commandes récupérés depuis Prestashop : ${allIds.length}`);
+
+    // ── Logs de diagnostic ──────────────────────────────────────────
+    if (allIds.length > 0) {
+      const sorted = [...allIds].sort((a, b) => a - b);
+      console.log(`  ✓ IDs récupérés       : ${allIds.length}`);
+      console.log(`  ✓ ID minimum          : ${sorted[0]}`);
+      console.log(`  ✓ ID maximum          : ${sorted[sorted.length - 1]}`);
+      const byResp = [...allIds]; // ordre tel que renvoyé par l'API
+      console.log(`  ✓ 10 premiers (API)   : [${byResp.slice(0, 10).join(", ")}]`);
+      console.log(`  ✓ 10 derniers (API)   : [${byResp.slice(-10).join(", ")}]`);
+      console.log(`  ✓ IDs > last_order_id : ${allIds.filter(id => id > lastOrderId).length}`);
+    } else {
+      console.log(`  ⚠ Aucun ID retourné par Prestashop`);
+    }
   } catch (e) {
     console.error(`  ❌ Erreur Prestashop (liste IDs): ${e.message}`);
     process.exit(1);
