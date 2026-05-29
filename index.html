@@ -937,111 +937,173 @@ function showVariation(tag) {
 
 function renderProductSalesBlocks() {
   const allSales = STATE.productSalesWeekly || [];
-  if (!allSales.length) return '<div style="margin-top:20px"><div style="font-size:13px;font-weight:700;margin-bottom:12px">📦 Ventes produits par semaine</div><div class="card" style="padding:24px;text-align:center;color:var(--txT);font-size:12px">Aucune donnée produit. Importez un fichier Odoo via <b>Import Semaine</b>.</div></div>';
 
-  const weeks = [...new Set(allSales.map(r => r.week_label))].sort((a,b) => b.localeCompare(a));
-  if (!weeks.length) return "";
-
-  const latestWeek = weeks[0];
-  const latestSales = allSales.filter(r => r.week_label === latestWeek);
-  const top10Sales = [...latestSales].sort((a,b) => b.qty - a.qty).slice(0,10);
-
-  const scraperIdToSku = {};
-  (STATE.products || []).forEach(p => {
-    if (p.sku && p.product_id_scraper) scraperIdToSku[p.product_id_scraper.toLowerCase()] = p.sku;
-  });
-  const skuToPriceIndex = {};
-  (STATE.snapshots || []).forEach(s => {
-    if (!s.price) return;
-    const sku = scraperIdToSku[(s.product_id || "").toLowerCase()];
-    if (!sku) return;
-    if (!skuToPriceIndex[sku] || s.date > (skuToPriceIndex[sku].date || "")) skuToPriceIndex[sku] = { price: s.price, date: s.date };
-  });
-  Object.keys(skuToPriceIndex).forEach(k => { skuToPriceIndex[k] = skuToPriceIndex[k].price; });
-
-  // Index ps_sales_daily : clé = "ref|YYYY-MM-DD"
+  // ── Index ps_sales_daily ─────────────────────────────────────────
   const psDailyIdx = {};
   (STATE.psSalesDaily || []).forEach(s => {
-    const key = (s.product_ref || "") + "|" + String(s.sale_date || "").slice(0, 10);
-    psDailyIdx[key] = (psDailyIdx[key] || 0) + (s.quantity || 0);
+    const k = (s.product_ref||"")+"|"+String(s.sale_date||"").slice(0,10);
+    psDailyIdx[k] = (psDailyIdx[k]||0) + (s.quantity||0);
   });
-  const DAY_LABELS_FR = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+  const DAY_FR = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
+  const today = new Date().toISOString().slice(0,10);
 
-  function getWeekDays(weekLabel) {
-    const wr = allSales.find(r => r.week_label === weekLabel && r.period_start);
-    if (!wr) return null;
-    const start = new Date(wr.period_start + "T12:00:00Z");
-    return Array.from({length: 7}, (_, i) => {
-      const d = new Date(start);
-      d.setUTCDate(d.getUTCDate() + i);
-      return d.toISOString().slice(0, 10);
-    });
+  // Calcul des 7 dates lun-dim à partir d'une date de début
+  function datesFrom(start) {
+    const s = new Date(start+"T12:00:00Z");
+    return Array.from({length:7},(_,i)=>{const d=new Date(s);d.setUTCDate(d.getUTCDate()+i);return d.toISOString().slice(0,10);});
+  }
+  function getWeekDates(weekLabel) {
+    const wr = allSales.find(r=>r.week_label===weekLabel&&r.period_start);
+    return wr ? datesFrom(wr.period_start) : null;
+  }
+  // Une semaine est terminée si son dimanche est strictement avant aujourd'hui
+  function isComplete(weekLabel) {
+    const wr = allSales.find(r=>r.week_label===weekLabel&&r.period_start);
+    if (!wr) return true;
+    const sun = new Date(wr.period_start+"T12:00:00Z"); sun.setUTCDate(sun.getUTCDate()+6);
+    return sun.toISOString().slice(0,10) < today;
+  }
+  // Lundi le plus récent (début semaine courante calendaire)
+  function curWeekStart() {
+    const d = new Date(); const dow = d.getDay();
+    d.setDate(d.getDate()-(dow===0?6:dow-1));
+    return d.toISOString().slice(0,10);
   }
 
-  // Colonnes jours toujours visibles — "—" quand ps_sales_daily n'a pas encore de données
-  const DAY_TH = DAY_LABELS_FR.map(l =>
-    "<th style='padding:5px 7px;text-align:right;font-weight:600;color:var(--txS);width:38px'>"+l+"</th>"
-  ).join("") + "<th style='padding:5px 10px;text-align:right;font-weight:700;color:var(--ac);border-left:1px solid var(--borderL);width:50px'>Total</th>";
+  const weeks = [...new Set(allSales.map(r=>r.week_label))].sort((a,b)=>b.localeCompare(a));
+  const completedWeeks = weeks.filter(isComplete);
 
-  function salesRow(r, i, currentWeek) {
-    const basket = (r.ca_ht && r.qty) ? Math.round(r.ca_ht / r.qty * 1.2) + "€" : "—";
-    const bg = i%2 ? "background:var(--bg)" : "";
-    const weekDays = getWeekDays(currentWeek);
-    let dayHtml = "", psTotal = 0;
-    if (weekDays) {
-      dayHtml = weekDays.map(d => {
-        const v = psDailyIdx[(r.ref || "") + "|" + d] || 0;
-        psTotal += v;
-        return "<td style='padding:5px 7px;text-align:right;font-weight:"+(v>0?"600":"400")+";color:"+(v>0?"var(--tx)":"var(--txT)")+";width:38px'>"+(v>0?v:"—")+"</td>";
-      }).join("")
-      + "<td style='padding:5px 10px;text-align:right;font-weight:700;color:"+(psTotal>0?"var(--ac)":"var(--txT)")+";border-left:1px solid var(--borderL);width:50px'>"+(psTotal>0?psTotal:"—")+"</td>";
-    } else {
-      // period_start absent — 8 colonnes vides
-      dayHtml = Array(7).fill("<td style='padding:5px 7px;text-align:right;color:var(--txT);width:38px'>—</td>").join("")
-        + "<td style='padding:5px 10px;text-align:right;color:var(--txT);border-left:1px solid var(--borderL);width:50px'>—</td>";
+  // ── Semaine en cours — données PS temps réel ─────────────────────
+  const curDates = datesFrom(curWeekStart());
+  const curRefMap = {};
+  (STATE.psSalesDaily||[]).forEach(s => {
+    const d = String(s.sale_date||"").slice(0,10);
+    const idx = curDates.indexOf(d); if (idx<0) return;
+    const ref = s.product_ref||"";
+    if (!curRefMap[ref]) curRefMap[ref] = {days:Array(7).fill(0),total:0};
+    curRefMap[ref].days[idx] += (s.quantity||0);
+    curRefMap[ref].total += (s.quantity||0);
+  });
+  const curTop10 = Object.entries(curRefMap).sort((a,b)=>b[1].total-a[1].total).slice(0,10);
+
+  function renderCurrentWeekLive() {
+    if (!curTop10.length) return "";
+    const dayHeaders = curDates.map((d,i)=>{
+      const isToday=d===today;
+      return "<th style='padding:5px 7px;text-align:right;font-weight:"+(isToday?"700":"600")+";color:"+(isToday?"var(--ac)":"var(--txS)")+";background:"+(isToday?"rgba(44,94,160,.05)":"")+";width:38px'>"+DAY_FR[i]+"</th>";
+    }).join("");
+    const rows = curTop10.map(([ref,data],i)=>{
+      const bg=i%2?"background:var(--bg)":"";
+      const cells=data.days.map((v,di)=>{
+        const isToday=curDates[di]===today, isFut=curDates[di]>today;
+        return "<td style='padding:5px 7px;text-align:right;font-weight:"+(v>0?"600":"400")+";color:"+(isFut?"transparent":v>0?(isToday?"var(--ac)":"var(--tx)"):"var(--txT)")+";background:"+(isToday?"rgba(44,94,160,.05)":"")+";width:38px'>"+(isFut?"":v>0?v:"—")+"</td>";
+      }).join("");
+      return "<tr style='"+bg+";border-bottom:1px solid var(--borderL)'>"
+        +"<td style='padding:5px 10px;font-weight:600;white-space:nowrap;width:90px'>"+esc(ref)+"</td>"
+        +cells
+        +"<td style='padding:5px 10px;text-align:right;font-weight:700;color:var(--ac);border-left:1px solid var(--borderL);width:50px'>"+data.total+"</td>"
+        +"</tr>";
+    }).join("");
+    return "<div class='card' style='padding:14px;margin-bottom:14px'>"
+      +"<div style='display:flex;align-items:center;gap:8px;margin-bottom:10px'>"
+      +"<div class='card-title' style='margin:0'>📊 Semaine en cours</div>"
+      +"<span style='padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:#fef9ec;color:#a35f00;border:.5px solid #e9c97a'>● Live</span>"
+      +"</div>"
+      +"<div style='overflow-x:auto'><table style='width:auto;border-collapse:collapse;font-size:12px'>"
+      +"<thead><tr style='border-bottom:1px solid var(--border)'>"
+      +"<th style='padding:5px 10px;text-align:left;font-weight:600;color:var(--txS);width:90px'>Réf</th>"
+      +dayHeaders
+      +"<th style='padding:5px 10px;text-align:right;font-weight:700;color:var(--ac);border-left:1px solid var(--borderL);width:50px'>Total</th>"
+      +"</tr></thead><tbody>"+rows+"</tbody></table></div>"
+      +"</div>";
+  }
+
+  // ── Semaine terminée — tableau double (gauche: classement Odoo, droite: détail PS) ──
+  function renderCompletedBlock(weekLabel) {
+    const wSales = allSales.filter(r=>r.week_label===weekLabel);
+    const top10 = [...wSales].sort((a,b)=>b.qty-a.qty).slice(0,10);
+    if (!top10.length) return "<div style='color:var(--txT);font-size:12px;padding:8px'>Aucune donnée Odoo</div>";
+    const wDates = getWeekDates(weekLabel);
+
+    // Gauche : classement Odoo
+    const leftRows = top10.map((r,i)=>{
+      const basket=(r.ca_ht&&r.qty)?Math.round(r.ca_ht/r.qty*1.2)+"€":"—";
+      const bg=i%2?"background:var(--bg)":"";
+      const deal=getActiveDealForWeek(r.ref,weekLabel)
+        ?'<span style="padding:2px 6px;border-radius:99px;font-size:10px;font-weight:600;background:#fff3e0;color:#e65100">Deal</span>'
+        :'<span style="font-size:10px;color:var(--txT)">—</span>';
+      return "<tr style='"+bg+";border-bottom:1px solid var(--borderL)'>"
+        +"<td style='padding:5px 8px;font-size:11px;color:var(--txT);width:22px;text-align:right'>"+(i+1)+"</td>"
+        +"<td style='padding:5px 8px;font-weight:600;white-space:nowrap'>"+esc(r.ref)+"</td>"
+        +"<td style='padding:5px 8px;color:var(--txS);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px' title='"+esc(r.name)+"'>"+esc((r.name||"").slice(0,28))+"</td>"
+        +"<td style='padding:5px 8px;text-align:right;font-weight:700'>"+r.qty+"</td>"
+        +"<td style='padding:5px 8px;text-align:right;color:var(--txS)'>"+basket+"</td>"
+        +"<td style='padding:5px 8px;text-align:center'>"+deal+"</td>"
+        +"</tr>";
+    }).join("");
+    const leftTable = "<table style='width:100%;border-collapse:collapse;font-size:12px'>"
+      +"<thead><tr style='border-bottom:1px solid var(--border)'>"
+      +"<th style='padding:5px 8px;color:var(--txT);width:22px'>#</th>"
+      +"<th style='padding:5px 8px;text-align:left;color:var(--txS)'>Réf</th>"
+      +"<th style='padding:5px 8px;text-align:left;color:var(--txS)'>Produit</th>"
+      +"<th style='padding:5px 8px;text-align:right;color:var(--txS)'>Ventes</th>"
+      +"<th style='padding:5px 8px;text-align:right;color:var(--txS)'>PM TTC</th>"
+      +"<th style='padding:5px 8px;text-align:center;color:var(--txS)'>Opé.</th>"
+      +"</tr></thead><tbody>"+leftRows+"</tbody></table>";
+
+    // Droite : détail journalier PS pour le même top 10
+    let rightTable = "<div style='color:var(--txT);font-size:12px;padding:8px'>Données PS non disponibles</div>";
+    if (wDates) {
+      const rightRows = top10.map((r,i)=>{
+        let tot=0;
+        const days=wDates.map(d=>{const v=psDailyIdx[r.ref+"|"+d]||0;tot+=v;return v;});
+        const bg=i%2?"background:var(--bg)":"";
+        return "<tr style='"+bg+";border-bottom:1px solid var(--borderL)'>"
+          +"<td style='padding:5px 8px;font-weight:600'>"+esc(r.ref)+"</td>"
+          +days.map(v=>"<td style='padding:5px 7px;text-align:right;font-weight:"+(v>0?"600":"400")+";color:"+(v>0?"var(--tx)":"var(--txT)")+";width:38px'>"+(v>0?v:"—")+"</td>").join("")
+          +"<td style='padding:5px 10px;text-align:right;font-weight:700;color:"+(tot>0?"var(--ac)":"var(--txT)")+";border-left:1px solid var(--borderL);width:50px'>"+(tot>0?tot:"—")+"</td>"
+          +"</tr>";
+      }).join("");
+      rightTable = "<table style='width:100%;border-collapse:collapse;font-size:12px'>"
+        +"<thead><tr style='border-bottom:1px solid var(--border)'>"
+        +"<th style='padding:5px 8px;text-align:left;color:var(--txS)'>Réf</th>"
+        +DAY_FR.map(l=>"<th style='padding:5px 7px;text-align:right;color:var(--txS);width:38px'>"+l+"</th>").join("")
+        +"<th style='padding:5px 10px;text-align:right;font-weight:700;color:var(--ac);border-left:1px solid var(--borderL);width:50px'>Total</th>"
+        +"</tr></thead><tbody>"+rightRows+"</tbody></table>";
     }
-    return "<tr style='" + bg + ";border-bottom:1px solid var(--borderL)'>"
-      + "<td style='padding:5px 10px;font-weight:600;white-space:nowrap;width:90px'>" + esc(r.ref) + "</td>"
-      + "<td style='padding:5px 10px;color:var(--txS);width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap' title='" + esc(r.name) + "'>" + esc((r.name||"").slice(0,38)) + "</td>"
-      + dayHtml
-      + "<td style='padding:5px 10px;text-align:right;color:var(--txS);width:65px'>" + basket + "</td>"
-      + "<td style='padding:5px 10px;text-align:center;width:90px'>"+(getActiveDealForWeek(r.ref, currentWeek)?'<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:#fff3e0;color:#e65100">✓ Deal</span>':'<span style="font-size:10px;color:var(--txT)">—</span>')+"</td>"
-      + "<td style='padding:5px 10px;text-align:center;width:80px'>"+(getSeaActive(r.ref)?'<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:var(--amBg);color:var(--am)">SEA</span>':'<span style="font-size:10px;color:var(--txT)">—</span>')+"</td>"
-      + "</tr>";
+
+    return "<div style='display:grid;grid-template-columns:1fr 1fr;gap:16px'>"
+      +"<div><div style='font-size:10px;font-weight:600;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px'>🏆 Classement Odoo</div>"+leftTable+"</div>"
+      +"<div><div style='font-size:10px;font-weight:600;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px'>📅 Détail par jour (Prestashop)</div>"+rightTable+"</div>"
+      +"</div>";
   }
 
-  function salesTable(rows, weekLabel) {
-    if (!rows.length) return "<div style='color:var(--txT);font-size:12px;padding:8px'>Aucune donnée</div>";
-    return "<div style='overflow-x:auto'><table style='width:auto;border-collapse:collapse;font-size:12px'>"
-      + "<thead><tr style='border-bottom:1px solid var(--border)'>"
-      + "<th style='padding:5px 10px;text-align:left;font-weight:600;color:var(--txS);width:90px'>Réf</th>"
-      + "<th style='padding:5px 10px;text-align:left;font-weight:600;color:var(--txS);width:220px'>Produit</th>"
-      + DAY_TH
-      + "<th style='padding:5px 10px;text-align:right;font-weight:600;color:var(--txS);width:65px'>PM TTC</th>"
-      + "<th style='padding:5px 10px;text-align:center;font-weight:600;color:var(--txS);width:90px'>Opé.</th>"
-      + "<th style='padding:5px 10px;text-align:center;font-weight:600;color:var(--txS);width:80px'>Sponso</th>"
-      + "</tr></thead><tbody>"
-      + rows.map(function(r,i) { return salesRow(r, i, weekLabel); }).join("")
-      + "</tbody></table></div>";
+  // ── Assemblage ───────────────────────────────────────────────────
+  if (!allSales.length && !curTop10.length) {
+    return '<div style="margin-top:20px"><div style="font-size:13px;font-weight:700;margin-bottom:12px">📦 Ventes produits par semaine</div><div class="card" style="padding:24px;text-align:center;color:var(--txT);font-size:12px">Aucune donnée produit. Importez un fichier Odoo via <b>Import Semaine</b>.</div></div>';
   }
 
-  const histBlocks = weeks.slice(1).map(function(w) {
-    const wSales = allSales.filter(r => r.week_label === w);
-    const top10 = [...wSales].sort((a,b) => b.qty - a.qty).slice(0,10);
-    return "<details style='margin-top:6px'>"
-      + "<summary style='cursor:pointer;font-size:11px;color:var(--txS);font-weight:600;padding:4px 0'>Top 10 — " + w + "</summary>"
-      + "<div style='margin-top:6px'>" + salesTable(top10, w) + "</div>"
-      + "</details>";
-  }).join("");
+  let out = "<div style='margin-top:20px'><div style='font-size:13px;font-weight:700;margin-bottom:12px'>📦 Ventes produits par semaine</div>";
 
-  return "<div style='margin-top:20px'>"
-    + "<div style='font-size:13px;font-weight:700;margin-bottom:12px'>📦 Ventes produits — " + latestWeek + "</div>"
-    + "<div class='card' style='padding:14px'>"
-    + "<div class='card-title' style='margin-bottom:10px'>🏆 Top 10 ventes " + latestWeek + "</div>"
-    + salesTable(top10Sales, latestWeek)
-    + (histBlocks ? "<div style='border-top:1px solid var(--borderL);margin-top:10px;padding-top:6px'>" + histBlocks + "</div>" : "")
-    + "</div>"
-    + "</div>";
+  // Semaine en cours (live PS)
+  out += renderCurrentWeekLive();
+
+  // Semaines terminées avec split tableau
+  if (completedWeeks.length) {
+    out += "<div class='card' style='padding:14px'>"
+      +"<div class='card-title' style='margin-bottom:12px'>🏆 Top 10 — "+completedWeeks[0]+"</div>"
+      +renderCompletedBlock(completedWeeks[0]);
+    const hist = completedWeeks.slice(1).map(w=>
+      "<details style='margin-top:8px'>"
+      +"<summary style='cursor:pointer;font-size:11px;color:var(--txS);font-weight:600;padding:4px 0'>Top 10 — "+w+"</summary>"
+      +"<div style='margin-top:8px'>"+renderCompletedBlock(w)+"</div>"
+      +"</details>"
+    ).join("");
+    if (hist) out += "<div style='border-top:1px solid var(--borderL);margin-top:12px;padding-top:8px'>"+hist+"</div>";
+    out += "</div>";
+  }
+
+  return out+"</div>";
 }
   
 function renderRevenueBlock() {
