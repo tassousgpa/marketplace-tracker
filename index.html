@@ -4912,9 +4912,9 @@ async function openOpeDetail(id) {
     });
   } catch(e) {}
 
-  const hasSalesData = Object.keys(salesByRef).length > 0;
-  const totalVentes = Object.values(salesByRef).reduce((s,v)=>s+v.qty,0);
-  const totalCaHt   = Object.values(salesByRef).reduce((s,v)=>s+v.ca_ht,0);
+  const hasSalesData = prods.some(p => salesByRef[p.ref]?.qty > 0);
+  const totalVentes = prods.reduce((s,p) => s + (salesByRef[p.ref]?.qty  || 0), 0);
+  const totalCaHt   = prods.reduce((s,p) => s + (salesByRef[p.ref]?.ca_ht|| 0), 0);
 
 
   const avgComm = prods.length ? (prods.reduce((s,p)=>s+(p.taux_commission||0),0)/prods.length*100).toFixed(1) : "—";
