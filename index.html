@@ -4904,6 +4904,20 @@ async function openOpeDetail(id) {
   const totalVentes = Object.values(salesByRef).reduce((s,v)=>s+v.qty,0);
   const totalCaHt   = Object.values(salesByRef).reduce((s,v)=>s+v.ca_ht,0);
 
+  // ── Diagnostic matching réf opé ↔ réf PS ────────────────────────
+  const opRefs = new Set(prods.map(p=>p.ref));
+  const psRefs = new Set(Object.keys(salesByRef));
+  const matchedRefs = [...opRefs].filter(r=>psRefs.has(r));
+  const psRefsPreview = [...psRefs].slice(0,8).join(", ");
+  const opRefsPreview = [...opRefs].slice(0,8).join(", ");
+  const diagHtml = '<div style="background:var(--bg);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:11px;color:var(--txS)">'
+    + '<div style="font-weight:600;margin-bottom:4px">🔎 Diagnostic PS</div>'
+    + '<div>Lignes PS trouvées ('+MARKETPLACE+', '+op.date_debut+' → '+op.date_fin+') : <b>'+psRefs.size+' réfs distinctes</b></div>'
+    + '<div>Réfs opération : <b>'+opRefs.size+'</b> — Réfs matchées : <b style="color:'+(matchedRefs.length>0?'var(--gn)':'var(--rd)')+'">'+matchedRefs.length+'</b></div>'
+    + (psRefs.size>0 ? '<div style="margin-top:3px;color:var(--txT)">Réfs PS : '+esc(psRefsPreview)+(psRefs.size>8?' …':'')+' </div>' : '<div style="color:var(--rd);margin-top:3px">Aucune donnée PS sur cette période/marketplace.</div>')
+    + (opRefs.size>0 ? '<div style="color:var(--txT)">Réfs opé : '+esc(opRefsPreview)+(opRefs.size>8?' …':'')+'</div>' : '')
+    + '</div>';
+
   const avgComm = prods.length ? (prods.reduce((s,p)=>s+(p.taux_commission||0),0)/prods.length*100).toFixed(1) : "—";
 
   function buildOpeProdsTable(onlyWithSales) {
@@ -4939,6 +4953,7 @@ async function openOpeDetail(id) {
     + '<div style="background:var(--bg);border-radius:8px;padding:10px 12px"><div style="font-size:10px;color:var(--txS);text-transform:uppercase;margin-bottom:4px">Commission moy.</div><div style="font-size:13px;font-weight:600">'+avgComm+'%</div></div>'
     + '<div style="background:'+(totalVentes>0?"var(--gnBg)":"var(--bg)")+';border-radius:8px;padding:10px 12px"><div style="font-size:10px;color:var(--txS);text-transform:uppercase;margin-bottom:4px">Ventes période</div><div style="font-size:13px;font-weight:700;color:'+(totalVentes>0?"var(--gn)":"var(--txS)")+'">'+totalVentes+'</div><div style="font-size:11px;color:var(--txS)">'+(totalCaHt>0?Math.round(totalCaHt).toLocaleString("fr-FR")+" € HT":"—")+'</div></div>'
     + '</div>'
+    + diagHtml
     + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">'
     + '<div style="font-size:12px;font-weight:600;color:var(--txS);text-transform:uppercase">'+prods.length+' produit'+(prods.length>1?"s":"")+'</div>'
     + (hasSalesData ? '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;color:var(--txS);margin-left:auto"><input type="checkbox" onchange="window._opeRefreshTable(this.checked)" style="cursor:pointer"> Avec ventes uniquement</label>' : '<span style="font-size:11px;color:var(--txT);margin-left:auto">Aucune vente Prestashop sur cette période</span>')
