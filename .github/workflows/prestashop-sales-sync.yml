@@ -11,6 +11,24 @@ on:
   # ── Déclenchement manuel depuis GitHub Actions ───────────────────
   workflow_dispatch:
     inputs:
+      mode:
+        description: "automatic = sync incrémental (last_order_id) | manual = import d'une plage d'IDs"
+        required: false
+        default: "automatic"
+        type: choice
+        options:
+          - "automatic"
+          - "manual"
+      start_order_id:
+        description: "ID début — mode manual uniquement (ex: 450000)"
+        required: false
+        default: ""
+        type: string
+      end_order_id:
+        description: "ID fin   — mode manual uniquement (ex: 460000)"
+        required: false
+        default: ""
+        type: string
       dry_run:
         description: "Dry run (affiche les commandes sans écrire dans Supabase)"
         required: false
@@ -24,7 +42,7 @@ jobs:
   sync:
     name: Sync Prestashop → Supabase
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository
@@ -48,6 +66,11 @@ jobs:
           PRESTASHOP_API_KEY: ${{ secrets.PRESTASHOP_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # Mode : automatic (défaut cron) | manual (workflow_dispatch)
+          SYNC_MODE: ${{ github.event.inputs.mode || 'automatic' }}
+          # Paramètres mode manuel (ignorés en mode automatic)
+          START_ORDER_ID: ${{ github.event.inputs.start_order_id || '' }}
+          END_ORDER_ID: ${{ github.event.inputs.end_order_id || '' }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
           NODE_ENV: production
         run: node ps_sync.js

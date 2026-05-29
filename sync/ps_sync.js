@@ -228,6 +228,169 @@ function toInt(v) {
 }
 
 // ══════════════════════════════════════════════════════════════════
+// MODE MANUEL — import d'une plage d'IDs (indépendant du mode auto)
+// ══════════════════════════════════════════════════════════════════
+async function runManualMode(startTime) {
+  const startId = toInt(process.env.START_ORDER_ID || "0");
+  const endId   = toInt(process.env.END_ORDER_ID   || "0");
+
+  // ── Validation ───────────────────────────────────────────────────
+  if (!startId || !endId) {
+    console.error(`  ❌ Mode manuel : START_ORDER_ID et END_ORDER_ID sont obligatoires.`);
+    console.error(`     START_ORDER_ID reçu : "${process.env.START_ORDER_ID || "(vide)"}"`);
+    console.error(`     END_ORDER_ID reçu   : "${process.env.END_ORDER_ID   || "(vide)"}"`);
+    process.exit(1);
+  }
+  if (startId > endId) {
+    console.error(`  ❌ Mode manuel : start_order_id (${startId}) doit être ≤ end_order_id (${endId}).`);
+    process.exit(1);
+  }
+
+  console.log(`  start_order_id   : ${startId}`);
+  console.log(`  end_order_id     : ${endId}`);
+  console.log(`  Plage potentielle: ${endId - startId + 1} IDs`);
+
+  // ── Charger les états (même logique que mode automatique) ────────
+  const stateMap = {};
+  let stateMapMode = "ids_fallback";
+  try {
+    const resp = await psGet("/order_states?display=[id,name]&limit=200");
+    (resp.order_states || []).forEach(s => { stateMap[String(s.id)] = s.name || String(s.id); });
+    stateMapMode = "names";
+    console.log(`  ✓ États commandes chargés : ${Object.keys(stateMap).length} (exclusion par nom active)`);
+  } catch (e) {
+    const is401 = e.message.includes("401") || e.message.includes("not allowed");
+    if (is401) {
+      console.warn(`  ⚠ Permission order_states manquante — fallback IDs : ${[...EXCLUDED_STATE_IDS].join(", ")}`);
+    } else {
+      console.warn(`  ⚠ États non chargés: ${e.message}`);
+    }
+  }
+  console.log(`  ✓ Mode exclusion états : ${stateMapMode}`);
+
+  // ── Récupérer les IDs dans la plage (paginé par 5000) ────────────
+  let rangeIds = [];
+  try {
+    const PAGE_SIZE = 5000;
+    let offset = 0, pageNum = 1;
+    while (true) {
+      const resp = await psGet(
+        `/orders?display=[id]&filter[id]=[${startId},${endId}]&sort=[id_ASC]&limit=${offset},${PAGE_SIZE}`
+      );
+      const page = (resp.orders || []).map(o => toInt(o.id)).filter(id => id > 0);
+      rangeIds.push(...page);
+      console.log(`  ✓ Page ${pageNum} : ${page.length} IDs (cumul : ${rangeIds.length})`);
+      if (page.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
+      pageNum++;
+    }
+    console.log(`  ✓ Commandes trouvées dans [${startId}, ${endId}] : ${rangeIds.length}`);
+  } catch (e) {
+    console.error(`  ❌ Erreur récupération IDs Prestashop : ${e.message}`);
+    process.exit(1);
+  }
+
+  if (!rangeIds.length) {
+    console.log(`\n  ✓ Aucune commande trouvée dans la plage [${startId}, ${endId}].`);
+    return;
+  }
+
+  // ── Traiter chaque commande de la plage ──────────────────────────
+  let totalLines = 0, insertedLines = 0, skippedOrders = 0, psErrors = 0, sbErrors = 0;
+  const buffer = [];
+
+  async function flushBuffer() {
+    if (!buffer.length) return;
+    try {
+      await sbUpsert("ps_sales_daily", buffer, "order_id,product_ref");
+      insertedLines += buffer.length;
+      console.log(`    → ${buffer.length} lignes insérées (total: ${insertedLines})`);
+    } catch (e) {
+      console.error(`  ❌ Erreur Supabase insertion: ${e.message}`);
+      sbErrors++;
+    }
+    buffer.length = 0;
+  }
+
+  for (const orderId of rangeIds) {
+    try {
+      const resp = await psGet(`/orders/${orderId}`);
+      const order = resp.order;
+      if (!order) {
+        console.warn(`  ⚠ Commande #${orderId} : réponse vide`);
+        psErrors++;
+        continue;
+      }
+
+      const stateId   = String(order.current_state || "");
+      const stateName = stateMap[stateId] || stateId;
+      if (shouldExcludeOrder(stateName)) {
+        const reason = stateMap[stateId]
+          ? `nom="${stateName}"`
+          : `id=${stateId} (nom inconnu)`;
+        console.log(`  ⊘ Commande #${orderId} exclue — état: ${reason}`);
+        skippedOrders++;
+        continue;
+      }
+
+      const marketplace   = mapMarketplaceFromPayment(order.payment);
+      const saleDate      = String(order.date_add || "").slice(0, 10);
+      const orderRef      = order.reference || null;
+      const paymentMethod = order.payment || null;
+
+      const rawRows = order.associations?.order_rows?.order_row;
+      let rowsArr = [];
+      if (Array.isArray(rawRows))                      rowsArr = rawRows;
+      else if (rawRows && typeof rawRows === "object") rowsArr = [rawRows];
+
+      for (const row of rowsArr) {
+        if (!row || !row.product_reference) continue;
+        const qty    = toInt(row.product_quantity) || 1;
+        const revTtc = Math.round(toFloat(row.unit_price_tax_incl) * qty * 100) / 100;
+        const revHt  = Math.round(toFloat(row.unit_price_tax_excl) * qty * 100) / 100;
+        totalLines++;
+        buffer.push({
+          order_id:        toInt(orderId),
+          order_reference: orderRef,
+          sale_date:       saleDate,
+          payment_method:  paymentMethod,
+          marketplace,
+          product_ref:     String(row.product_reference).trim(),
+          product_name:    String(row.product_name || "").slice(0, 255),
+          quantity:        qty,
+          revenue_ttc:     revTtc,
+          revenue_ht:      revHt,
+          order_state:     stateName,
+        });
+      }
+
+      if (buffer.length >= 100) await flushBuffer();
+    } catch (e) {
+      console.error(`  ❌ Erreur Prestashop commande #${orderId}: ${e.message}`);
+      psErrors++;
+    }
+  }
+
+  await flushBuffer();
+
+  // ── Résumé ────────────────────────────────────────────────────────
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  console.log(`\n  ══════════════ Résumé import manuel ══════════════`);
+  console.log(`  Plage traitée            : [${startId}, ${endId}]`);
+  console.log(`  Commandes trouvées       : ${rangeIds.length}`);
+  console.log(`  Commandes exclues        : ${skippedOrders}`);
+  console.log(`  Lignes produits générées : ${totalLines}`);
+  console.log(`  Lignes insérées (UPSERT) : ${insertedLines}`);
+  console.log(`  Erreurs Prestashop       : ${psErrors}`);
+  console.log(`  Erreurs Supabase         : ${sbErrors}`);
+  console.log(`  Durée                    : ${elapsed}s`);
+  console.log(`  ✓ last_order_id NON modifié (mode manuel)`);
+  console.log(`  ══════════════════════════════════════════\n`);
+
+  if (psErrors > 0 || sbErrors > 0) process.exit(1);
+}
+
+// ══════════════════════════════════════════════════════════════════
 // MAIN
 // ══════════════════════════════════════════════════════════════════
 async function main() {
@@ -235,6 +398,14 @@ async function main() {
   console.log(`\n[${new Date().toISOString()}] ═══════════════════════════════════`);
   console.log(`[${new Date().toISOString()}] Démarrage sync Prestashop → Supabase`);
   console.log(`[${new Date().toISOString()}] ═══════════════════════════════════`);
+
+  // ── Détection du mode ────────────────────────────────────────────
+  const SYNC_MODE = (process.env.SYNC_MODE || "automatic").toLowerCase().trim();
+  console.log(`  Mode : ${SYNC_MODE.toUpperCase()}`);
+  if (SYNC_MODE === "manual") {
+    return await runManualMode(startTime);
+  }
+  // ── MODE AUTOMATIQUE (suite) — code inchangé ─────────────────────
 
   // ── 1. Lire last_order_id ────────────────────────────────────────
   let lastOrderId = 0;
