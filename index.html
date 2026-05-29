@@ -4886,16 +4886,20 @@ async function openOpeDetail(id) {
     prods = await sb("operation_products", "operation_id=eq."+id+"&select=*&order=ref.asc");
   } catch(e) {}
 
-  // Ventes Prestashop pendant la période de l'opération
+  // Ventes Prestashop pendant la période de l'opération — tous canaux confondus
+  // (pas de filtre marketplace : une opé peut couvrir cdiscount + site + amazon...)
   const salesByRef = {};
   try {
     const opSales = await sb("ps_sales_daily",
-      "marketplace=eq."+MARKETPLACE+"&sale_date=gte."+op.date_debut+"&sale_date=lte."+op.date_fin+"&select=product_ref,quantity,revenue_ht").catch(()=>[]);
+      "sale_date=gte."+op.date_debut+"&sale_date=lte."+op.date_fin+"&select=product_ref,quantity,revenue_ht,marketplace").catch(()=>[]);
     opSales.forEach(s => {
       if (!salesByRef[s.product_ref]) salesByRef[s.product_ref] = { qty: 0, ca_ht: 0 };
-      salesByRef[s.product_ref].qty += (s.quantity || 0);
-      salesByRef[s.product_ref].ca_ht += (s.revenue_ht || 0);
+      salesByRef[s.product_ref].qty    += (s.quantity || 0);
+      salesByRef[s.product_ref].ca_ht  += (s.revenue_ht || 0);
     });
+    // Canaux ayant généré des ventes (info)
+    const saleChannels = [...new Set(opSales.map(s=>s.marketplace).filter(Boolean))];
+    if (saleChannels.length > 0) console.log("Opé canaux:", saleChannels.join(", "));
   } catch(e) {}
 
   const hasSalesData = Object.keys(salesByRef).length > 0;
