@@ -71,19 +71,35 @@ const EXCLUDED_STATES = [
 // Réutilise la même logique que ODOO_CHANNEL_MAP dans index.html
 // ══════════════════════════════════════════════════════════════════
 const PAYMENT_MAP_EXACT = {
-  "cdiscount_octopia":      "cdiscount",
-  "cdiscount":              "cdiscount",
-  "maisonsdumonde":         "maisonsdumonde",
-  "laredoute_mirakl":       "laredoute",
-  "laredoute":              "laredoute",
-  "conforama":              "conforama",
-  "manomano_fr":            "manomano",
-  "manomano_fr_b2b":        "manomano",
-  "manomano":               "manomano",
-  "but_mirakl":             "but",
-  "but":                    "but",
-  "leroymerlin_mirakl":     "leroymerlin",
-  "leroy_merlin_mirakl":    "leroymerlin",
+  // Cdiscount
+  "cdiscount_octopia":          "cdiscount",
+  "cdiscount":                  "cdiscount",
+  // Amazon
+  "amazon":                     "amazon",
+  "amazon_fr":                  "amazon",
+  "amazon_be":                  "amazon",
+  "amazon_de":                  "amazon",
+  // Maisons du Monde
+  "maisonsdumonde":             "maisonsdumonde",
+  "maisonsdumonde_de":          "maisonsdumonde",
+  // La Redoute
+  "laredoute_mirakl":           "laredoute",
+  "laredoute":                  "laredoute",
+  // Conforama
+  "conforama":                  "conforama",
+  // ManoMano — "monechelle" est le nom Prestashop de la marketplace ManoMano Pro
+  "manomano_fr":                "manomano",
+  "manomano_fr_b2b":            "manomano",
+  "manomano_fr_mmf":            "manomano",
+  "manomano_de":                "manomano",
+  "manomano":                   "manomano",
+  "monechelle":                 "manomano",   // ← ManoMano Pro (Prestashop)
+  // BUT
+  "but_mirakl":                 "but",
+  "but":                        "but",
+  // Leroy Merlin
+  "leroymerlin_mirakl":         "leroymerlin",
+  "leroy_merlin_mirakl":        "leroymerlin",
   "leroymerlin":            "leroymerlin",
 };
 
