@@ -965,8 +965,6 @@ function renderProductSalesBlocks() {
     const key = (s.product_ref || "") + "|" + String(s.sale_date || "").slice(0, 10);
     psDailyIdx[key] = (psDailyIdx[key] || 0) + (s.quantity || 0);
   });
-  const hasPsData = (STATE.psSalesDaily || []).length > 0;
-
   const DAY_LABELS_FR = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 
   function getWeekDays(weekLabel) {
@@ -980,23 +978,32 @@ function renderProductSalesBlocks() {
     });
   }
 
+  // Colonnes jours toujours visibles — "—" quand ps_sales_daily n'a pas encore de données
+  const DAY_TH = DAY_LABELS_FR.map(l =>
+    "<th style='padding:5px 7px;text-align:right;font-weight:600;color:var(--txS);width:38px'>"+l+"</th>"
+  ).join("") + "<th style='padding:5px 10px;text-align:right;font-weight:700;color:var(--ac);border-left:1px solid var(--borderL);width:50px'>Total</th>";
+
   function salesRow(r, i, currentWeek) {
     const basket = (r.ca_ht && r.qty) ? Math.round(r.ca_ht / r.qty * 1.2) + "€" : "—";
     const bg = i%2 ? "background:var(--bg)" : "";
-    const weekDays = hasPsData ? getWeekDays(currentWeek) : null;
+    const weekDays = getWeekDays(currentWeek);
     let dayHtml = "", psTotal = 0;
     if (weekDays) {
       dayHtml = weekDays.map(d => {
         const v = psDailyIdx[(r.ref || "") + "|" + d] || 0;
         psTotal += v;
-        return "<td style='padding:5px 7px;text-align:right;font-weight:"+(v>0?"600":"400")+";color:"+(v>0?"var(--tx)":"var(--txT)")+";width:38px'>"+(v||"—")+"</td>";
+        return "<td style='padding:5px 7px;text-align:right;font-weight:"+(v>0?"600":"400")+";color:"+(v>0?"var(--tx)":"var(--txT)")+";width:38px'>"+(v>0?v:"—")+"</td>";
       }).join("")
-      + "<td style='padding:5px 10px;text-align:right;font-weight:700;color:var(--ac);border-left:1px solid var(--borderL);width:50px'>"+(psTotal||"—")+"</td>";
+      + "<td style='padding:5px 10px;text-align:right;font-weight:700;color:"+(psTotal>0?"var(--ac)":"var(--txT)")+";border-left:1px solid var(--borderL);width:50px'>"+(psTotal>0?psTotal:"—")+"</td>";
+    } else {
+      // period_start absent — 8 colonnes vides
+      dayHtml = Array(7).fill("<td style='padding:5px 7px;text-align:right;color:var(--txT);width:38px'>—</td>").join("")
+        + "<td style='padding:5px 10px;text-align:right;color:var(--txT);border-left:1px solid var(--borderL);width:50px'>—</td>";
     }
     return "<tr style='" + bg + ";border-bottom:1px solid var(--borderL)'>"
       + "<td style='padding:5px 10px;font-weight:600;white-space:nowrap;width:90px'>" + esc(r.ref) + "</td>"
       + "<td style='padding:5px 10px;color:var(--txS);width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap' title='" + esc(r.name) + "'>" + esc((r.name||"").slice(0,38)) + "</td>"
-      + (dayHtml || "<td style='padding:5px 10px;text-align:right;font-weight:700;width:60px'>" + r.qty + "</td>")
+      + dayHtml
       + "<td style='padding:5px 10px;text-align:right;color:var(--txS);width:65px'>" + basket + "</td>"
       + "<td style='padding:5px 10px;text-align:center;width:90px'>"+(getActiveDealForWeek(r.ref, currentWeek)?'<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:#fff3e0;color:#e65100">✓ Deal</span>':'<span style="font-size:10px;color:var(--txT)">—</span>')+"</td>"
       + "<td style='padding:5px 10px;text-align:center;width:80px'>"+(getSeaActive(r.ref)?'<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:var(--amBg);color:var(--am)">SEA</span>':'<span style="font-size:10px;color:var(--txT)">—</span>')+"</td>"
@@ -1005,16 +1012,11 @@ function renderProductSalesBlocks() {
 
   function salesTable(rows, weekLabel) {
     if (!rows.length) return "<div style='color:var(--txT);font-size:12px;padding:8px'>Aucune donnée</div>";
-    const weekDays = hasPsData ? getWeekDays(weekLabel) : null;
-    const dayHeaders = weekDays
-      ? DAY_LABELS_FR.map(l => "<th style='padding:5px 7px;text-align:right;font-weight:600;color:var(--txS);width:38px'>"+l+"</th>").join("")
-        + "<th style='padding:5px 10px;text-align:right;font-weight:700;color:var(--ac);border-left:1px solid var(--borderL);width:50px'>Total</th>"
-      : "<th style='padding:5px 10px;text-align:right;font-weight:600;color:var(--txS);width:60px'>Ventes</th>";
     return "<div style='overflow-x:auto'><table style='width:auto;border-collapse:collapse;font-size:12px'>"
       + "<thead><tr style='border-bottom:1px solid var(--border)'>"
       + "<th style='padding:5px 10px;text-align:left;font-weight:600;color:var(--txS);width:90px'>Réf</th>"
       + "<th style='padding:5px 10px;text-align:left;font-weight:600;color:var(--txS);width:220px'>Produit</th>"
-      + dayHeaders
+      + DAY_TH
       + "<th style='padding:5px 10px;text-align:right;font-weight:600;color:var(--txS);width:65px'>PM TTC</th>"
       + "<th style='padding:5px 10px;text-align:center;font-weight:600;color:var(--txS);width:90px'>Opé.</th>"
       + "<th style='padding:5px 10px;text-align:center;font-weight:600;color:var(--txS);width:80px'>Sponso</th>"
@@ -1321,6 +1323,8 @@ function buildProduitsTableHTML() {
   if(f.canal!=="all")list=list.filter(p=>p.canal_attribue===f.canal);
   list.sort((a,b)=>{let va,vb;switch(f.sort){case"price":va=a._price||0;vb=b._price||0;break;case"rating":va=a._rating||0;vb=b._rating||0;break;case"delivery":va=a._delivery||999;vb=b._delivery||999;break;default:va=a.name;vb=b.name;}return f.dir==="asc"?(va<vb?-1:1):(va>vb?-1:1);});
   const si=col=>f.sort===col?(f.dir==="asc"?" ↑":" ↓"):"";
+  // Semaine de référence pour la colonne Ventes-SXX (identique au header)
+  const _latestWk = (STATE.productSalesWeekly||[]).reduce((b,r)=>r.week_label>b?r.week_label:b,"");
 
   // KPI cards dynamiques sur le sous-groupe filtré
   const total=list.length;
@@ -1365,7 +1369,7 @@ function buildProduitsTableHTML() {
         <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('price')">Prix${si('price')}</th>
         <th style="text-align:center">Dispo</th><th style="cursor:pointer;text-align:right" onclick="toggleProdSort('rating')">Note${si('rating')}</th>
         <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('delivery')">Délai${si('delivery')}</th>
-        <th>Page 1</th><th>${(()=>{const lw=(STATE.productSalesWeekly||[]).reduce((b,r)=>r.week_label>b?r.week_label:b,"");return lw?"Ventes-"+lw:"Ventes";})()}</th><th>Deal</th><th>Variations</th>
+        <th>Page 1</th><th>${_latestWk?"Ventes-"+_latestWk:"Ventes"}</th><th>Deal</th><th>Variations</th>
         <th style="text-align:right;white-space:nowrap">Stock ent.</th>
         <th style="text-align:right;white-space:nowrap">Transit</th>
         <th style="text-align:right;white-space:nowrap">Non exp.</th>
@@ -1381,7 +1385,7 @@ function buildProduitsTableHTML() {
         <td style="text-align:right">${p._rating!=null?p._rating:'—'}</td>
         <td style="text-align:right">${p._delivery!=null?p._delivery+'j':'—'}</td>
         <td style="max-width:200px">${(()=>{const pid=(p.product_id_scraper||'').toLowerCase();const kws=STATE.page1Keywords?.[pid];if(!kws||kws.size===0)return'<span style="color:var(--txT);font-size:11px">—</span>';return[...kws].map(k=>`<span style="display:inline-block;margin:1px 2px;padding:2px 7px;background:var(--acBg);color:var(--ac);border-radius:99px;font-size:11px;font-weight:500;white-space:nowrap">${esc(k)}</span>`).join('');})()}</td>
-        <td>${(()=>{const sales=(STATE.productSalesWeekly||[]).filter(r=>r.ref===p.sku);if(!sales.length)return'<span style="color:var(--txT);font-size:11px">—</span>';const l=sales.reduce((a,b)=>a.week_label>b.week_label?a:b);return`<span style="font-weight:600">${l.qty}</span><span style="color:var(--txT);font-size:10px;margin-left:3px">(${esc(l.week_label)})</span>`;})()}</td>
+        <td>${(()=>{if(!_latestWk)return'<span style="color:var(--txT);font-size:11px">—</span>';const ws=(STATE.productSalesWeekly||[]).find(r=>r.ref===p.sku&&r.week_label===_latestWk);return ws?`<span style="font-weight:600">${ws.qty}</span>`:'<span style="color:var(--txT);font-size:11px">—</span>';})()}</td>
         <td>${(()=>{const deal=getActiveDeal(p.sku);return deal?'<span style="display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600;background:#fff3e0;color:#e65100">#'+esc(deal)+'</span>':'<span style="color:var(--txT);font-size:11px">—</span>';})()}</td><td>${p._tags.map(t=>`<span style="margin:1px 2px;display:inline-block">${pill(tagLabel(t),tagColor(t))}</span>`).join('')}</td>
         ${(()=>{const s=STATE.supplyByRef?.[p.sku];const fmt=v=>v!=null?`<span style="font-weight:500">${v}</span>`:'<span style="color:var(--txT)">—</span>';return`<td style="text-align:right;font-size:12px">${fmt(s?.warehouse_stock)}</td><td style="text-align:right;font-size:12px">${fmt(s?.in_transit_stock)}</td><td style="text-align:right;font-size:12px">${fmt(s?.unshipped_orders)}</td>`;})()}
         <td>${p.url?`<a href="${esc(p.url)}" target="_blank" class="link">Voir ↗</a>`:'—'}</td>
