@@ -298,7 +298,6 @@ async function runManualMode(startTime) {
   // ── Traiter chaque commande de la plage ──────────────────────────
   let totalLines = 0, insertedLines = 0, skippedOrders = 0, psErrors = 0, sbErrors = 0;
   const buffer = [];
-  let diagCount = 0; // compteur pour les 3 premières commandes non-exclues
 
   async function flushBuffer() {
     if (!buffer.length) return;
@@ -334,33 +333,20 @@ async function runManualMode(startTime) {
         continue;
       }
 
-      // ── DIAGNOSTIC — 3 premières commandes non exclues ─────────────
-      if (diagCount < 3) {
-        diagCount++;
-        console.log(`\n  ════ DIAG #${diagCount} — commande ${orderId} ════`);
-        console.log(`  order.id                            : ${order.id}`);
-        console.log(`  typeof order.associations           : ${typeof order.associations}`);
-        console.log(`  order.associations keys             : ${order.associations ? Object.keys(order.associations).join(", ") : "(null)"}`);
-        const assocRows = order.associations?.order_rows;
-        console.log(`  typeof order.associations.order_rows: ${typeof assocRows}`);
-        console.log(`  order.associations.order_rows       : ${JSON.stringify(assocRows)}`);
-        const rawRowsDiag = assocRows?.order_row;
-        console.log(`  typeof order_rows.order_row         : ${typeof rawRowsDiag}`);
-        console.log(`  Array.isArray(order_row)            : ${Array.isArray(rawRowsDiag)}`);
-        console.log(`  order_rows.order_row (JSON)         : ${JSON.stringify(rawRowsDiag)}`);
-        console.log(`  ═══════════════════════════════════════\n`);
-      }
-      // ── FIN DIAGNOSTIC ──────────────────────────────────────────────
 
       const marketplace   = mapMarketplaceFromPayment(order.payment);
       const saleDate      = String(order.date_add || "").slice(0, 10);
       const orderRef      = order.reference || null;
       const paymentMethod = order.payment || null;
 
-      const rawRows = order.associations?.order_rows?.order_row;
+      // PS renvoie order_rows soit comme tableau direct, soit wrappé dans .order_row
+      const assocRows = order.associations?.order_rows;
       let rowsArr = [];
-      if (Array.isArray(rawRows))                      rowsArr = rawRows;
-      else if (rawRows && typeof rawRows === "object") rowsArr = [rawRows];
+      if (Array.isArray(assocRows))                         rowsArr = assocRows;
+      else if (assocRows?.order_row) {
+        const r = assocRows.order_row;
+        rowsArr = Array.isArray(r) ? r : [r];
+      }
 
       for (const row of rowsArr) {
         if (!row || !row.product_reference) continue;
