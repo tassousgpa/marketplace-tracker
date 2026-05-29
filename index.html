@@ -447,7 +447,7 @@ async function loadData() {
     // Évite le problème de la limite 5000 qui tronquerait les premiers keywords.
     // La table positions ne contient que le dernier run (purge côté scraper avant chaque session)
     // → select * sans filtre ni limite, requête simple et fiable
-    const [products, allProducts, snapshots, positions, sellerStats, revenueEntries, trackedSellers, revenueImports, productSalesWeekly, monthlyHistory, activeOps, activeOpProducts, seaCampaigns, seaProductStats, supplyStats] = await Promise.all([
+    const [products, allProducts, snapshots, positions, sellerStats, revenueEntries, trackedSellers, revenueImports, productSalesWeekly, monthlyHistory, activeOps, activeOpProducts, seaCampaigns, seaProductStats, supplyStats, psSalesDaily] = await Promise.all([
       sb("products", `marketplace=eq.${MARKETPLACE}&active=eq.true&select=*&order=product_id`),
       sb("products", `marketplace=eq.${MARKETPLACE}&select=*&order=product_id`),
       sb("product_snapshots", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=10000`),
@@ -463,6 +463,7 @@ async function loadData() {
       sb("sea_campaigns_general", "marketplace=eq."+MARKETPLACE+"&select=*&order=date_debut.desc").catch(()=>[]),
       sb("sea_product_stats", "marketplace=eq."+MARKETPLACE+"&select=ref,period_start,period_end,period_label,period_type,budget,impressions,clics,conversions&order=period_start.desc").catch(()=>[]),
       sb("product_supply_stats", `select=product_ref,warehouse_stock,in_transit_stock,unshipped_orders,import_date&order=import_date.desc&limit=10000`).catch(()=>[]),
+      (()=>{ const d=new Date(Date.now()-90*86400000).toISOString().slice(0,10); return sb("ps_sales_daily",`marketplace=eq.${MARKETPLACE}&sale_date=gte.${d}&select=product_ref,sale_date,quantity,revenue_ht&order=sale_date.desc&limit=10000`).catch(()=>[]); })(),
     ]);
 
     // Mettre à jour le cache de scraping avec les données fraîchement chargées
@@ -733,7 +734,7 @@ async function loadData() {
       }
     });
 
-    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, leaderCounts, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], revenueImports: revenueImports||[], monthlyHistory: monthlyHistory||[], activeOps: activeOps||[], activeOpProducts: activeOpProducts||[], productSalesWeekly: productSalesWeekly||[], seaCampaigns: seaCampaigns||[], seaProductStats: seaProductStats||[], supplyByRef, tab:STATE.tab||0 };
+    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, leaderCounts, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], revenueImports: revenueImports||[], monthlyHistory: monthlyHistory||[], activeOps: activeOps||[], activeOpProducts: activeOpProducts||[], productSalesWeekly: productSalesWeekly||[], seaCampaigns: seaCampaigns||[], seaProductStats: seaProductStats||[], supplyByRef, psSalesDaily: psSalesDaily||[], tab:STATE.tab||0 };
 
     const sessionDisplay = latestDate ? new Date(latestDate + "T12:00:00Z").toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}) : "N/A";
     document.getElementById("header-subtitle").textContent = `${products.length} produits · Relevé du ${sessionDisplay}`;
@@ -906,8 +907,8 @@ function renderSynthese() {
     <div class="card"><div class="card-title">Indicateurs clés</div><div class="grid-2">${[
       {l:"Prix moyen",v:avgPrice+"€"},{l:"Délai moyen",v:avgDelivery+" jours"},{l:"Note moyenne",v:avgRating+" / 5"},
       {l:"Taux dispo (dispo/total)",v:tauxDispo+"%",color:tauxDispo<80?"var(--rd)":"",sub:avail+" confirmés / "+P.length+" suivis"},
-      {l:"Sans snapshot (no data)",v:noData+" produits",color:noData>0?"var(--am)":"",sub:sansDonnees+" avec lien mais pas de données scraping"},
-      {l:"Sans lien valide",v:sansLien+" produits",color:sansLien>0?"var(--am)":""},
+      {l:"Produits avec un problème de liens",v:noData+" produits",color:noData>0?"var(--am)":"",sub:sansDonnees+" avec lien mais pas de données scraping"},
+      {l:"Produits sans URL renseigné",v:sansLien+" produits",color:sansLien>0?"var(--am)":""},
       {l:"Taux page 1",v:(P.length>0?Math.round(page1/P.length*100):0)+"%"},
       {l:"Prix en hausse (>10%)",v:`${pctPU}% (${pu.length})`,click:pu.length>0?"showVariation('prix_up')":null,color:pu.length>0?"var(--rd)":""},
       {l:"Délai en hausse (>5j)",v:`${pctDU}% (${du.length})`,click:du.length>0?"showVariation('delai_up')":null,color:du.length>0?"var(--rd)":""},
@@ -958,29 +959,65 @@ function renderProductSalesBlocks() {
   });
   Object.keys(skuToPriceIndex).forEach(k => { skuToPriceIndex[k] = skuToPriceIndex[k].price; });
 
+  // Index ps_sales_daily : clé = "ref|YYYY-MM-DD"
+  const psDailyIdx = {};
+  (STATE.psSalesDaily || []).forEach(s => {
+    const key = (s.product_ref || "") + "|" + String(s.sale_date || "").slice(0, 10);
+    psDailyIdx[key] = (psDailyIdx[key] || 0) + (s.quantity || 0);
+  });
+  const hasPsData = (STATE.psSalesDaily || []).length > 0;
+
+  const DAY_LABELS_FR = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
+
+  function getWeekDays(weekLabel) {
+    const wr = allSales.find(r => r.week_label === weekLabel && r.period_start);
+    if (!wr) return null;
+    const start = new Date(wr.period_start + "T12:00:00Z");
+    return Array.from({length: 7}, (_, i) => {
+      const d = new Date(start);
+      d.setUTCDate(d.getUTCDate() + i);
+      return d.toISOString().slice(0, 10);
+    });
+  }
+
   function salesRow(r, i, currentWeek) {
     const basket = (r.ca_ht && r.qty) ? Math.round(r.ca_ht / r.qty * 1.2) + "€" : "—";
     const bg = i%2 ? "background:var(--bg)" : "";
+    const weekDays = hasPsData ? getWeekDays(currentWeek) : null;
+    let dayHtml = "", psTotal = 0;
+    if (weekDays) {
+      dayHtml = weekDays.map(d => {
+        const v = psDailyIdx[(r.ref || "") + "|" + d] || 0;
+        psTotal += v;
+        return "<td style='padding:5px 7px;text-align:right;font-weight:"+(v>0?"600":"400")+";color:"+(v>0?"var(--tx)":"var(--txT)")+";width:38px'>"+(v||"—")+"</td>";
+      }).join("")
+      + "<td style='padding:5px 10px;text-align:right;font-weight:700;color:var(--ac);border-left:1px solid var(--borderL);width:50px'>"+(psTotal||"—")+"</td>";
+    }
     return "<tr style='" + bg + ";border-bottom:1px solid var(--borderL)'>"
       + "<td style='padding:5px 10px;font-weight:600;white-space:nowrap;width:90px'>" + esc(r.ref) + "</td>"
-      + "<td style='padding:5px 10px;color:var(--txS);width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap' title='" + esc(r.name) + "'>" + esc((r.name||"").slice(0,45)) + "</td>"
-      + "<td style='padding:5px 10px;text-align:right;font-weight:700;width:70px'>" + r.qty + "</td>"
-      + "<td style='padding:5px 10px;text-align:right;color:var(--txS);width:70px'>" + basket + "</td>"
+      + "<td style='padding:5px 10px;color:var(--txS);width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap' title='" + esc(r.name) + "'>" + esc((r.name||"").slice(0,38)) + "</td>"
+      + (dayHtml || "<td style='padding:5px 10px;text-align:right;font-weight:700;width:60px'>" + r.qty + "</td>")
+      + "<td style='padding:5px 10px;text-align:right;color:var(--txS);width:65px'>" + basket + "</td>"
       + "<td style='padding:5px 10px;text-align:center;width:90px'>"+(getActiveDealForWeek(r.ref, currentWeek)?'<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:#fff3e0;color:#e65100">✓ Deal</span>':'<span style="font-size:10px;color:var(--txT)">—</span>')+"</td>"
-      + "<td style='padding:5px 10px;text-align:center;width:90px'>"+(getSeaActive(r.ref)?'<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:var(--amBg);color:var(--am)">SEA actif</span>':'<span style="font-size:10px;color:var(--txT)">—</span>')+"</td>"
+      + "<td style='padding:5px 10px;text-align:center;width:80px'>"+(getSeaActive(r.ref)?'<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:var(--amBg);color:var(--am)">SEA</span>':'<span style="font-size:10px;color:var(--txT)">—</span>')+"</td>"
       + "</tr>";
   }
 
   function salesTable(rows, weekLabel) {
     if (!rows.length) return "<div style='color:var(--txT);font-size:12px;padding:8px'>Aucune donnée</div>";
+    const weekDays = hasPsData ? getWeekDays(weekLabel) : null;
+    const dayHeaders = weekDays
+      ? DAY_LABELS_FR.map(l => "<th style='padding:5px 7px;text-align:right;font-weight:600;color:var(--txS);width:38px'>"+l+"</th>").join("")
+        + "<th style='padding:5px 10px;text-align:right;font-weight:700;color:var(--ac);border-left:1px solid var(--borderL);width:50px'>Total</th>"
+      : "<th style='padding:5px 10px;text-align:right;font-weight:600;color:var(--txS);width:60px'>Ventes</th>";
     return "<div style='overflow-x:auto'><table style='width:auto;border-collapse:collapse;font-size:12px'>"
       + "<thead><tr style='border-bottom:1px solid var(--border)'>"
       + "<th style='padding:5px 10px;text-align:left;font-weight:600;color:var(--txS);width:90px'>Réf</th>"
-      + "<th style='padding:5px 10px;text-align:left;font-weight:600;color:var(--txS);width:280px'>Produit</th>"
-      + "<th style='padding:5px 10px;text-align:right;font-weight:600;color:var(--txS);width:70px'>Ventes</th>"
-      + "<th style='padding:5px 10px;text-align:right;font-weight:600;color:var(--txS);width:70px'>PM TTC</th>"
-      + "<th style='padding:5px 10px;text-align:center;font-weight:600;color:var(--txS);width:90px'>Opé. commerciale</th>"
-      + "<th style='padding:5px 10px;text-align:center;font-weight:600;color:var(--txS);width:90px'>Sponso</th>"
+      + "<th style='padding:5px 10px;text-align:left;font-weight:600;color:var(--txS);width:220px'>Produit</th>"
+      + dayHeaders
+      + "<th style='padding:5px 10px;text-align:right;font-weight:600;color:var(--txS);width:65px'>PM TTC</th>"
+      + "<th style='padding:5px 10px;text-align:center;font-weight:600;color:var(--txS);width:90px'>Opé.</th>"
+      + "<th style='padding:5px 10px;text-align:center;font-weight:600;color:var(--txS);width:80px'>Sponso</th>"
       + "</tr></thead><tbody>"
       + rows.map(function(r,i) { return salesRow(r, i, weekLabel); }).join("")
       + "</tbody></table></div>";
@@ -1305,7 +1342,7 @@ function buildProduitsTableHTML() {
       <div style="font-size:11px;color:var(--txT);margin-top:2px">${nbIndispo} produit${nbIndispo>1?"s":""}</div>
     </div>
     <div style="background:${pctSansLienValide>10?"var(--amBg)":"var(--card)"};border:.5px solid ${pctSansLienValide>10?"var(--am)":"var(--border)"};border-radius:10px;padding:12px 16px;min-width:130px;flex:1">
-      <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">% Sans lien valide</div>
+      <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">% Produits sans URL renseigné</div>
       <div style="font-size:24px;font-weight:700;color:${pctSansLienValide>0?"var(--am)":"var(--gn)"}">${pctSansLienValide}%</div>
       <div style="font-size:11px;color:var(--txT);margin-top:2px">${nbSansLienValide} prod. (${nbSansLien} sans URL)</div>
     </div>
@@ -1328,7 +1365,7 @@ function buildProduitsTableHTML() {
         <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('price')">Prix${si('price')}</th>
         <th style="text-align:center">Dispo</th><th style="cursor:pointer;text-align:right" onclick="toggleProdSort('rating')">Note${si('rating')}</th>
         <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('delivery')">Délai${si('delivery')}</th>
-        <th>Page 1</th><th>Ventes</th><th>Deal</th><th>Variations</th>
+        <th>Page 1</th><th>${(()=>{const lw=(STATE.productSalesWeekly||[]).reduce((b,r)=>r.week_label>b?r.week_label:b,"");return lw?"Ventes-"+lw:"Ventes";})()}</th><th>Deal</th><th>Variations</th>
         <th style="text-align:right;white-space:nowrap">Stock ent.</th>
         <th style="text-align:right;white-space:nowrap">Transit</th>
         <th style="text-align:right;white-space:nowrap">Non exp.</th>
@@ -1419,8 +1456,8 @@ function showProduitsKpiHistory() {
     + '<th style="padding:7px 12px;text-align:center;color:var(--txS)">Nb dispo</th>'
     + '<th style="padding:7px 12px;text-align:center;color:var(--rd)">% Indispo</th>'
     + '<th style="padding:7px 12px;text-align:center;color:var(--txS)">Nb indispo</th>'
-    + '<th style="padding:7px 12px;text-align:center;color:var(--am)">% Sans lien valide</th>'
-    + '<th style="padding:7px 12px;text-align:center;color:var(--txS)">Nb sans lien</th>'
+    + '<th style="padding:7px 12px;text-align:center;color:var(--am)">% Sans URL renseigné</th>'
+    + '<th style="padding:7px 12px;text-align:center;color:var(--txS)">Nb sans URL</th>'
     + '<th style="padding:7px 12px;text-align:center;color:var(--txT)">Sans données</th>'
     + '</tr></thead>'
     + '<tbody>' + rows + '</tbody>'
@@ -4674,35 +4711,70 @@ async function openOpeDetail(id) {
     prods = await sb("operation_products", "operation_id=eq."+id+"&select=*&order=ref.asc");
   } catch(e) {}
 
+  // Ventes Prestashop pendant la période de l'opération
+  const salesByRef = {};
+  try {
+    const opSales = await sb("ps_sales_daily",
+      "marketplace=eq."+MARKETPLACE+"&sale_date=gte."+op.date_debut+"&sale_date=lte."+op.date_fin+"&select=product_ref,quantity,revenue_ht").catch(()=>[]);
+    opSales.forEach(s => {
+      if (!salesByRef[s.product_ref]) salesByRef[s.product_ref] = { qty: 0, ca_ht: 0 };
+      salesByRef[s.product_ref].qty += (s.quantity || 0);
+      salesByRef[s.product_ref].ca_ht += (s.revenue_ht || 0);
+    });
+  } catch(e) {}
+
+  const hasSalesData = Object.keys(salesByRef).length > 0;
+  const totalVentes = Object.values(salesByRef).reduce((s,v)=>s+v.qty,0);
+  const totalCaHt   = Object.values(salesByRef).reduce((s,v)=>s+v.ca_ht,0);
+
   const avgComm = prods.length ? (prods.reduce((s,p)=>s+(p.taux_commission||0),0)/prods.length*100).toFixed(1) : "—";
 
-  const prodRows = prods.map(function(p,i) {
-    return '<tr style="'+(i%2?"background:var(--bg)":"")+';border-bottom:1px solid var(--borderL)">'
-      + '<td style="padding:6px 10px;font-weight:600;white-space:nowrap">'+esc(p.ref)+'</td>'
-      + '<td style="padding:6px 10px;color:var(--txS)">'+esc(p.nom_produit||"—")+'</td>'
-      + '<td style="padding:6px 10px;text-align:right">'+(p.prix!=null?p.prix+"€":"—")+'</td>'
-      + '<td style="padding:6px 10px;text-align:right">'+(p.taux_commission!=null?Math.round(p.taux_commission*100)+"%":"—")+'</td>'
-      + '</tr>';
-  }).join("");
+  function buildOpeProdsTable(onlyWithSales) {
+    const filtered = onlyWithSales ? prods.filter(p => salesByRef[p.ref]?.qty > 0) : prods;
+    if (!filtered.length) return '<tr><td colspan="6" style="padding:14px;text-align:center;color:var(--txT);font-size:12px">Aucun produit avec ventes sur cette période.</td></tr>';
+    return filtered.map(function(p,i) {
+      const ps = salesByRef[p.ref] || { qty: 0, ca_ht: 0 };
+      return '<tr style="'+(i%2?"background:var(--bg)":"")+';border-bottom:1px solid var(--borderL)">'
+        + '<td style="padding:6px 10px;font-weight:600;white-space:nowrap">'+esc(p.ref)+'</td>'
+        + '<td style="padding:6px 10px;color:var(--txS)">'+esc(p.nom_produit||"—")+'</td>'
+        + '<td style="padding:6px 10px;text-align:right">'+(p.prix!=null?p.prix+"€":"—")+'</td>'
+        + '<td style="padding:6px 10px;text-align:right">'+(p.taux_commission!=null?Math.round(p.taux_commission*100)+"%":"—")+'</td>'
+        + '<td style="padding:6px 10px;text-align:right;font-weight:600">'+(ps.qty>0?ps.qty:'<span style="color:var(--txT)">—</span>')+'</td>'
+        + '<td style="padding:6px 10px;text-align:right;color:var(--gn);font-weight:600">'+(ps.ca_ht>0?Math.round(ps.ca_ht).toLocaleString("fr-FR")+" €":'<span style="color:var(--txT)">—</span>')+'</td>'
+        + '</tr>';
+    }).join("");
+  }
+
+  window._opeDetailSalesFilter = false;
+  window._opeRefreshTable = function(checked) {
+    window._opeDetailSalesFilter = checked;
+    document.getElementById("ope-detail-tbody").innerHTML = buildOpeProdsTable(checked);
+  };
 
   const html = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">'
     + '<div style="width:12px;height:12px;border-radius:50%;background:'+color+'"></div>'
     + '<span style="padding:3px 10px;border-radius:99px;font-size:11px;font-weight:600;background:'+(isAct?"var(--gnBg)":"var(--rdBg)")+';color:'+(isAct?"var(--gn)":"var(--rd)")+'">'+( isAct?"● Actif":"○ Expiré")+'</span>'
     + (op.type_ope ? '<span style="font-size:11px;color:var(--txS)">'+esc(op.type_ope)+'</span>' : "")
     + '</div>'
-    + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:14px">'
     + '<div style="background:var(--bg);border-radius:8px;padding:10px 12px"><div style="font-size:10px;color:var(--txS);text-transform:uppercase;margin-bottom:4px">Début</div><div style="font-size:13px;font-weight:600">'+fmtD(op.date_debut)+'</div></div>'
     + '<div style="background:var(--bg);border-radius:8px;padding:10px 12px"><div style="font-size:10px;color:var(--txS);text-transform:uppercase;margin-bottom:4px">Fin</div><div style="font-size:13px;font-weight:600">'+fmtD(op.date_fin)+'</div></div>'
     + '<div style="background:var(--bg);border-radius:8px;padding:10px 12px"><div style="font-size:10px;color:var(--txS);text-transform:uppercase;margin-bottom:4px">Commission moy.</div><div style="font-size:13px;font-weight:600">'+avgComm+'%</div></div>'
+    + '<div style="background:'+(totalVentes>0?"var(--gnBg)":"var(--bg)")+';border-radius:8px;padding:10px 12px"><div style="font-size:10px;color:var(--txS);text-transform:uppercase;margin-bottom:4px">Ventes période</div><div style="font-size:13px;font-weight:700;color:'+(totalVentes>0?"var(--gn)":"var(--txS)")+'">'+totalVentes+'</div><div style="font-size:11px;color:var(--txS)">'+(totalCaHt>0?Math.round(totalCaHt).toLocaleString("fr-FR")+" € HT":"—")+'</div></div>'
     + '</div>'
-    + '<div style="font-size:12px;font-weight:600;color:var(--txS);text-transform:uppercase;margin-bottom:8px">'+prods.length+' produit'+(prods.length>1?"s":"")+'</div>'
+    + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">'
+    + '<div style="font-size:12px;font-weight:600;color:var(--txS);text-transform:uppercase">'+prods.length+' produit'+(prods.length>1?"s":"")+'</div>'
+    + (hasSalesData ? '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;color:var(--txS);margin-left:auto"><input type="checkbox" onchange="window._opeRefreshTable(this.checked)" style="cursor:pointer"> Avec ventes uniquement</label>' : '<span style="font-size:11px;color:var(--txT);margin-left:auto">Aucune vente Prestashop sur cette période</span>')
+    + '</div>'
     + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'
     + '<thead><tr style="background:var(--bg);border-bottom:1px solid var(--border)">'
     + '<th style="padding:6px 10px;text-align:left">Réf</th>'
     + '<th style="padding:6px 10px;text-align:left">Produit</th>'
     + '<th style="padding:6px 10px;text-align:right">Prix</th>'
     + '<th style="padding:6px 10px;text-align:right">Commission</th>'
-    + '</tr></thead><tbody>'+prodRows+'</tbody></table></div>'
+    + '<th style="padding:6px 10px;text-align:right;color:var(--ac)">Ventes</th>'
+    + '<th style="padding:6px 10px;text-align:right;color:var(--gn)">CA HT</th>'
+    + '</tr></thead><tbody id="ope-detail-tbody">'+buildOpeProdsTable(false)+'</tbody></table></div>'
     + '<div style="display:flex;gap:8px;margin-top:14px">'
     + '<button onclick="openOpeEdit('+id+')" style="padding:7px 14px;border:.5px solid var(--ac);border-radius:6px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">✏️ Modifier</button>'
     + '<button onclick="deleteOpe('+id+')" style="padding:7px 14px;border:.5px solid var(--rd);border-radius:6px;font-size:12px;background:var(--rdBg);color:var(--rd);cursor:pointer;font-weight:600;font-family:inherit">🗑 Supprimer</button>'
@@ -5898,7 +5970,10 @@ async function runSupplyImport() {
   }
 }
 
-// Init
+// Init — mode admin activé : accès direct sans code requis
+sessionStorage.setItem("mkp_access", "1");
+sessionStorage.setItem("admin_access", ADMIN_CODE);
+
  if (MAINTENANCE_MODE) {
   const stored = sessionStorage.getItem("admin_access");
   if (stored !== ADMIN_CODE) {

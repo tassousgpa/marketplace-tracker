@@ -1,0 +1,17 @@
+{
+  "name": "ps-sync",
+  "version": "1.0.0",
+  "description": "Prestashop → Supabase daily sync",
+  "main": "ps_sync.js",
+  "scripts": {
+    "sync": "node ps_sync.js",
+    "cron": "node -e \"const cron=require('node-cron');cron.schedule('0 4 * * *',()=>require('child_process').execSync('node ps_sync.js',{stdio:'inherit'}));console.log('Cron démarré — sync quotidien à 04:00');\""
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "node-cron": "^3.0.3"
+  }
+}

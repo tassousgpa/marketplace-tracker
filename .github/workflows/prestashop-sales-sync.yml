@@ -1,0 +1,59 @@
+name: Prestashop Sales Sync
+
+on:
+  # ── Exécution automatique quotidienne ────────────────────────────
+  # Europe/Paris = UTC+2 (CEST) en été → 02:00 UTC = 04:00 Paris
+  # Europe/Paris = UTC+1 (CET)  en hiver → 02:00 UTC = 03:00 Paris
+  # GitHub Actions ne supporte pas les fuseaux — le cron est en UTC.
+  schedule:
+    - cron: "0 2 * * *"
+
+  # ── Déclenchement manuel depuis GitHub Actions ───────────────────
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (affiche les commandes sans écrire dans Supabase)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+jobs:
+  sync:
+    name: Sync Prestashop → Supabase
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: sync/package.json
+
+      - name: Install dependencies
+        working-directory: sync
+        run: npm install --omit=dev
+
+      - name: Run Prestashop sync
+        working-directory: sync
+        env:
+          PRESTASHOP_API_URL: ${{ secrets.PRESTASHOP_API_URL }}
+          PRESTASHOP_API_KEY: ${{ secrets.PRESTASHOP_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          NODE_ENV: production
+        run: node ps_sync.js
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::La synchronisation Prestashop a échoué. Vérifiez les logs ci-dessus."
+          echo "::error::Vérifiez que les secrets PRESTASHOP_API_URL, PRESTASHOP_API_KEY, SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY sont bien configurés dans Settings → Secrets → Actions."
