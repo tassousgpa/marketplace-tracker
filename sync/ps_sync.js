@@ -206,6 +206,34 @@ async function sbPatch(table, filter, data) {
 // ══════════════════════════════════════════════════════════════════
 // LOGIQUE MÉTIER
 // ══════════════════════════════════════════════════════════════════
+
+// Prestashop peut retourner current_state sous deux formes :
+//   - entier ID  : "5"  → lookup dans stateMap
+//   - tableau multilingue : [{"id":"1","value":"Expédié"},{"id":"2","value":"Versand"}]
+//     où id = langue (1=FR, 2=DE), pas l'ID d'état
+// On extrait toujours le nom FR (langue id=1) ou le premier disponible.
+function resolveStateName(rawState, stateMap) {
+  if (rawState == null || rawState === "") return "";
+
+  // Tableau JS ou chaîne JSON déjà parsée comme tableau
+  let arr = null;
+  if (Array.isArray(rawState)) {
+    arr = rawState;
+  } else if (typeof rawState === "string" && rawState.trimStart().startsWith("[")) {
+    try { arr = JSON.parse(rawState); } catch (e) {}
+  }
+
+  if (arr && arr.length > 0) {
+    // Prendre la valeur française (id langue = 1) ou la première entrée
+    const fr = arr.find(t => String(t.id) === "1") || arr[0];
+    return String(fr?.value || "");
+  }
+
+  // Entier ID → lookup dans stateMap chargé depuis /api/order_states
+  const sid = String(rawState);
+  return stateMap[sid] || sid;
+}
+
 function shouldExcludeOrder(stateName) {
   if (!stateName) return false;
   const s = String(stateName).toLowerCase();
@@ -322,12 +350,9 @@ async function runManualMode(startTime) {
         continue;
       }
 
-      const stateId   = String(order.current_state || "");
-      const stateName = stateMap[stateId] || stateId;
+      const stateName = resolveStateName(order.current_state, stateMap);
       if (shouldExcludeOrder(stateName)) {
-        const reason = stateMap[stateId]
-          ? `nom="${stateName}"`
-          : `id=${stateId} (nom inconnu)`;
+        const reason = `"${stateName || String(order.current_state)}"`;
         console.log(`  ⊘ Commande #${orderId} exclue — état: ${reason}`);
         skippedOrders++;
         continue;
@@ -522,11 +547,9 @@ async function main() {
         continue;
       }
 
-      const stateId = String(order.current_state || "");
-      const stateName = stateMap[stateId] || stateId;
+      const stateName = resolveStateName(order.current_state, stateMap);
       if (shouldExcludeOrder(stateName)) {
-        const reason = stateMap[stateId] ? `nom="${stateName}"` : `id=${stateId} (nom inconnu — permission order_states manquante)`;
-        console.log(`  ⊘ Commande #${orderId} exclue — état: ${reason}`);
+        console.log(`  ⊘ Commande #${orderId} exclue — état: "${stateName || String(order.current_state)}"`);
         skippedOrders++;
         if (orderId > maxId) maxId = orderId;
         continue;
