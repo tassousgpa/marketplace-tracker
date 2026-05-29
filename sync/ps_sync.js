@@ -55,8 +55,10 @@ if (!SB_URL || !SB_KEY) {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// CONFIGURATION — états à exclure (correspondance partielle, insensible à la casse)
+// CONFIGURATION — exclusions d'états
 // ══════════════════════════════════════════════════════════════════
+
+// Exclusion par nom (quand order_states est accessible)
 const EXCLUDED_STATES = [
   "annul",        // annulé, annulée, annulés
   "rembours",     // remboursé, remboursement
@@ -65,6 +67,11 @@ const EXCLUDED_STATES = [
   "cancel",       // cancelled (en anglais)
   "refund",
 ];
+
+// Exclusion par ID Prestashop (fallback quand order_states est inaccessible)
+// IDs par défaut de Prestashop : 6=Annulé, 7=Remboursé, 8=Erreur de paiement
+// Ajoutez ici les IDs custom de BestMobilier si nécessaire
+const EXCLUDED_STATE_IDS = new Set(["6", "7", "8"]);
 
 // ══════════════════════════════════════════════════════════════════
 // MAPPING PAIEMENT → MARKETPLACE
@@ -202,7 +209,11 @@ async function sbPatch(table, filter, data) {
 function shouldExcludeOrder(stateName) {
   if (!stateName) return false;
   const s = String(stateName).toLowerCase();
-  return EXCLUDED_STATES.some(ex => s.includes(ex));
+  // Exclusion par nom (ex: "Annulé", "Remboursé"...)
+  if (EXCLUDED_STATES.some(ex => s.includes(ex))) return true;
+  // Exclusion par ID numérique (fallback quand order_states est inaccessible)
+  if (EXCLUDED_STATE_IDS.has(s)) return true;
+  return false;
 }
 
 function toFloat(v) {
@@ -280,17 +291,27 @@ async function main() {
     return;
   }
 
-  // ── 4. Charger les états de commande (pour exclusion) ────────────
+  // ── 4. Charger les états de commande (pour exclusion par nom) ────
   const stateMap = {};
+  let stateMapMode = "ids_fallback"; // "names" | "ids_fallback"
   try {
     const resp = await psGet("/order_states?display=[id,name]&limit=200");
     (resp.order_states || []).forEach(s => {
       stateMap[String(s.id)] = s.name || String(s.id);
     });
-    console.log(`  ✓ États commandes chargés : ${Object.keys(stateMap).length}`);
+    stateMapMode = "names";
+    console.log(`  ✓ États commandes chargés : ${Object.keys(stateMap).length} (exclusion par nom active)`);
   } catch (e) {
-    console.warn(`  ⚠ Impossible de charger les états: ${e.message}`);
+    const is401 = e.message.includes("401") || e.message.includes("not allowed");
+    if (is401) {
+      console.warn(`  ⚠ Permission order_states manquante (401) — fallback sur IDs par défaut`);
+      console.warn(`    IDs exclus par défaut : ${[...EXCLUDED_STATE_IDS].join(", ")} (Annulé, Remboursé, Erreur paiement)`);
+      console.warn(`    → Pour une exclusion complète, ajoutez order_states→GET à la clé API Prestashop`);
+    } else {
+      console.warn(`  ⚠ Impossible de charger les états: ${e.message}`);
+    }
   }
+  console.log(`  ✓ Mode exclusion états : ${stateMapMode}`);
 
   // ── 5. Traiter chaque nouvelle commande ──────────────────────────
   let totalLines = 0;
@@ -325,9 +346,11 @@ async function main() {
         continue;
       }
 
-      const stateName = stateMap[String(order.current_state)] || String(order.current_state || "");
+      const stateId = String(order.current_state || "");
+      const stateName = stateMap[stateId] || stateId;
       if (shouldExcludeOrder(stateName)) {
-        console.log(`  ⊘ Commande #${orderId} exclue — état: "${stateName}"`);
+        const reason = stateMap[stateId] ? `nom="${stateName}"` : `id=${stateId} (nom inconnu — permission order_states manquante)`;
+        console.log(`  ⊘ Commande #${orderId} exclue — état: ${reason}`);
         skippedOrders++;
         if (orderId > maxId) maxId = orderId;
         continue;
