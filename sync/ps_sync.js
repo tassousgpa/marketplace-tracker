@@ -357,7 +357,7 @@ async function runManualMode(startTime) {
 
   for (const orderId of rangeIds) {
     try {
-      const resp = await psGet(`/orders/${orderId}?display=full`);
+      const resp = await psGet(`/orders/${orderId}`);
       const order = resp.order;
       if (!order) {
         console.warn(`  ⚠ Commande #${orderId} : réponse vide`);
@@ -553,7 +553,7 @@ async function main() {
   let firstOrderDiag = true;
   for (const orderId of newIds) {
     try {
-      const resp = await psGet(`/orders/${orderId}?display=full`);
+      const resp = await psGet(`/orders/${orderId}`);
       const order = resp.order;
       if (!order) {
         console.warn(`  ⚠ Commande #${orderId} : réponse vide`);
