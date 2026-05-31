@@ -260,15 +260,30 @@ function toInt(v) {
 // ══════════════════════════════════════════════════════════════════
 async function runManualMode(startTime) {
   const startId = toInt(process.env.START_ORDER_ID || "0");
-  const endId   = toInt(process.env.END_ORDER_ID   || "0");
 
   // ── Validation ───────────────────────────────────────────────────
-  if (!startId || !endId) {
-    console.error(`  ❌ Mode manuel : START_ORDER_ID et END_ORDER_ID sont obligatoires.`);
+  if (!startId) {
+    console.error(`  ❌ Mode manuel : START_ORDER_ID est obligatoire.`);
     console.error(`     START_ORDER_ID reçu : "${process.env.START_ORDER_ID || "(vide)"}"`);
-    console.error(`     END_ORDER_ID reçu   : "${process.env.END_ORDER_ID   || "(vide)"}"`);
     process.exit(1);
   }
+
+  // ── Résolution de END_ORDER_ID (auto si absent) ──────────────────
+  let endId = toInt(process.env.END_ORDER_ID || "0");
+  if (!endId) {
+    console.log(`  end_order_id non fourni — récupération de la dernière commande PS...`);
+    try {
+      const resp = await psGet("/orders?display=[id]&sort=[id_DESC]&limit=1");
+      const orders = resp.orders || [];
+      endId = orders.length ? toInt(orders[0].id) : 0;
+      if (!endId) throw new Error("Aucun ID retourné");
+      console.log(`  ✓ end_order_id auto-détecté : ${endId}`);
+    } catch (e) {
+      console.error(`  ❌ Impossible de récupérer le dernier ID Prestashop : ${e.message}`);
+      process.exit(1);
+    }
+  }
+
   if (startId > endId) {
     console.error(`  ❌ Mode manuel : start_order_id (${startId}) doit être ≤ end_order_id (${endId}).`);
     process.exit(1);
