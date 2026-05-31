@@ -972,17 +972,18 @@ function renderProductSalesBlocks() {
     const wr = allSales.find(r=>r.week_label===weekLabel&&r.period_start);
     return wr ? datesFrom(wr.period_start) : null;
   }
-  // Une semaine est terminée si son dimanche est strictement avant aujourd'hui
+  // Une semaine est terminée si son dimanche est <= aujourd'hui (dimanche inclus après sync du soir)
   function isComplete(weekLabel) {
     const wr = allSales.find(r=>r.week_label===weekLabel&&r.period_start);
     if (!wr) return true;
     const sun = new Date(wr.period_start+"T12:00:00Z"); sun.setUTCDate(sun.getUTCDate()+6);
-    return sun.toISOString().slice(0,10) < today;
+    return sun.toISOString().slice(0,10) <= today;
   }
-  // Lundi le plus récent (début semaine courante calendaire)
+  // Lundi de la semaine courante en UTC (évite le décalage getDay local vs toISOString UTC)
   function curWeekStart() {
-    const d = new Date(); const dow = d.getDay();
-    d.setDate(d.getDate()-(dow===0?6:dow-1));
+    const d = new Date();
+    const dow = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() - (dow - 1));
     return d.toISOString().slice(0,10);
   }
 
@@ -1002,13 +1003,13 @@ function renderProductSalesBlocks() {
     r[s.product_ref].qty    += (s.quantity||0);
     r[s.product_ref].ca_ht += (s.revenue_ht||0);
   });
-  // Semaines PS terminées non couvertes par Odoo
+  // Semaines PS terminées non couvertes par Odoo (dimanche inclus)
   const psOnlyWeeks = Object.keys(psWeekMap)
     .filter(lbl => {
       if (completedWeeks.includes(lbl)) return false; // déjà dans Odoo
       const sun = new Date(psWeekMap[lbl].start+"T12:00:00Z");
       sun.setUTCDate(sun.getUTCDate()+6);
-      return sun.toISOString().slice(0,10) < today;
+      return sun.toISOString().slice(0,10) <= today;
     })
     .sort((a,b)=>b.localeCompare(a));
 
@@ -1186,8 +1187,10 @@ function renderProductSalesBlocks() {
 
   let out = "<div style='margin-top:20px'><div style='font-size:13px;font-weight:700;margin-bottom:12px'>📦 Ventes produits par semaine</div>";
 
-  // Semaine en cours (live PS)
-  out += renderCurrentWeekLive();
+  // Semaine en cours (live PS) — masquée si la semaine est déjà affichée comme terminée
+  const curWkLabel = isoWeekLabel(today)?.label;
+  const curWkIsHandled = curWkLabel && (completedWeeks.includes(curWkLabel) || psOnlyWeeks.includes(curWkLabel));
+  if (!curWkIsHandled) out += renderCurrentWeekLive();
 
   // Semaines terminées avec split tableau
   if (completedWeeks.length) {
