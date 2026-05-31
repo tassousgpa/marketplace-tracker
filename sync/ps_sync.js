@@ -342,7 +342,7 @@ async function runManualMode(startTime) {
 
   for (const orderId of rangeIds) {
     try {
-      const resp = await psGet(`/orders/${orderId}`);
+      const resp = await psGet(`/orders/${orderId}?display=full`);
       const order = resp.order;
       if (!order) {
         console.warn(`  ⚠ Commande #${orderId} : réponse vide`);
@@ -357,7 +357,6 @@ async function runManualMode(startTime) {
         skippedOrders++;
         continue;
       }
-
 
       const marketplace   = mapMarketplaceFromPayment(order.payment);
       const saleDate      = String(order.date_add || "").slice(0, 10);
@@ -536,15 +535,25 @@ async function main() {
     buffer.length = 0;
   }
 
+  let firstOrderDiag = true;
   for (const orderId of newIds) {
     try {
-      const resp = await psGet(`/orders/${orderId}`);
+      const resp = await psGet(`/orders/${orderId}?display=full`);
       const order = resp.order;
       if (!order) {
         console.warn(`  ⚠ Commande #${orderId} : réponse vide`);
         psErrors++;
         if (orderId > maxId) maxId = orderId;
         continue;
+      }
+
+      // Diagnostic sur la première commande pour détecter les changements de structure API
+      if (firstOrderDiag) {
+        firstOrderDiag = false;
+        const assocKeys = order.associations ? Object.keys(order.associations) : [];
+        const orderRowsRaw = order.associations?.order_rows;
+        console.log(`  [diag] Commande #${orderId} — associations keys: [${assocKeys.join(", ")}]`);
+        console.log(`  [diag] order_rows type: ${Array.isArray(orderRowsRaw) ? "array" : typeof orderRowsRaw}, valeur: ${JSON.stringify(orderRowsRaw)?.slice(0, 200)}`);
       }
 
       const stateName = resolveStateName(order.current_state, stateMap);
@@ -560,13 +569,15 @@ async function main() {
       const orderRef = order.reference || null;
       const paymentMethod = order.payment || null;
 
-      // Normaliser order_rows (PS peut renvoyer un objet si 1 seul élément)
-      const rawRows = order.associations?.order_rows?.order_row;
+      // Normaliser order_rows — PS peut renvoyer un tableau, un objet unique, ou rien
+      const assocRows = order.associations?.order_rows;
       let rowsArr = [];
-      if (Array.isArray(rawRows)) {
-        rowsArr = rawRows;
-      } else if (rawRows && typeof rawRows === "object") {
-        rowsArr = [rawRows];
+      if (Array.isArray(assocRows)) {
+        // Format direct tableau (avec display=full, PS retourne parfois le tableau directement)
+        rowsArr = assocRows;
+      } else if (assocRows?.order_row) {
+        const r = assocRows.order_row;
+        rowsArr = Array.isArray(r) ? r : [r];
       }
 
       for (const row of rowsArr) {
