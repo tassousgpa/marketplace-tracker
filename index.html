@@ -1007,7 +1007,7 @@ async function openAnalyseSemaine() {
     if(hist.length<2)return;
     hist.sort((a,b)=>a.date>b.date?1:-1);
     const l=hist[hist.length-1], p=hist[hist.length-2];
-    const delta=(l.sales-p.sales)|||(l.ratings-p.ratings);
+    const delta=(l.sales-p.sales)||(l.ratings-p.ratings);
     if(delta>0)alerts.push({name,delta});
   });
   alerts.sort((a,b)=>b.delta-a.delta);
