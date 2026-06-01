@@ -1369,9 +1369,23 @@ function renderRevenueBlock() {
   // ── KPI 3 : YTD ─────────────────────────────────────────────────
   const curYear   = lastWkParsed ? lastWkParsed.year : now.getUTCFullYear();
   const lastWkNum = lastWkParsed ? lastWkParsed.week : 0;
-  let caYtdN=0, caYtdN1=0, caYtdN2=0, caYtdN3=0;
+  // YTD N : utilise l'historique mensuel comme source de vérité pour les mois complets,
+  // puis les données hebdo pour le mois en cours (évite la sous-estimation frais de livraison)
+  let caYtdN = 0;
+  { const _ytdSeenMo = new Set();
+    for (let w = 1; w <= lastWkNum; w++) {
+      const wStart = isoWeekStartFromNum(curYear, w);
+      const wMo = wStart ? wStart.slice(0, 7) : null;
+      if (wMo && monthRevsHistory[wMo]) {
+        if (!_ytdSeenMo.has(wMo)) { caYtdN += monthRevsHistory[wMo]; _ytdSeenMo.add(wMo); }
+        // mois déjà compté → on passe
+      } else {
+        caYtdN += getWeekCA(`S${w} ${curYear}`);
+      }
+    }
+  }
+  let caYtdN1=0, caYtdN2=0, caYtdN3=0;
   for (let w=1; w<=lastWkNum; w++) {
-    caYtdN  += getWeekCA(`S${w} ${curYear}`);
     caYtdN1 += getWeekCA(`S${w} ${curYear-1}`);
     caYtdN2 += getWeekCA(`S${w} ${curYear-2}`);
     caYtdN3 += getWeekCA(`S${w} ${curYear-3}`);
@@ -1410,7 +1424,8 @@ function renderRevenueBlock() {
   Object.keys(monthRevs).forEach(m=>monthRevs[m]=Math.round(monthRevs[m]));
   const MONTH_NAMES = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
   const MONTH_NAMES_FULL = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
-  const mergedMonthRevs = Object.assign({}, monthRevsHistory, monthRevs);
+  // Priorité : historique mensuel (source de vérité Odoo) > agrégation hebdo
+  const mergedMonthRevs = Object.assign({}, monthRevs, monthRevsHistory);
   const allYears = [...new Set(Object.keys(mergedMonthRevs).map(m=>m.slice(0,4)))].sort();
   const _mCurYr = String(now.getUTCFullYear());
   const _mHistYrs = ["2022","2023","2024","2025"];
