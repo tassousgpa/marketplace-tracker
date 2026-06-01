@@ -975,10 +975,10 @@ async function openAnalyseSemaine() {
   // ── Traitement positions cross-MP ────────────────────────────────
   const BM_LC=new Set(["bestmobilier","best mobilier","lisa design"]);
   const isBm=s=>BM_LC.has((s||"").toLowerCase().trim());
-  // Dernière date par MP
+  // Dernière date (jour) par MP — comparaison sur YYYY-MM-DD pour éviter les écarts de millisecondes
   const mpLatest={};
-  allPos.forEach(p=>{if(!mpLatest[p.marketplace]||p.date>mpLatest[p.marketplace])mpLatest[p.marketplace]=p.date;});
-  const latestPos=allPos.filter(p=>p.date===mpLatest[p.marketplace]);
+  allPos.forEach(p=>{const d=p.date.slice(0,10);if(!mpLatest[p.marketplace]||d>mpLatest[p.marketplace])mpLatest[p.marketplace]=d;});
+  const latestPos=allPos.filter(p=>p.date.slice(0,10)===mpLatest[p.marketplace]);
   // Index KW par MP
   const mpKwData={}, mpBmKw={};
   latestPos.forEach(p=>{
