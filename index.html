@@ -463,7 +463,7 @@ async function loadData() {
       sb("sea_campaigns_general", "marketplace=eq."+MARKETPLACE+"&select=*&order=date_debut.desc").catch(()=>[]),
       sb("sea_product_stats", "marketplace=eq."+MARKETPLACE+"&select=ref,period_start,period_end,period_label,period_type,budget,impressions,clics,conversions&order=period_start.desc").catch(()=>[]),
       sb("product_supply_stats", `select=product_ref,warehouse_stock,in_transit_stock,unshipped_orders,import_date&order=import_date.desc&limit=10000`).catch(()=>[]),
-      (()=>{ const d=`${new Date().getFullYear()}-01-01`; return sb("ps_sales_daily",`marketplace=eq.${MARKETPLACE}&sale_date=gte.${d}&select=product_ref,sale_date,quantity,revenue_ht&order=sale_date.desc&limit=10000`).catch(()=>[]); })(),
+      (()=>{ const d=`${new Date().getFullYear()}-01-01`; return sb("ps_sales_daily",`marketplace=eq.${MARKETPLACE}&sale_date=gte.${d}&select=product_ref,sale_date,quantity,revenue_ht,shipping_ht&order=sale_date.desc&limit=10000`).catch(()=>[]); })(),
     ]);
 
     // Mettre à jour le cache de scraping avec les données fraîchement chargées
@@ -1313,7 +1313,7 @@ function renderRevenueBlock() {
     }
     let total = 0;
     (STATE.psSalesDaily||[]).forEach(s => {
-      if (weekDates.has(String(s.sale_date||"").slice(0,10))) total += (s.revenue_ht||0);
+      if (weekDates.has(String(s.sale_date||"").slice(0,10))) total += (s.revenue_ht||0) + (s.shipping_ht||0);
     });
     return Math.round(total);
   }
@@ -5238,11 +5238,14 @@ async function openOpeDetail(id) {
   const salesByRef = {};
   try {
     const opSales = await sb("ps_sales_daily",
-      "marketplace=eq."+MARKETPLACE+"&sale_date=gte."+op.date_debut+"&sale_date=lte."+op.date_fin+"&select=product_ref,quantity,revenue_ht").catch(()=>[]);
+      "marketplace=eq."+MARKETPLACE+"&sale_date=gte."+op.date_debut+"&sale_date=lte."+op.date_fin+"&select=product_ref,quantity,revenue_ht,shipping_ht").catch(()=>[]);
     opSales.forEach(s => {
       if (!salesByRef[s.product_ref]) salesByRef[s.product_ref] = { qty: 0, ca_ht: 0 };
-      salesByRef[s.product_ref].qty   += (s.quantity  || 0);
+      salesByRef[s.product_ref].qty   += (s.quantity   || 0);
+      // CA produit seul (utilisé pour le tri et l'affichage par référence)
       salesByRef[s.product_ref].ca_ht += (s.revenue_ht || 0);
+      // Frais de livraison séparés (premier produit de chaque commande uniquement)
+      salesByRef[s.product_ref].ca_ht += (s.shipping_ht|| 0);
     });
   } catch(e) {}
 

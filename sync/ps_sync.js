@@ -387,11 +387,18 @@ async function runManualMode(startTime) {
         rowsArr = Array.isArray(r) ? r : [r];
       }
 
+      // Frais de livraison : au niveau commande, stockés sur la 1ère ligne produit uniquement
+      const orderShipTtc = Math.round(toFloat(order.total_shipping_tax_incl) * 100) / 100;
+      const orderShipHt  = Math.round(toFloat(order.total_shipping_tax_excl) * 100) / 100;
+      let shipAssigned = false;
+
       for (const row of rowsArr) {
         if (!row || !row.product_reference) continue;
         const qty    = toInt(row.product_quantity) || 1;
         const revTtc = Math.round(toFloat(row.unit_price_tax_incl) * qty * 100) / 100;
         const revHt  = Math.round(toFloat(row.unit_price_tax_excl) * qty * 100) / 100;
+        const isFirst = !shipAssigned;
+        shipAssigned = true;
         totalLines++;
         buffer.push({
           order_id:        toInt(orderId),
@@ -404,6 +411,8 @@ async function runManualMode(startTime) {
           quantity:        qty,
           revenue_ttc:     revTtc,
           revenue_ht:      revHt,
+          shipping_ttc:    isFirst ? orderShipTtc : 0,
+          shipping_ht:     isFirst ? orderShipHt  : 0,
           order_state:     stateName,
         });
       }
@@ -595,11 +604,18 @@ async function main() {
         rowsArr = Array.isArray(r) ? r : [r];
       }
 
+      // Frais de livraison : au niveau commande, stockés sur la 1ère ligne produit uniquement
+      const orderShipTtc = Math.round(toFloat(order.total_shipping_tax_incl) * 100) / 100;
+      const orderShipHt  = Math.round(toFloat(order.total_shipping_tax_excl) * 100) / 100;
+      let shipAssigned = false;
+
       for (const row of rowsArr) {
         if (!row || !row.product_reference) continue;
         const qty = toInt(row.product_quantity) || 1;
         const revTtc = Math.round(toFloat(row.unit_price_tax_incl) * qty * 100) / 100;
         const revHt = Math.round(toFloat(row.unit_price_tax_excl) * qty * 100) / 100;
+        const isFirst = !shipAssigned;
+        shipAssigned = true;
 
         totalLines++;
         buffer.push({
@@ -613,6 +629,8 @@ async function main() {
           quantity:        qty,
           revenue_ttc:     revTtc,
           revenue_ht:      revHt,
+          shipping_ttc:    isFirst ? orderShipTtc : 0,
+          shipping_ht:     isFirst ? orderShipHt  : 0,
           order_state:     stateName,
         });
       }
