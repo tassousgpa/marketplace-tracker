@@ -958,7 +958,7 @@ async function openAnalyseSemaine() {
     [allPos, allSStats, allSalesWeekRaw] = await Promise.all([
       sb("positions","select=marketplace,keyword,seller,product_id,date&order=date.desc&limit=10000"),
       sb("seller_stats",`date=gte.${ssFilter}&select=marketplace,seller,date,seller_sales,seller_ratings_count&order=date.desc&limit=8000`),
-      sb("product_sales_weekly","select=marketplace,ref,product_name,qty,week_label&order=week_label.desc&limit=2000"),
+      sb("product_sales_weekly","select=marketplace,ref,name,qty,week_label&order=week_label.desc"),
     ]);
   }catch(e){ console.warn("Cross-MP fetch:",e); }
 
@@ -1020,7 +1020,7 @@ async function openAnalyseSemaine() {
 
   // ── Top 3 ventes cross-MP ────────────────────────────────────────
   const salesByMp={};
-  allSalesWeek.forEach(r=>{if(!salesByMp[r.marketplace])salesByMp[r.marketplace]=[];salesByMp[r.marketplace].push({ref:r.ref,name:r.product_name||"",qty:r.qty||0,wk:r.week_label});});
+  allSalesWeek.forEach(r=>{if(!salesByMp[r.marketplace])salesByMp[r.marketplace]=[];salesByMp[r.marketplace].push({ref:r.ref,name:r.name||"",qty:r.qty||0,wk:r.week_label});});
   MARKETPLACES.forEach(m=>{if(salesByMp[m.id])salesByMp[m.id]=salesByMp[m.id].sort((a,b)=>b.qty-a.qty).slice(0,3);});
   const nameMapLocal={};
   (STATE.products||[]).forEach(p=>{if(p.sku&&p.name)nameMapLocal[p.sku]=p.name;});
