@@ -949,15 +949,28 @@ async function openAnalyseSemaine() {
   const mpRanking=MARKETPLACES.map(mp=>({...mp,ca:getCA(mp.id,refWkLabel),score:trendScore(mp.id)})).filter(mp=>mp.ca>0).sort((a,b)=>b.ca-a.ca);
 
   // ── Fetch cross-MP : positions, seller_stats, ventes semaine ─────
-  const dayFilter=(()=>{const d=new Date();d.setUTCDate(d.getUTCDate()-30);return d.toISOString().slice(0,10);})();
-  let allPos=[], allSStats=[], allSalesWeek=[];
+  // positions : sans filtre de date (on prend les 10 000 plus récentes et on cherche la dernière session par MP)
+  // seller_stats : 180j pour avoir assez de sessions (trending = 4+ sessions requises)
+  // product_sales_weekly : sans filtre semaine → on utilisera la dernière dispo par MP
+  const ssFilter=(()=>{const d=new Date();d.setUTCDate(d.getUTCDate()-180);return d.toISOString().slice(0,10);})();
+  let allPos=[], allSStats=[], allSalesWeekRaw=[];
   try{
-    [allPos, allSStats, allSalesWeek] = await Promise.all([
-      sb("positions",`date=gte.${dayFilter}&select=marketplace,keyword,seller,product_id,date&order=date.desc&limit=10000`),
-      sb("seller_stats",`date=gte.${dayFilter}&select=marketplace,seller,date,seller_sales,seller_ratings_count&order=date.desc&limit=6000`),
-      sb("product_sales_weekly",`week_label=eq.${refWkLabel}&select=marketplace,ref,product_name,qty&order=qty.desc&limit=1000`),
+    [allPos, allSStats, allSalesWeekRaw] = await Promise.all([
+      sb("positions","select=marketplace,keyword,seller,product_id,date&order=date.desc&limit=10000"),
+      sb("seller_stats",`date=gte.${ssFilter}&select=marketplace,seller,date,seller_sales,seller_ratings_count&order=date.desc&limit=8000`),
+      sb("product_sales_weekly","select=marketplace,ref,product_name,qty,week_label&order=week_label.desc&limit=2000"),
     ]);
   }catch(e){ console.warn("Cross-MP fetch:",e); }
+
+  // Trouver la dernière semaine disponible par MP (comparaison numérique S1-S52)
+  const latestWkByMp={};
+  allSalesWeekRaw.forEach(r=>{
+    const p=parseWeekLabel(r.week_label);if(!p)return;
+    const n=p.year*100+p.week;
+    if(!latestWkByMp[r.marketplace]||n>latestWkByMp[r.marketplace].n)
+      latestWkByMp[r.marketplace]={label:r.week_label,n};
+  });
+  const allSalesWeek=allSalesWeekRaw.filter(r=>r.week_label===latestWkByMp[r.marketplace]?.label);
 
   // ── Traitement positions cross-MP ────────────────────────────────
   const BM_LC=new Set(["bestmobilier","best mobilier","lisa design"]);
@@ -1007,9 +1020,8 @@ async function openAnalyseSemaine() {
 
   // ── Top 3 ventes cross-MP ────────────────────────────────────────
   const salesByMp={};
-  allSalesWeek.forEach(r=>{if(!salesByMp[r.marketplace])salesByMp[r.marketplace]=[];salesByMp[r.marketplace].push({ref:r.ref,name:r.product_name||"",qty:r.qty||0});});
+  allSalesWeek.forEach(r=>{if(!salesByMp[r.marketplace])salesByMp[r.marketplace]=[];salesByMp[r.marketplace].push({ref:r.ref,name:r.product_name||"",qty:r.qty||0,wk:r.week_label});});
   MARKETPLACES.forEach(m=>{if(salesByMp[m.id])salesByMp[m.id]=salesByMp[m.id].sort((a,b)=>b.qty-a.qty).slice(0,3);});
-  // Enrichir noms depuis STATE.products (current MP)
   const nameMapLocal={};
   (STATE.products||[]).forEach(p=>{if(p.sku&&p.name)nameMapLocal[p.sku]=p.name;});
 
@@ -1110,7 +1122,8 @@ async function openAnalyseSemaine() {
     <th style="${TH}text-align:center">SEA</th><th style="${TH}text-align:center">Opé.</th>
     </tr></thead><tbody>${mpWithSales.map(({id:mpId,label:mpLbl})=>{
     const rows=salesByMp[mpId]||[];
-    const hdr=`<tr style="background:#e8f0fa"><td colspan="6" style="padding:5px 10px;font-size:11px;font-weight:700;color:#2c5ea0;letter-spacing:.04em;text-transform:uppercase">${mpLbl}</td></tr>`;
+    const wkForMp=latestWkByMp[mpId]?.label||"";
+    const hdr=`<tr style="background:#e8f0fa"><td colspan="6" style="padding:5px 10px;font-size:11px;font-weight:700;color:#2c5ea0;letter-spacing:.04em;text-transform:uppercase">${mpLbl}${wkForMp?" — "+wkForMp:""}</td></tr>`;
     const rws=rows.map((r,i)=>{const nm=r.name||nameMapLocal[r.ref]||"";return`<tr style="background:${i%2?"#fafaf8":"#fff"}">
       <td style="${TD}text-align:center;color:#9c9a92">${i+1}</td>
       <td style="${TD}font-weight:600;font-size:11px;white-space:nowrap">${esc(r.ref)}</td>
