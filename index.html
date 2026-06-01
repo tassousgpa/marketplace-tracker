@@ -1281,7 +1281,6 @@ function renderRevenueBlock() {
     <button onclick="openRevenueModal()" style="padding:6px 14px;border:.5px solid var(--ac);border-radius:6px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">+ Semaine manuelle</button>
     <button onclick="openImportXLSModal('week')" style="padding:6px 14px;border:.5px solid var(--am);border-radius:6px;font-size:12px;background:var(--amBg);color:var(--am);cursor:pointer;font-weight:600;font-family:inherit">⬆ Import Odoo Semaine</button>
     <button onclick="openImportXLSModal('ytd')" style="padding:6px 14px;border:.5px solid var(--pu);border-radius:6px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">⬆ Import YTD</button>
-    <button onclick="openImportHistoricalModal()" style="padding:6px 14px;border:.5px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg);color:var(--txS);cursor:pointer;font-weight:600;font-family:inherit">📂 Historique XLS</button>
   </div>`;
 
   // ── Somme CA PS sur une semaine ──────────────────────────────────
@@ -1454,24 +1453,24 @@ function renderRevenueBlock() {
 
     <!-- 3 KPIs -->
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
-      ${kpiCard("Dernière semaine", caLast, [
+      ${kpiCard(`Dernière semaine${lastWkInfo ? ` — ${lastWkInfo.label}` : ""}`, caLast, [
         {lbl:`vs ${n1WkLabel||"N-1"}`, v:caLastN1},
         {lbl:`vs ${prevWkLabel||"sem. préc."}`, v:caLastPrev}
-      ], lastWkInfo?.label||"—")}
-      ${kpiCard("3 dernières semaines", caLast3, [
+      ], "")}
+      ${kpiCard(`3 dernières semaines${last3Range ? ` — ${last3Range}` : ""}`, caLast3, [
         {lbl:`vs ${last3Range||"…"} ${curYear-1}`, v:caLast3N1},
         {lbl:`vs ${prev3Range||"…"} ${curYear}`, v:caLast3Prv}
-      ], last3Range ? `${last3Range} ${curYear}` : "—")}
-      ${kpiCard("YTD", caYtdN, [
+      ], "")}
+      ${kpiCard(`YTD — S1→S${lastWkNum} ${curYear}`, caYtdN, [
         {lbl:`vs ${curYear-1}`, v:caYtdN1},
         {lbl:`vs ${curYear-2}`, v:caYtdN2},
         {lbl:`vs ${curYear-3}`, v:caYtdN3}
-      ], `S1→S${lastWkNum} ${curYear}`)}
+      ], "")}
     </div>
 
     <!-- Tableau hebdomadaire pivot -->
     ${pivotYears.length ? '<div style="border-top:1px solid var(--borderL);padding-top:10px;margin-bottom:8px">'
-    +'<details open style="font-size:12px">'
+    +'<details style="font-size:12px">'
     +'<summary style="cursor:pointer;color:var(--txS);font-weight:600;margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em">Ventes par semaine</summary>'
     +'<div class="scroll-table"><table style="min-width:320px;border-collapse:collapse">'
     +'<thead><tr style="background:var(--bg);border-bottom:1px solid var(--border)">'
