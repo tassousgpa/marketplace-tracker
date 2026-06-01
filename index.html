@@ -3910,8 +3910,9 @@ async function confirmImport() {
 
 const AUDIT_SCORE_FORMULA = (r) => {
   const v = val => (val === null || val === undefined || val === "") ? null : parseFloat(val);
-  const t = (val, max) => { const n = v(val); return n === null ? 0 : n; };
-  const tScore = (val, max) => { const n = v(val); return n === null ? 0 : n; };
+  // NULL = max du critère (N/A = non applicable = meilleur score, convention Excel)
+  const t = (val, max) => { const n = v(val); return n === null ? (max||0) : n; };
+  const tScore = (val, max) => { const n = v(val); return n === null ? (max||0) : n; };
 
   const titreTotal = t(r.titre_longueur)+t(r.titre_marque)+t(r.titre_collection)+t(r.titre_couleur)+t(r.titre_matiere)+t(r.titre_fonctions);
   const descTotal  = t(r.desc_bullets_nb)+t(r.desc_bullets_pertinence)+t(r.desc_caract_tech)+t(r.desc_dimensions)+t(r.desc_colis)+t(r.desc_textes_mkt);
@@ -4797,12 +4798,12 @@ async function parseAuditXLS(file, semaine) {
             aplus_fiche: na(r[30]),
             aplus_video: na(r[31]),
             plan_action: str(r[35]),
-            commentaire_1: str(r[38]),
-            commentaire_2: str(r[39]),
-            commentaire_3: str(r[40]),
-            commentaire_4: str(r[41]),
-            commentaire_5: str(r[42]),
-            commentaire_6: str(r[43]),
+            commentaire_1: str(r[40]),
+            commentaire_2: str(r[41]),
+            commentaire_3: str(r[42]),
+            commentaire_4: str(r[43]),
+            commentaire_5: str(r[44]),
+            commentaire_6: str(r[45]),
             semaine: semaine,
           });
         }
