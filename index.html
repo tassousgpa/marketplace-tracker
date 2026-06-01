@@ -819,16 +819,17 @@ const tagLabel=t=>({prix_up:"Prix ↑",prix_down:"Prix ↓",delai_up:"Délai ↑
 const tagColor=t=>(t.includes("up")&&t!=="note_up")?"red":(t.includes("down")&&t!=="note_down")?"green":t==="note_up"?"green":"red";
 
 // Pastilles tendance vs historique — fmtFn optionnel pour formater les valeurs dans le tooltip
-function trendDots(val2026, histVals, fmtFn) {
-  const fmt = fmtFn || (v => v != null ? String(v) : "—");
-  const dots = histVals.map(({year, val}) => {
+// curLabel/histLabel optionnels dans chaque entrée histVals — ex: { year:2023, val:12, curLabel:"S22 2026", histLabel:"S22 2023" }
+function trendDots(val2026, histVals) {
+  const dots = histVals.map(({year, val, curLabel, histLabel}) => {
+    const tipBase = (curLabel && histLabel) ? curLabel+' vs '+histLabel : 'vs '+year;
     if (val == null || val === 0 || val2026 == null) {
-      return '<span title="vs '+year+' : Données insuffisantes" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--border);border:.5px solid var(--txT);margin:0 1px;cursor:default;flex-shrink:0"></span>';
+      return '<span title="'+tipBase+' : Données insuffisantes" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--border);border:.5px solid var(--txT);margin:0 1px;cursor:default;flex-shrink:0"></span>';
     }
     const pct = (val2026 - val) / val * 100;
     const bg = pct > 10 ? 'var(--gn)' : pct < -10 ? 'var(--rd)' : 'var(--txT)';
     const sign = pct >= 0 ? '+' : '';
-    const tip = 'vs '+year+' : '+fmt(val)+' → '+fmt(val2026)+' ('+sign+Math.round(pct)+'%)';
+    const tip = tipBase+' : '+sign+Math.round(pct)+'%';
     return '<span title="'+tip+'" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:'+bg+';margin:0 1px;cursor:default;flex-shrink:0"></span>';
   }).join('');
   return '<div style="display:flex;align-items:center;justify-content:center;gap:1px">'+dots+'</div>';
@@ -1408,6 +1409,7 @@ function renderRevenueBlock() {
   });
   Object.keys(monthRevs).forEach(m=>monthRevs[m]=Math.round(monthRevs[m]));
   const MONTH_NAMES = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
+  const MONTH_NAMES_FULL = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
   const mergedMonthRevs = Object.assign({}, monthRevsHistory, monthRevs);
   const allYears = [...new Set(Object.keys(mergedMonthRevs).map(m=>m.slice(0,4)))].sort();
   const _mCurYr = String(now.getUTCFullYear());
@@ -1415,9 +1417,10 @@ function renderRevenueBlock() {
   const monthRows = MONTH_NAMES.map((mName,mi) => {
     const mNum=String(mi+1).padStart(2,"0");
     const cells=allYears.map(y=>{const key=y+"-"+mNum;const rev=mergedMonthRevs[key];return rev?'<td style="text-align:right;font-weight:600">'+fmtCA(rev)+'</td>':'<td style="text-align:right;color:var(--txT)">—</td>';}).join("");
-    const v2026=mergedMonthRevs[_mCurYr+"-"+mNum]??null;
-    const mHistVals=_mHistYrs.map(y=>({year:y,val:mergedMonthRevs[y+"-"+mNum]??null}));
-    const trendCell='<td style="text-align:center">'+trendDots(v2026,mHistVals,fmtCA)+'</td>';
+    const fullMo=MONTH_NAMES_FULL[mi];
+    const v2026=mergedMonthRevs[_mCurYr+"-"+mNum]||null;
+    const mHistVals=_mHistYrs.map(y=>({year:y,val:mergedMonthRevs[y+"-"+mNum]||null,curLabel:fullMo+' '+_mCurYr,histLabel:fullMo+' '+y}));
+    const trendCell='<td style="text-align:center">'+trendDots(v2026,mHistVals)+'</td>';
     return '<tr class="'+(mi%2?"stripe":"")+'"><td style="font-weight:500;white-space:nowrap">'+mName+'</td>'+cells+trendCell+'</tr>';
   }).join("");
   const totalRow = '<tr style="border-top:2px solid var(--border);font-weight:700"><td>Total</td>'
@@ -1432,6 +1435,7 @@ function renderRevenueBlock() {
   if(lastWkParsed) histYears.add(lastWkParsed.year);
   (STATE.psSalesDaily||[]).forEach(s=>{const p=isoWeekLabel(String(s.sale_date||"").slice(0,10));if(p){const yr=parseWeekLabel(p.label)?.year;if(yr)histYears.add(yr);}});
   const pivotYears = [...histYears].sort();
+  const _pivotHistYrs = [2023, 2024, 2025];
   const pivotRows = Array.from({length:52},(_,i)=>{
     const wk=`S${i+1}`;
     const cells=pivotYears.map(y=>{
@@ -1443,11 +1447,17 @@ function renderRevenueBlock() {
       const isLast=isCur&&i+1===lastWkParsed.week;
       return`<td style="text-align:right;font-weight:${isLast?700:600};color:${isLast?'var(--ac)':'var(--tx)'}">${fmtCA(ca)}</td>`;
     }).join("");
+    const ca2026=getWeekCA(`${wk} ${curYearNum}`)||null;
+    const pivotHistVals=_pivotHistYrs.map(y=>({year:y,val:getWeekCA(`${wk} ${y}`)||null,curLabel:`${wk} ${curYearNum}`,histLabel:`${wk} ${y}`}));
+    const isCurWk=lastWkParsed&&i+1===lastWkParsed.week;
+    const isFutureWk=lastWkParsed&&i+1>lastWkParsed.week;
+    const trendCell=isFutureWk?'<td></td>':'<td style="text-align:center">'+trendDots(ca2026,pivotHistVals)+'</td>';
     const isLast=lastWkParsed&&i+1===lastWkParsed.week;
-    return`<tr style="${isLast?'background:var(--acBg)':i%2?'background:var(--bg)':''};border-bottom:1px solid var(--borderL)"><td style="font-weight:${isLast?700:500};white-space:nowrap;color:${isLast?'var(--ac)':'var(--tx)'}">${wk}</td>${cells}</tr>`;
+    return`<tr style="${isLast?'background:var(--acBg)':i%2?'background:var(--bg)':''};border-bottom:1px solid var(--borderL)"><td style="font-weight:${isLast?700:500};white-space:nowrap;color:${isLast?'var(--ac)':'var(--tx)'}">${wk}</td>${cells}${trendCell}</tr>`;
   }).join("");
   const pivotTotalRow='<tr style="border-top:2px solid var(--border);font-weight:700"><td>Total</td>'
-    +pivotYears.map(y=>{let t=0;for(let w=1;w<=52;w++)t+=getWeekCA(`S${w} ${y}`);return`<td style="text-align:right">${fmtCA(t)}</td>`;}).join("")+'</tr>';
+    +pivotYears.map(y=>{let t=0;for(let w=1;w<=52;w++)t+=getWeekCA(`S${w} ${y}`);return`<td style="text-align:right">${fmtCA(t)}</td>`;}).join("")
+    +'<td></td></tr>';
 
   // ── Tableau gestion imports Odoo / saisies ───────────────────────
   const manageRows = allWeeks.slice().reverse().map((w,i)=>{
@@ -1498,6 +1508,7 @@ function renderRevenueBlock() {
     +'<thead><tr style="background:var(--bg);border-bottom:1px solid var(--border)">'
     +'<th style="white-space:nowrap">Semaine</th>'
     +pivotYears.map(y=>`<th style="text-align:right">${y}</th>`).join("")
+    +'<th style="text-align:center;white-space:nowrap;color:var(--txS)">Tendance 2026 vs Hist.</th>'
     +'</tr></thead><tbody>'+pivotRows+pivotTotalRow+'</tbody></table></div>'
     +'</details></div>' : ""}
 
@@ -1508,7 +1519,7 @@ function renderRevenueBlock() {
     +'<div class="scroll-table"><table style="min-width:400px;border-collapse:collapse">'
     +'<thead><tr style="background:var(--bg);border-bottom:1px solid var(--border)"><th>Mois</th>'
     +allYears.map(y=>'<th style="text-align:right">'+y+'</th>').join("")
-    +'<th style="text-align:center;white-space:nowrap;color:var(--txS)">Tendance hist.</th>'
+    +'<th style="text-align:center;white-space:nowrap;color:var(--txS)">Tendance 2026 vs Hist.</th>'
     +'</tr></thead><tbody>'+monthRows+totalRow+'</tbody></table></div>'
     +'</details></div>' : ""}
 
@@ -1619,18 +1630,6 @@ function buildProduitsTableHTML() {
   }
   const _hasSalesData = !!_prevWkLabel && (_odooForPrevWk.length>0 || Object.keys(_psQtyMap).length>0);
   const _latestWk = _prevWkLabel; // conservé pour compat header
-  // Données historiques pour la colonne Tendance : même numéro de semaine, années N-1/N-2/N-3
-  const _prevWkParsed = _prevWkLabel ? parseWeekLabel(_prevWkLabel) : null;
-  const _trendYears = [2023, 2024, 2025];
-  const _trendHistMaps = {};
-  if (_prevWkParsed) {
-    _trendYears.forEach(y => {
-      const lbl = 'S'+_prevWkParsed.week+' '+y;
-      const m = {};
-      (STATE.productSalesWeekly||[]).filter(r=>r.week_label===lbl).forEach(r=>{m[r.ref]=(r.qty||0);});
-      _trendHistMaps[y] = m;
-    });
-  }
 
   // KPI cards dynamiques sur le sous-groupe filtré
   const total=list.length;
@@ -1679,7 +1678,7 @@ function buildProduitsTableHTML() {
         <th style="text-align:right;white-space:nowrap">Non exp.</th>
         <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('rating')">Note${si('rating')}</th>
         <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('delivery')">Délai${si('delivery')}</th>
-        <th>Page 1</th><th>${_hasSalesData?"Ventes "+_latestWk:"Ventes"}</th><th style="text-align:center;white-space:nowrap">Tendance hist.</th><th>Deal</th><th>Variations</th>
+        <th>Page 1</th><th>${_hasSalesData?"Ventes "+_latestWk:"Ventes"}</th><th>Deal</th><th>Variations</th>
         <th>Lien</th>
       </tr></thead><tbody>
       ${list.map((p,i)=>`<tr class="${i%2?'stripe':''}">
@@ -1694,7 +1693,6 @@ function buildProduitsTableHTML() {
         <td style="text-align:right">${p._delivery!=null?p._delivery+'j':'—'}</td>
         <td style="max-width:200px">${(()=>{const pid=(p.product_id_scraper||'').toLowerCase();const kws=STATE.page1Keywords?.[pid];if(!kws||kws.size===0)return'<span style="color:var(--txT);font-size:11px">—</span>';return[...kws].map(k=>`<span style="display:inline-block;margin:1px 2px;padding:2px 7px;background:var(--acBg);color:var(--ac);border-radius:99px;font-size:11px;font-weight:500;white-space:nowrap">${esc(k)}</span>`).join('');})()}</td>
         <td>${(()=>{if(!_hasSalesData)return'<span style="color:var(--txT);font-size:11px">—</span>';const qty=_odooForPrevWk.length?(_odooQtyMap[p.sku]??null):(_psQtyMap[p.sku]??null);return(qty!=null&&qty>0)?`<span style="font-weight:600">${qty}</span>`:'<span style="color:var(--txT);font-size:11px">—</span>';})()}</td>
-        <td style="text-align:center">${(()=>{if(!_prevWkParsed)return'<span style="color:var(--txT);font-size:11px">—</span>';const qty2026=_hasSalesData?(_odooForPrevWk.length?(_odooQtyMap[p.sku]??0):(_psQtyMap[p.sku]??0)):null;const histVals=_trendYears.map(y=>({year:y,val:(_trendHistMaps[y]?.[p.sku]??null)}));return trendDots(qty2026,histVals);})()}</td>
         <td>${(()=>{const deal=getActiveDeal(p.sku);return deal?'<span style="display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600;background:#fff3e0;color:#e65100">#'+esc(deal)+'</span>':'<span style="color:var(--txT);font-size:11px">—</span>';})()}</td><td>${p._tags.map(t=>`<span style="margin:1px 2px;display:inline-block">${pill(tagLabel(t),tagColor(t))}</span>`).join('')}</td>
         <td>${p.url?`<a href="${esc(p.url)}" target="_blank" class="link">Voir ↗</a>`:'—'}</td>
       </tr>`).join('')}
