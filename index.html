@@ -4632,10 +4632,14 @@ async function showAuditGroupHistory() {
 
 function openAuditImportModal() {
   const html = '<div style="display:grid;gap:12px">'
-    + '<div style="background:var(--puBg);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--pu)">Importe le fichier "Audit Fiches Produits" Excel.<br>Les données existantes pour cette semaine seront remplacées. L\'historique est conservé.</div>'
-    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Label semaine *</label><input id="audit-semaine" placeholder="ex: S18 2026" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '<div style="background:var(--puBg);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--pu)">Importe le fichier "Audit Fiches Produits" Excel.<br>Les scores existants sont sauvegardés dans l\'historique avant mise à jour.</div>'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Label semaine *</label><input id="audit-semaine" placeholder="ex: S22 2026" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
     + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Fichier XLS *</label><input id="audit-file" type="file" accept=".xls,.xlsx" style="width:100%;padding:6px;border:.5px solid var(--border);border-radius:6px;font-size:11px;font-family:inherit;background:var(--card)"></div>'
     + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Mot de passe admin *</label><input id="audit-pwd" type="password" placeholder="••••••••" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg);border-radius:6px;border:.5px solid var(--border)">'
+    + '<input type="checkbox" id="audit-all-mp" style="width:14px;height:14px;cursor:pointer">'
+    + '<label for="audit-all-mp" style="font-size:12px;cursor:pointer;font-weight:600">Importer toutes les marketplaces du fichier en une seule passe</label>'
+    + '</div>'
     + '<button onclick="confirmAuditImport()" style="padding:10px;background:var(--pu);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">⬆ Importer</button>'
     + '<div id="audit-import-status" style="font-size:12px;text-align:center;min-height:16px"></div>'
     + '</div>';
@@ -4644,6 +4648,43 @@ function openAuditImportModal() {
   const yr = now.getFullYear();
   const week = Math.ceil((Math.floor((now - new Date(yr,0,0))/86400000)+1)/7);
   document.getElementById("audit-semaine").value = "S" + week + " " + yr;
+  // Cocher "toutes marketplaces" par défaut si le fichier contient plusieurs MP
+  document.getElementById("audit-all-mp").checked = true;
+}
+
+// Upsert pour une marketplace donnée (utilisé par import simple et multi)
+async function _auditUpsertForMp(mp, mpRows, semaine, statusEl, prefix) {
+  const existing = await sb("audit_idq", `marketplace=eq.${mp}&select=id,sku,score_idq,niveau,semaine`).catch(()=>[]);
+  // Snapshot historique avant écrasement
+  const histRows = existing.filter(e=>e.score_idq).map(e=>({
+    audit_idq_id: e.id, marketplace: mp, sku: e.sku,
+    score_idq: e.score_idq, niveau: e.niveau, semaine: e.semaine,
+    recorded_at: new Date().toISOString()
+  }));
+  if (histRows.length) {
+    await fetch(`${SB_URL}/rest/v1/audit_idq_history`, {
+      method:"POST", headers:{"Content-Type":"application/json",apikey:SB_KEY,Authorization:`Bearer ${SB_KEY}`,Prefer:"return=minimal"},
+      body:JSON.stringify(histRows)
+    });
+  }
+  let n = 0;
+  for (const row of mpRows) {
+    // Normaliser marketplace + calculer score_idq pour stockage
+    const calc = AUDIT_SCORE_FORMULA(row);
+    const cleanRow = { ...row, marketplace: mp, semaine,
+      score_idq: calc.score || null,
+      niveau: AUDIT_NIVEAU(calc.score) || null,
+      updated_at: new Date().toISOString() };
+    const existingRow = existing.find(e=>e.sku===row.sku);
+    if (existingRow) {
+      await sbUpdate("audit_idq", `id=eq.${existingRow.id}`, cleanRow);
+    } else {
+      await sbInsert("audit_idq", cleanRow);
+    }
+    n++;
+    if (statusEl && n % 10 === 0) statusEl.innerHTML = `<span style="color:var(--txS)">${prefix}${n}/${mpRows.length} lignes…</span>`;
+  }
+  return n;
 }
 
 async function confirmAuditImport() {
@@ -4651,50 +4692,43 @@ async function confirmAuditImport() {
   const pwd = document.getElementById("audit-pwd")?.value;
   const file = document.getElementById("audit-file")?.files[0];
   const semaine = document.getElementById("audit-semaine")?.value?.trim();
+  const allMp = document.getElementById("audit-all-mp")?.checked;
 
   if (pwd !== ADMIN_PASSWORD) { statusEl.innerHTML='<span style="color:var(--rd)">❌ Mot de passe incorrect.</span>'; return; }
   if (!file || !semaine) { statusEl.innerHTML='<span style="color:var(--rd)">Fichier et semaine obligatoires.</span>'; return; }
 
-  statusEl.innerHTML = '<span style="color:var(--txS)">Lecture du fichier...</span>';
+  statusEl.innerHTML = '<span style="color:var(--txS)">Lecture du fichier…</span>';
 
   try {
     const rows = await parseAuditXLS(file, semaine);
-    const mpRows = rows.filter(r => normalizeAuditMp(r.marketplace) === MARKETPLACE);
-    if (!mpRows.length) {
-      statusEl.innerHTML = `<span style="color:var(--am)">⚠ Aucune ligne trouvée pour ${MARKETPLACE} dans ce fichier.</span>`;
-      return;
-    }
 
-    statusEl.innerHTML = `<span style="color:var(--txS)">Import de ${mpRows.length} lignes...</span>`;
-
-    // Sauvegarder les scores actuels dans l'historique avant d'écraser
-    const existing = await sb("audit_idq", `marketplace=eq.${MARKETPLACE}&select=id,sku,score_idq,niveau,semaine`).catch(()=>[]);
-    if (existing.length) {
-      const histRows = existing.filter(e=>e.score_idq).map(e=>({
-        audit_idq_id: e.id, marketplace: MARKETPLACE, sku: e.sku,
-        score_idq: e.score_idq, niveau: e.niveau, semaine: e.semaine,
-        recorded_at: new Date().toISOString()
-      }));
-      if (histRows.length) {
-        await fetch(`${SB_URL}/rest/v1/audit_idq_history`, {
-          method:"POST", headers:{"Content-Type":"application/json",apikey:SB_KEY,Authorization:`Bearer ${SB_KEY}`,Prefer:"return=minimal"},
-          body:JSON.stringify(histRows)
-        });
+    if (allMp) {
+      // ── Mode toutes marketplaces ──────────────────────────────────
+      const byMp = {};
+      rows.forEach(r => {
+        const mp = normalizeAuditMp(r.marketplace);
+        if (!mp) return;
+        if (!byMp[mp]) byMp[mp] = [];
+        byMp[mp].push(r);
+      });
+      const mps = Object.keys(byMp);
+      if (!mps.length) { statusEl.innerHTML='<span style="color:var(--am)">⚠ Aucune marketplace reconnue dans le fichier.</span>'; return; }
+      let total = 0;
+      for (const mp of mps) {
+        statusEl.innerHTML = `<span style="color:var(--txS)">Import ${mp} (${byMp[mp].length} lignes)…</span>`;
+        total += await _auditUpsertForMp(mp, byMp[mp], semaine, statusEl, `${mp} : `);
       }
+      statusEl.innerHTML = `<span style="color:var(--gn)">✓ ${total} lignes importées sur ${mps.length} marketplaces (${mps.join(", ")}).</span>`;
+    } else {
+      // ── Mode marketplace courante seulement ───────────────────────
+      const mpRows = rows.filter(r => normalizeAuditMp(r.marketplace) === MARKETPLACE);
+      if (!mpRows.length) { statusEl.innerHTML=`<span style="color:var(--am)">⚠ Aucune ligne pour ${MARKETPLACE} dans ce fichier.</span>`; return; }
+      statusEl.innerHTML = `<span style="color:var(--txS)">Import de ${mpRows.length} lignes…</span>`;
+      const n = await _auditUpsertForMp(MARKETPLACE, mpRows, semaine, statusEl, "");
+      statusEl.innerHTML = `<span style="color:var(--gn)">✓ ${n} lignes importées pour ${MARKETPLACE}.</span>`;
     }
 
-    // Upsert les nouvelles données (par marketplace+sku)
-    for (const row of mpRows) {
-      const existingRow = existing.find(e=>e.sku===row.sku);
-      if (existingRow) {
-        await sbUpdate("audit_idq", `id=eq.${existingRow.id}`, {...row, updated_at: new Date().toISOString()});
-      } else {
-        await sbInsert("audit_idq", row);
-      }
-    }
-
-    statusEl.innerHTML = `<span style="color:var(--gn)">✓ ${mpRows.length} lignes importées pour ${MARKETPLACE}.</span>`;
-    setTimeout(()=>{ closeModal(); renderAudit(); }, 1000);
+    setTimeout(()=>{ closeModal(); renderAudit(); }, 1200);
   } catch(e) {
     statusEl.innerHTML = `<span style="color:var(--rd)">Erreur : ${e.message}</span>`;
   }
