@@ -1172,12 +1172,28 @@ function renderProductSalesBlocks() {
       .sort((a,b)=>b[1].qty-a[1].qty).slice(0,10)
       .map(([ref,v])=>({ref,qty:v.qty,ca_ht:v.ca_ht}));
     if (!top10.length) return "";
+    // Deals actifs pendant cette semaine PS (wk.start = lundi de la semaine)
+    const psWkStart = new Date(wk.start+"T12:00:00Z");
+    const psWkEnd   = new Date(wk.start+"T12:00:00Z"); psWkEnd.setUTCDate(psWkEnd.getUTCDate()+6);
+    const psActiveOpIds = new Set((STATE.activeOps||[])
+      .filter(op=>new Date(op.date_debut)<=psWkEnd&&new Date(op.date_fin)>=psWkStart)
+      .map(op=>op.id));
+    function getPsDeal(sku) {
+      if (!sku||!STATE.activeOpProducts) return null;
+      const match=(STATE.activeOpProducts||[]).find(p=>p.ref===sku&&psActiveOpIds.has(p.operation_id));
+      if (!match) return null;
+      const op=(STATE.activeOps||[]).find(o=>o.id===match.operation_id);
+      return op?op.nom:null;
+    }
     // Gauche : classement PS
     const showSeaPs = SEA_MP.has(MARKETPLACE);
     const leftRows = top10.map((r,i)=>{
       const basket = (r.ca_ht&&r.qty)?Math.round(r.ca_ht/r.qty*1.2)+"€":"—";
       const bg = i%2?"background:var(--bg)":"";
       const name = psRefNames[r.ref]||"";
+      const deal = getPsDeal(r.ref)
+        ?'<span style="padding:2px 6px;border-radius:99px;font-size:10px;font-weight:600;background:#fff3e0;color:#e65100">Deal</span>'
+        :'<span style="font-size:10px;color:var(--txT)">—</span>';
       const sea = showSeaPs?(getSeaActive(r.ref)
         ?'<span style="padding:2px 6px;border-radius:99px;font-size:10px;font-weight:600;background:#fff3e0;color:#e65100">⚡ SEA</span>'
         :'<span style="font-size:10px;color:var(--txT)">—</span>'):"";
@@ -1187,6 +1203,7 @@ function renderProductSalesBlocks() {
         +"<td style='padding:5px 8px;color:var(--txS);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px' title='"+esc(name)+"'>"+esc(name.slice(0,28))+"</td>"
         +"<td style='padding:5px 8px;text-align:right;font-weight:700'>"+r.qty+"</td>"
         +"<td style='padding:5px 8px;text-align:right;color:var(--txS)'>"+basket+"</td>"
+        +"<td style='padding:5px 8px;text-align:center'>"+deal+"</td>"
         +(showSeaPs?"<td style='padding:5px 8px;text-align:center'>"+sea+"</td>":"")
         +"</tr>";
     }).join("");
@@ -1197,6 +1214,7 @@ function renderProductSalesBlocks() {
       +"<th style='padding:5px 8px;text-align:left;color:var(--txS)'>Produit</th>"
       +"<th style='padding:5px 8px;text-align:right;color:var(--txS)'>Ventes</th>"
       +"<th style='padding:5px 8px;text-align:right;color:var(--txS)'>PM TTC</th>"
+      +"<th style='padding:5px 8px;text-align:center;color:var(--txS)'>Opé.</th>"
       +(showSeaPs?"<th style='padding:5px 8px;text-align:center;color:var(--txS)'>SEA</th>":"")
       +"</tr></thead><tbody>"+leftRows+"</tbody></table>";
     // Droite : détail journalier
