@@ -463,7 +463,7 @@ async function loadData() {
       sb("sea_campaigns_general", "marketplace=eq."+MARKETPLACE+"&select=*&order=date_debut.desc").catch(()=>[]),
       sb("sea_product_stats", "marketplace=eq."+MARKETPLACE+"&select=ref,period_start,period_end,period_label,period_type,budget,impressions,clics,conversions&order=period_start.desc").catch(()=>[]),
       sb("product_supply_stats", `select=product_ref,warehouse_stock,in_transit_stock,unshipped_orders,import_date&order=import_date.desc&limit=10000`).catch(()=>[]),
-      (()=>{ const d=new Date(Date.now()-90*86400000).toISOString().slice(0,10); return sb("ps_sales_daily",`marketplace=eq.${MARKETPLACE}&sale_date=gte.${d}&select=product_ref,sale_date,quantity,revenue_ht&order=sale_date.desc&limit=10000`).catch(()=>[]); })(),
+      (()=>{ const d=`${new Date().getFullYear()}-01-01`; return sb("ps_sales_daily",`marketplace=eq.${MARKETPLACE}&sale_date=gte.${d}&select=product_ref,sale_date,quantity,revenue_ht&order=sale_date.desc&limit=10000`).catch(()=>[]); })(),
     ]);
 
     // Mettre à jour le cache de scraping avec les données fraîchement chargées
@@ -950,6 +950,20 @@ function isoWeekLabel(dateStr) {
   const wk = Math.round((mon-w1mon)/(7*86400000))+1;
   return { label:`S${wk} ${yr}`, start:mon.toISOString().slice(0,10) };
 }
+// Inverse : date du lundi d'une semaine ISO à partir de son numéro et de l'année
+function isoWeekStartFromNum(year, week) {
+  const jan4 = new Date(Date.UTC(year,0,4));
+  const j4d = jan4.getUTCDay()||7;
+  const w1mon = new Date(jan4); w1mon.setUTCDate(jan4.getUTCDate()-(j4d-1));
+  const start = new Date(w1mon); start.setUTCDate(w1mon.getUTCDate()+(week-1)*7);
+  return start.toISOString().slice(0,10);
+}
+// Parse "S22 2026" → { week:22, year:2026 } ou null
+function parseWeekLabel(label) {
+  const m = String(label||"").match(/S(\d+)\s+(\d{4})/);
+  if (!m) return null;
+  return { week:parseInt(m[1]), year:parseInt(m[2]) };
+}
 
 function renderProductSalesBlocks() {
   const allSales = STATE.productSalesWeekly || [];
@@ -1241,9 +1255,9 @@ function renderProductSalesBlocks() {
 function renderRevenueBlock() {
   const imports = (STATE.revenueImports || []);
   const entries = (STATE.revenueEntries || []).slice().sort((a,b) => a.week_start_date > b.week_start_date ? 1 : -1);
-  const hasAnyData = imports.length > 0 || entries.length > 0;
   const now = new Date();
-  // Intégrer l'historique mensuel dans monthRevs
+
+  // Historique mensuel
   const monthlyHistory = STATE.monthlyHistory || [];
   const monthRevsHistory = {};
   monthlyHistory.forEach(h => {
@@ -1257,12 +1271,6 @@ function renderRevenueBlock() {
     if (Math.abs(v) >= 1000) return (v/1000).toFixed(1).replace(".",",") + "k€";
     return Math.round(v) + "€";
   };
-  const fmtPct = (n, n1) => {
-    if (!n1 || n1 === 0) return "";
-    const pct = Math.round((n - n1) / n1 * 100);
-    const color = pct >= 0 ? "var(--gn)" : "var(--rd)";
-    return `<span style="font-size:15px;font-weight:700;color:${color}">${pct>=0?"+":""}${pct}%</span>`;
-  };
   const fmtMonthLabel = m => {
     const [y, mo] = m.split("-");
     const names = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
@@ -1271,132 +1279,171 @@ function renderRevenueBlock() {
 
   const btnRow = `<div style="display:flex;gap:8px;flex-wrap:wrap">
     <button onclick="openRevenueModal()" style="padding:6px 14px;border:.5px solid var(--ac);border-radius:6px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">+ Semaine manuelle</button>
+    <button onclick="openImportXLSModal('week')" style="padding:6px 14px;border:.5px solid var(--am);border-radius:6px;font-size:12px;background:var(--amBg);color:var(--am);cursor:pointer;font-weight:600;font-family:inherit">⬆ Import Odoo Semaine</button>
     <button onclick="openImportXLSModal('ytd')" style="padding:6px 14px;border:.5px solid var(--pu);border-radius:6px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">⬆ Import YTD</button>
-    <button onclick="openImportXLSModal('week')" style="padding:6px 14px;border:.5px solid var(--am);border-radius:6px;font-size:12px;background:var(--amBg);color:var(--am);cursor:pointer;font-weight:600;font-family:inherit">⬆ Import Semaine</button>
+    <button onclick="openImportHistoricalModal()" style="padding:6px 14px;border:.5px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg);color:var(--txS);cursor:pointer;font-weight:600;font-family:inherit">📂 Historique XLS</button>
   </div>`;
 
-  if (!hasAnyData) {
-    return `<div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
-        <div class="card-title" style="margin:0">Chiffre d'affaires</div>
-        ${btnRow}
-      </div>
-      <div style="padding:30px;text-align:center;color:var(--txT);font-size:13px">Aucune donnée CA. Importez un fichier XLS ou saisissez une semaine manuellement.</div>
-    </div>`;
+  // ── Somme CA PS sur une semaine ──────────────────────────────────
+  function getPsWeekCA(weekLabel) {
+    const parsed = parseWeekLabel(weekLabel);
+    if (!parsed) return 0;
+    const startStr = isoWeekStartFromNum(parsed.year, parsed.week);
+    const startD = new Date(startStr+"T00:00:00Z");
+    const weekDates = new Set();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(startD); d.setUTCDate(startD.getUTCDate()+i);
+      weekDates.add(d.toISOString().slice(0,10));
+    }
+    let total = 0;
+    (STATE.psSalesDaily||[]).forEach(s => {
+      if (weekDates.has(String(s.sale_date||"").slice(0,10))) total += (s.revenue_ht||0);
+    });
+    return Math.round(total);
   }
 
-  // ── YTD ─────────────────────────────────────────────────────────────
-  const ytdImports = imports.filter(i => (new Date(i.period_end) - new Date(i.period_start)) / 86400000 > 14);
-  const ytdLabels = [...new Set(ytdImports.map(i => i.period_label))];
-  const latestYtdLabel = ytdLabels.sort().pop();
-  const ytdRevN  = ytdImports.filter(i => i.period_label === latestYtdLabel && i.year_type === "N").reduce((s,i) => s+(i.revenue||0), 0);
-  const ytdRevN1 = ytdImports.filter(i => i.period_label === latestYtdLabel && i.year_type === "N-1").reduce((s,i) => s+(i.revenue||0), 0);
+  // ── CA semaine par ordre de priorité ────────────────────────────
+  // 1. Import Odoo (year_type=N, ≤14j)  2. Saisie manuelle  3. PS daily  4. Hist XLS
+  function getWeekCA(weekLabel) {
+    const odoo = imports.find(i => i.period_label===weekLabel && i.year_type==="N" && (new Date(i.period_end)-new Date(i.period_start))/86400000<=14);
+    if (odoo && odoo.revenue > 0) return odoo.revenue;
+    const entry = entries.find(e => e.week_label===weekLabel);
+    if (entry && entry.revenue > 0) return entry.revenue;
+    const ps = getPsWeekCA(weekLabel);
+    if (ps > 0) return ps;
+    const hist = imports.find(i => i.period_label===weekLabel && i.year_type==="hist");
+    if (hist && hist.revenue > 0) return hist.revenue;
+    return 0;
+  }
 
-  // ── SEMAINES ────────────────────────────────────────────────────────
-  const weekImportsN  = imports.filter(i => (new Date(i.period_end)-new Date(i.period_start))/86400000 <= 14 && i.year_type === "N").sort((a,b) => a.period_start>b.period_start?1:-1);
-  const weekImportsN1 = imports.filter(i => (new Date(i.period_end)-new Date(i.period_start))/86400000 <= 14 && i.year_type === "N-1");
+  // ── Dernière semaine terminée ────────────────────────────────────
+  const dow = now.getUTCDay() || 7;
+  const lastSunD = new Date(now);
+  lastSunD.setUTCDate(now.getUTCDate() - (dow===7 ? 0 : dow));
+  const lastWkInfo = isoWeekLabel(lastSunD.toISOString().slice(0,10));
+  const lastWkParsed = lastWkInfo ? parseWeekLabel(lastWkInfo.label) : null;
 
-  const allWeeks = [
-    ...weekImportsN.map(i => ({ label: i.period_label, rev: i.revenue, start: i.period_start, end: i.period_end, source: "import" })),
-    ...entries.map(e => ({ label: e.week_label, rev: e.revenue, start: e.week_start_date, end: e.week_start_date, source: "manual" }))
-  ].sort((a,b) => a.start>b.start?1:-1);
+  // ── KPI 1 : Dernière semaine ─────────────────────────────────────
+  const caLast   = lastWkParsed ? getWeekCA(lastWkInfo.label) : 0;
+  const n1WkLabel = lastWkParsed ? `S${lastWkParsed.week} ${lastWkParsed.year-1}` : null;
+  const caLastN1  = n1WkLabel ? getWeekCA(n1WkLabel) : 0;
+  const prevWk    = lastWkParsed ? (lastWkParsed.week > 1 ? {week:lastWkParsed.week-1,year:lastWkParsed.year} : {week:52,year:lastWkParsed.year-1}) : null;
+  const prevWkLabel = prevWk ? `S${prevWk.week} ${prevWk.year}` : null;
+  const caLastPrev  = prevWkLabel ? getWeekCA(prevWkLabel) : 0;
 
-  // ── MOIS ─────────────────────────────────────────────────────────────
-  const monthRevs = {}, monthRevsN1 = {};
-  allWeeks.forEach(w => {
-    const wStart = new Date(w.start), wEnd = w.end ? new Date(w.end) : new Date(w.start);
-    const totalDays = Math.max(1, Math.round((wEnd-wStart)/86400000)+1);
-    let d = new Date(wStart);
-    while (d <= wEnd) {
-      const m = d.toISOString().slice(0,7);
-      monthRevs[m] = (monthRevs[m]||0) + w.rev/totalDays;
-      d.setDate(d.getDate()+1);
+  // ── KPI 2 : 3 dernières semaines ────────────────────────────────
+  const last3Labels=[], last3N1Labels=[], prev3Labels=[];
+  if (lastWkParsed) {
+    for (let i=0; i<3; i++) {
+      const wk=lastWkParsed.week-i, yr=wk>0?lastWkParsed.year:lastWkParsed.year-1, w=wk>0?wk:wk+52;
+      last3Labels.unshift(`S${w} ${yr}`);
+      last3N1Labels.unshift(`S${w} ${yr-1}`);
     }
-  });
-  weekImportsN1.forEach(w => {
-    const wStart = new Date(w.period_start), wEnd = new Date(w.period_end);
-    const totalDays = Math.max(1, Math.round((wEnd-wStart)/86400000)+1);
-    let d = new Date(wStart);
-    while (d <= wEnd) {
-      const m = d.toISOString().slice(0,7);
-      monthRevsN1[m] = (monthRevsN1[m]||0) + w.revenue/totalDays;
-      d.setDate(d.getDate()+1);
+    for (let i=3; i<6; i++) {
+      const wk=lastWkParsed.week-i, yr=wk>0?lastWkParsed.year:lastWkParsed.year-1, w=wk>0?wk:wk+52;
+      prev3Labels.unshift(`S${w} ${yr}`);
     }
-  });
-  Object.keys(monthRevs).forEach(m => monthRevs[m] = Math.round(monthRevs[m]));
-  Object.keys(monthRevsN1).forEach(m => monthRevsN1[m] = Math.round(monthRevsN1[m]));
+  }
+  const caLast3    = last3Labels.reduce((s,l)=>s+getWeekCA(l), 0);
+  const caLast3N1  = last3N1Labels.reduce((s,l)=>s+getWeekCA(l), 0);
+  const caLast3Prv = prev3Labels.reduce((s,l)=>s+getWeekCA(l), 0);
+  const last3Range = last3Labels.length ? `${last3Labels[0].split(' ')[0]}→${last3Labels[2].split(' ')[0]}` : "";
+  const prev3Range = prev3Labels.length ? `${prev3Labels[0].split(' ')[0]}→${prev3Labels[2].split(' ')[0]}` : "";
 
-  const curMonth = now.toISOString().slice(0,7);
-  const caMonthN  = monthRevs[curMonth] || 0;
-  const curMonthN1key = `${now.getFullYear()-1}-${String(now.getMonth()+1).padStart(2,"0")}`;
-  const caMonthN1 = monthRevsN1[curMonthN1key] || 0;
+  // ── KPI 3 : YTD ─────────────────────────────────────────────────
+  const curYear   = lastWkParsed ? lastWkParsed.year : now.getUTCFullYear();
+  const lastWkNum = lastWkParsed ? lastWkParsed.week : 0;
+  let caYtdN=0, caYtdN1=0, caYtdN2=0, caYtdN3=0;
+  for (let w=1; w<=lastWkNum; w++) {
+    caYtdN  += getWeekCA(`S${w} ${curYear}`);
+    caYtdN1 += getWeekCA(`S${w} ${curYear-1}`);
+    caYtdN2 += getWeekCA(`S${w} ${curYear-2}`);
+    caYtdN3 += getWeekCA(`S${w} ${curYear-3}`);
+  }
 
-  const lastWeek  = allWeeks[allWeeks.length-1];
-  const lastRevN  = lastWeek?.rev || 0;
-  const lastWeekN1 = lastWeek ? weekImportsN1.find(i => i.period_label === lastWeek.label) : null;
-  const lastRevN1 = lastWeekN1?.revenue || 0;
-
-  // ── KPI card helper ──────────────────────────────────────────────────
-  const kpiCard = (title, n, n1, sublabel) => {
-    const pct = (n && n1 && n1 > 0) ? Math.round((n-n1)/n1*100) : null;
-    const pctColor = pct != null ? (pct >= 0 ? "var(--gn)" : "var(--rd)") : "";
+  // ── KPI card multi-comparaisons ──────────────────────────────────
+  const kpiCard = (title, n, comps, sublabel) => {
+    const compHtml = comps.map(c => {
+      if (!c.v || c.v===0) return "";
+      const pct = n&&c.v>0 ? Math.round((n-c.v)/c.v*100) : null;
+      const col = pct!=null ? (pct>=0?"var(--gn)":"var(--rd)") : "var(--txT)";
+      return `<div style="font-size:11px;color:var(--txS);margin-top:3px">${c.lbl} : <b>${fmtCA(c.v)}</b>${pct!=null?` <span style="color:${col};font-weight:700">${pct>=0?"+":""}${pct}%</span>`:""}</div>`;
+    }).join("");
     return `<div style="background:var(--bg);border-radius:10px;padding:14px 16px">
-      <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">${title}</div>
-      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
-        <div style="font-size:22px;font-weight:700;color:var(--ac)">${fmtCA(n)}</div>
-        ${n1 > 0 ? `<div style="color:var(--borderL);font-size:18px;font-weight:300">|</div>
-        <div style="font-size:16px;font-weight:600;color:var(--txS)">${fmtCA(n1)}</div>
-        ${pct != null ? `<div style="font-size:15px;font-weight:700;color:${pctColor}">${pct>=0?"+":""}${pct}%</div>` : ""}` : ""}
-      </div>
-      <div style="font-size:11px;color:var(--txT);margin-top:5px;font-style:italic">${sublabel}</div>
+      <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px">${title}</div>
+      <div style="font-size:22px;font-weight:700;color:var(--ac);margin-bottom:4px">${n?fmtCA(n):"—"}</div>
+      ${compHtml}
+      <div style="font-size:10px;color:var(--txT);margin-top:5px;font-style:italic">${sublabel}</div>
     </div>`;
   };
 
-  const weekSublabel = lastWeek ? lastWeek.label + (lastWeekN1 ? ` · N-1 : ${lastWeek.label}` : "") : "";
-  const monthSublabel = fmtMonthLabel(curMonth) + (caMonthN1 > 0 ? ` · N-1 : ${fmtMonthLabel(curMonthN1key)}` : "");
-  const ytdSublabel = latestYtdLabel || "YTD";
-
-  // ── Tableau mois ─────────────────────────────────────────────────────
-  // ── Tableau mois ─────────────────────────────────────────────────────
-const MONTH_NAMES = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
-const mergedMonthRevs = Object.assign({}, monthRevsHistory, monthRevs); // imports hebdo écrasent l'historique pour les mois récents
-const allYears = [...new Set(Object.keys(mergedMonthRevs).map(m=>m.slice(0,4)))].sort();
-const monthRows = MONTH_NAMES.map((mName, mi) => {
-  const mNum = String(mi+1).padStart(2,"0");
-  const cells = allYears.map(y => {
-    const key = y+"-"+mNum;
-    const rev = mergedMonthRevs[key];
-    if (!rev) return '<td style="text-align:right;color:var(--txT)">—</td>';
-    return '<td style="text-align:right;font-weight:600">'+fmtCA(rev)+'</td>';
+  // ── Tableau mois (inchangé) ──────────────────────────────────────
+  const weekImportsN = imports.filter(i=>(new Date(i.period_end)-new Date(i.period_start))/86400000<=14&&i.year_type==="N").sort((a,b)=>a.period_start>b.period_start?1:-1);
+  const weekImportsN1 = imports.filter(i=>(new Date(i.period_end)-new Date(i.period_start))/86400000<=14&&i.year_type==="N-1");
+  const allWeeks = [
+    ...weekImportsN.map(i=>({label:i.period_label,rev:i.revenue,start:i.period_start,end:i.period_end,source:"import"})),
+    ...entries.map(e=>({label:e.week_label,rev:e.revenue,start:e.week_start_date,end:e.week_start_date,source:"manual"}))
+  ].sort((a,b)=>a.start>b.start?1:-1);
+  const monthRevs = {};
+  allWeeks.forEach(w => {
+    const wStart=new Date(w.start), wEnd=w.end?new Date(w.end):new Date(w.start);
+    const totalDays=Math.max(1,Math.round((wEnd-wStart)/86400000)+1);
+    let d=new Date(wStart);
+    while(d<=wEnd){const m=d.toISOString().slice(0,7);monthRevs[m]=(monthRevs[m]||0)+w.rev/totalDays;d.setDate(d.getDate()+1);}
+  });
+  Object.keys(monthRevs).forEach(m=>monthRevs[m]=Math.round(monthRevs[m]));
+  const MONTH_NAMES = ["Jan","Fév","Mar","Avr","Mai","Jun","Jul","Aoû","Sep","Oct","Nov","Déc"];
+  const mergedMonthRevs = Object.assign({}, monthRevsHistory, monthRevs);
+  const allYears = [...new Set(Object.keys(mergedMonthRevs).map(m=>m.slice(0,4)))].sort();
+  const monthRows = MONTH_NAMES.map((mName,mi) => {
+    const mNum=String(mi+1).padStart(2,"0");
+    const cells=allYears.map(y=>{const key=y+"-"+mNum;const rev=mergedMonthRevs[key];return rev?'<td style="text-align:right;font-weight:600">'+fmtCA(rev)+'</td>':'<td style="text-align:right;color:var(--txT)">—</td>';}).join("");
+    return '<tr class="'+(mi%2?"stripe":"")+'"><td style="font-weight:500;white-space:nowrap">'+mName+'</td>'+cells+'</tr>';
   }).join("");
-  return '<tr class="'+(mi%2?"stripe":"")+'"><td style="font-weight:500;white-space:nowrap">'+mName+'</td>'+cells+'</tr>';
-}).join("");
+  const totalRow = '<tr style="border-top:2px solid var(--border);font-weight:700"><td>Total</td>'
+    +allYears.map(y=>{const total=Object.entries(mergedMonthRevs).filter(([k])=>k.startsWith(y)).reduce((s,[,v])=>s+v,0);return'<td style="text-align:right">'+fmtCA(total)+'</td>';}).join("")+'</tr>';
 
-const totalRow = '<tr style="border-top:2px solid var(--border);font-weight:700"><td>Total</td>'
-  + allYears.map(y => {
-    const total = Object.entries(mergedMonthRevs).filter(([k])=>k.startsWith(y)).reduce((s,[,v])=>s+v,0);
-    return '<td style="text-align:right">'+fmtCA(total)+'</td>';
-  }).join("")
-  + '</tr>';
-
-  // ── Tableau semaines ─────────────────────────────────────────────────
-  const weekRows = allWeeks.slice().reverse().map((w, i) => {
-    const n1 = weekImportsN1.find(x => x.period_label === w.label);
-    const n1Rev = n1?.revenue || null;
-    const pct = (n1Rev && n1Rev > 0) ? Math.round((w.rev-n1Rev)/n1Rev*100) : null;
-    const pctHtml = pct != null ? `<span style="font-weight:600;color:${pct>=0?"var(--gn)":"var(--rd)"}">${pct>=0?"+":""}${pct}%</span>` : "—";
-    const deleteBtn = w.source === "manual"
-      ? `<button onclick="deleteRevenue('${esc(w.label)}')" style="padding:2px 8px;border-radius:5px;border:.5px solid var(--rd);background:var(--rdBg);color:var(--rd);font-size:11px;cursor:pointer;font-family:inherit">Suppr.</button>`
-      : `<button onclick="deleteImportWeek('${esc(w.label)}')" style="padding:2px 8px;border-radius:5px;border:.5px solid var(--rd);background:var(--rdBg);color:var(--rd);font-size:11px;cursor:pointer;font-family:inherit">Suppr.</button>`;
-    return `<tr class="${i%2?"stripe":""}">
-      <td style="font-weight:500">${esc(w.label)}</td>
-      <td style="color:var(--txS)">${w.start||""}</td>
-      <td style="text-align:right;font-weight:600">${fmtCA(w.rev)}</td>
-      <td style="text-align:right;color:var(--txS)">${n1Rev!=null?fmtCA(n1Rev):"—"}</td>
-      <td style="text-align:center">${pctHtml}</td>
-      <td style="text-align:center">${deleteBtn}</td>
-    </tr>`;
+  // ── Tableau pivot hebdomadaire S1-S52 × années ───────────────────
+  const histYears = new Set();
+  imports.forEach(i=>{if(i.year_type==="hist"||i.year_type==="N"){const p=parseWeekLabel(i.period_label);if(p)histYears.add(p.year);}});
+  entries.forEach(e=>{const p=parseWeekLabel(e.week_label);if(p)histYears.add(p.year);});
+  if(lastWkParsed) histYears.add(lastWkParsed.year);
+  // Ajouter les années pour lesquelles PS a des données
+  (STATE.psSalesDaily||[]).forEach(s=>{const p=isoWeekLabel(String(s.sale_date||"").slice(0,10));if(p){const yr=parseWeekLabel(p.label)?.year;if(yr)histYears.add(yr);}});
+  const pivotYears = [...histYears].sort();
+  const pivotRows = Array.from({length:52},(_,i)=>{
+    const wk=`S${i+1}`;
+    const cells=pivotYears.map(y=>{
+      const label=`${wk} ${y}`;
+      const ca=getWeekCA(label);
+      const isCur=y===lastWkParsed?.year;
+      const isFuture=isCur&&i+1>lastWkParsed.week;
+      if(isFuture||!ca) return '<td style="text-align:right;color:var(--txT)">—</td>';
+      const isLast=isCur&&i+1===lastWkParsed.week;
+      return`<td style="text-align:right;font-weight:${isLast?700:600};color:${isLast?'var(--ac)':'var(--tx)'}">${fmtCA(ca)}</td>`;
+    }).join("");
+    const isLast=lastWkParsed&&i+1===lastWkParsed.week;
+    return`<tr style="${isLast?'background:var(--acBg)':i%2?'background:var(--bg)':''};border-bottom:1px solid var(--borderL)"><td style="font-weight:${isLast?700:500};white-space:nowrap;color:${isLast?'var(--ac)':'var(--tx)'}">${wk}</td>${cells}</tr>`;
   }).join("");
+  const pivotTotalRow='<tr style="border-top:2px solid var(--border);font-weight:700"><td>Total</td>'
+    +pivotYears.map(y=>{let t=0;for(let w=1;w<=52;w++)t+=getWeekCA(`S${w} ${y}`);return`<td style="text-align:right">${fmtCA(t)}</td>`;}).join("")+'</tr>';
+
+  // ── Tableau gestion imports Odoo / saisies ───────────────────────
+  const manageRows = allWeeks.slice().reverse().map((w,i)=>{
+    const n1=weekImportsN1.find(x=>x.period_label===w.label);
+    const n1Rev=n1?.revenue||null;
+    const pct=(n1Rev&&n1Rev>0)?Math.round((w.rev-n1Rev)/n1Rev*100):null;
+    const pctHtml=pct!=null?`<span style="font-weight:600;color:${pct>=0?"var(--gn)":"var(--rd)"}">${pct>=0?"+":""}${pct}%</span>`:"—";
+    const delBtn=w.source==="manual"
+      ?`<button onclick="deleteRevenue('${esc(w.label)}')" style="padding:2px 8px;border-radius:5px;border:.5px solid var(--rd);background:var(--rdBg);color:var(--rd);font-size:11px;cursor:pointer;font-family:inherit">Suppr.</button>`
+      :`<button onclick="deleteImportWeek('${esc(w.label)}')" style="padding:2px 8px;border-radius:5px;border:.5px solid var(--rd);background:var(--rdBg);color:var(--rd);font-size:11px;cursor:pointer;font-family:inherit">Suppr.</button>`;
+    return`<tr class="${i%2?"stripe":""}"><td style="font-weight:500">${esc(w.label)}</td><td style="color:var(--txS)">${w.start||""}</td><td style="text-align:right;font-weight:600">${fmtCA(w.rev)}</td><td style="text-align:right;color:var(--txS)">${n1Rev!=null?fmtCA(n1Rev):"—"}</td><td style="text-align:center">${pctHtml}</td><td style="text-align:center">${delBtn}</td></tr>`;
+  }).join("");
+
+  const hasAnyData = imports.length>0||entries.length>0||(STATE.psSalesDaily||[]).length>0;
+  if (!hasAnyData) {
+    return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px"><div class="card-title" style="margin:0">Chiffre d'affaires</div>${btnRow}</div><div style="padding:30px;text-align:center;color:var(--txT);font-size:13px">Aucune donnée CA. Importez un fichier XLS ou saisissez une semaine manuellement.</div></div>`;
+  }
 
   return `
   <div class="card">
@@ -1407,35 +1454,50 @@ const totalRow = '<tr style="border-top:2px solid var(--border);font-weight:700"
 
     <!-- 3 KPIs -->
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
-      ${kpiCard("Dernière semaine", lastRevN, lastRevN1, lastWeek?.label || "—")}
-      ${kpiCard("Mois en cours", caMonthN, caMonthN1, monthSublabel)}
-      ${kpiCard("YTD", ytdRevN, ytdRevN1, ytdSublabel)}
+      ${kpiCard("Dernière semaine", caLast, [
+        {lbl:`vs ${n1WkLabel||"N-1"}`, v:caLastN1},
+        {lbl:`vs ${prevWkLabel||"sem. préc."}`, v:caLastPrev}
+      ], lastWkInfo?.label||"—")}
+      ${kpiCard("3 dernières semaines", caLast3, [
+        {lbl:`vs ${last3Range||"…"} ${curYear-1}`, v:caLast3N1},
+        {lbl:`vs ${prev3Range||"…"} ${curYear}`, v:caLast3Prv}
+      ], last3Range ? `${last3Range} ${curYear}` : "—")}
+      ${kpiCard("YTD", caYtdN, [
+        {lbl:`vs ${curYear-1}`, v:caYtdN1},
+        {lbl:`vs ${curYear-2}`, v:caYtdN2},
+        {lbl:`vs ${curYear-3}`, v:caYtdN3}
+      ], `S1→S${lastWkNum} ${curYear}`)}
     </div>
 
+    <!-- Tableau hebdomadaire pivot -->
+    ${pivotYears.length ? '<div style="border-top:1px solid var(--borderL);padding-top:10px;margin-bottom:8px">'
+    +'<details open style="font-size:12px">'
+    +'<summary style="cursor:pointer;color:var(--txS);font-weight:600;margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em">Ventes par semaine</summary>'
+    +'<div class="scroll-table"><table style="min-width:320px;border-collapse:collapse">'
+    +'<thead><tr style="background:var(--bg);border-bottom:1px solid var(--border)">'
+    +'<th style="white-space:nowrap">Semaine</th>'
+    +pivotYears.map(y=>`<th style="text-align:right">${y}</th>`).join("")
+    +'</tr></thead><tbody>'+pivotRows+pivotTotalRow+'</tbody></table></div>'
+    +'</details></div>' : ""}
+
+    <!-- Détail par mois -->
     ${monthRows ? '<div style="border-top:1px solid var(--borderL);padding-top:10px;margin-bottom:8px">'
-  + '<details style="font-size:12px">'
-  + '<summary style="cursor:pointer;color:var(--txS);font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Détail par mois</summary>'
-  + '<div class="scroll-table"><table style="min-width:400px;border-collapse:collapse">'
-  + '<thead><tr style="background:var(--bg);border-bottom:1px solid var(--border)">'
-  + '<th>Mois</th>'
-  + allYears.map(y=>'<th style="text-align:right">'+y+'</th>').join("")
-  + '</tr></thead>'
-  + '<tbody>'+monthRows+totalRow+'</tbody>'
-  + '</table></div>'
-  + '</details></div>' : ""}
+    +'<details style="font-size:12px">'
+    +'<summary style="cursor:pointer;color:var(--txS);font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Détail par mois</summary>'
+    +'<div class="scroll-table"><table style="min-width:400px;border-collapse:collapse">'
+    +'<thead><tr style="background:var(--bg);border-bottom:1px solid var(--border)"><th>Mois</th>'
+    +allYears.map(y=>'<th style="text-align:right">'+y+'</th>').join("")
+    +'</tr></thead><tbody>'+monthRows+totalRow+'</tbody></table></div>'
+    +'</details></div>' : ""}
 
-    <!-- Toutes les semaines (déroulant) -->
-    <div style="border-top:1px solid var(--borderL);padding-top:10px">
-      <details style="font-size:12px">
-        <summary style="cursor:pointer;color:var(--txS);font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Toutes les semaines (${allWeeks.length})</summary>
-        <div class="scroll-table"><table style="min-width:400px">
-          <thead><tr style="background:var(--bg);border-bottom:1px solid var(--border)">
-            <th>Semaine</th><th>Début</th><th style="text-align:right">CA N</th><th style="text-align:right">CA N-1</th><th style="text-align:center">Évol.</th><th style="text-align:center">Actions</th>
-          </tr></thead>
-          <tbody>${weekRows}</tbody>
-        </table></div>
-      </details>
-    </div>
+    <!-- Gestion imports Odoo / saisies manuelles -->
+    ${allWeeks.length ? '<div style="border-top:1px solid var(--borderL);padding-top:10px">'
+    +'<details style="font-size:12px">'
+    +`<summary style="cursor:pointer;color:var(--txS);font-weight:600;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Imports Odoo / saisies manuelles (${allWeeks.length})</summary>`
+    +'<div class="scroll-table"><table style="min-width:400px">'
+    +'<thead><tr style="background:var(--bg);border-bottom:1px solid var(--border)"><th>Semaine</th><th>Début</th><th style="text-align:right">CA N</th><th style="text-align:right">CA N-1</th><th style="text-align:center">Évol.</th><th style="text-align:center">Actions</th></tr></thead>'
+    +'<tbody>'+manageRows+'</tbody></table></div>'
+    +'</details></div>' : ""}
   </div>`;
 }
 function openRevenueModal() {
@@ -3486,6 +3548,165 @@ function resolveOdooMp(ch) {
   return null;
 }
 const ODOO_SKIP = ["Livraison","Retrait","Bon de réduction","Remise"];
+
+// ── MAPPING colonnes XLS historique "Ventes par semaines" → marketplace ──
+function resolveXlsColMp(colHeader) {
+  if (!colHeader) return null;
+  const h = String(colHeader).toLowerCase().trim();
+  // Essai via resolveOdooMp (normalise les espaces en underscores)
+  const byOdoo = resolveOdooMp(h.replace(/\s+/g,'_'));
+  if (byOdoo) return byOdoo;
+  // Cas supplémentaires spécifiques aux fichiers XLS historiques
+  if (h.includes('maisonsdumonde') || h.includes('maisondumonde')) return 'maisonsdumonde';
+  if (h.includes('redoute')) return 'laredoute';
+  if (h.includes('limonetik') || (h.includes('conforama') && !h.includes('clogistique'))) return 'conforama';
+  if (h.includes('cdiscount') || h.includes('clogistique')) return 'cdiscount';
+  if (h.includes('amazon')) return 'amazon';
+  if (h.includes('manomano')) return 'manomano';
+  if (h.includes('leroymerlin') || h.includes('leroy')) return 'leroymerlin';
+  if (/\bbut\b/.test(h) || h.includes('but_')) return 'but';
+  return null;
+}
+
+// Parser pour les fichiers XLS multi-colonnes (format "Ventes par semaines")
+// Row 0 = en-têtes (modes de paiement), col 0 = label semaine
+async function parseHistoricalWeekXLS(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const wb = XLSX.read(data, { type:"array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null });
+        if (!rows.length) { resolve([]); return; }
+        // Ligne 0 = en-têtes des colonnes
+        const headers = rows[0];
+        const colMpMap = {};
+        headers.forEach((h, i) => {
+          if (i === 0) return;
+          const mp = resolveXlsColMp(h);
+          if (mp) colMpMap[i] = mp;
+        });
+        const result = [];
+        rows.slice(1).forEach(row => {
+          if (!row || !row[0]) return;
+          const rawLabel = String(row[0]).trim();
+          const wkMatch = rawLabel.match(/S(\d+)\s+(\d{4})/);
+          if (!wkMatch) return;
+          const weekNum = parseInt(wkMatch[1]);
+          const year    = parseInt(wkMatch[2]);
+          const weekLabel = `S${weekNum} ${year}`;
+          const mpRevs = {};
+          Object.entries(colMpMap).forEach(([ci, mp]) => {
+            const v = parseFloat(String(row[ci]||0).replace(',','.')) || 0;
+            if (v > 0) mpRevs[mp] = (mpRevs[mp]||0) + v;
+          });
+          Object.entries(mpRevs).forEach(([mp, rev]) => {
+            result.push({ week_label:weekLabel, year, week:weekNum, marketplace:mp, revenue:Math.round(rev) });
+          });
+        });
+        resolve(result);
+      } catch(e) { reject(e); }
+    };
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+let _histImportData = null;
+
+function openImportHistoricalModal() {
+  openModal("Import Historique Ventes Semaines (XLS)", `
+    <div style="display:grid;gap:14px">
+      <div style="background:var(--amBg);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--am)">
+        Importe les fichiers "Ventes par semaines" multi-années (format : colonnes = modes de paiement, lignes = semaines). Les données sont stockées avec le type <b>hist</b> et ont une priorité inférieure à la sync PS et aux imports Odoo hebdomadaires.
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Fichier XLS/XLSX *</label>
+        <input id="hist-file" type="file" accept=".xls,.xlsx" style="width:100%;padding:6px;border:.5px solid var(--border);border-radius:6px;font-size:11px;font-family:inherit;background:var(--card)">
+        <div style="font-size:10px;color:var(--txT);margin-top:3px">Peut importer plusieurs années à la fois (ex : 2023-2024 ou 2025-2026)</div>
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Mot de passe admin *</label>
+        <input id="hist-pwd" type="password" placeholder="••••••••" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">
+      </div>
+      <div id="hist-preview" style="display:none"></div>
+      <div style="display:flex;gap:8px">
+        <button onclick="previewHistoricalImport()" style="flex:1;padding:9px;background:var(--bg);color:var(--tx);border:.5px solid var(--border);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">👁 Prévisualiser</button>
+        <button onclick="confirmHistoricalImport()" style="flex:2;padding:9px;background:var(--am);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">⬆ Importer dans Supabase</button>
+      </div>
+      <div id="hist-status" style="font-size:12px;text-align:center;min-height:16px"></div>
+    </div>`);
+}
+
+async function previewHistoricalImport() {
+  const statusEl = document.getElementById("hist-status");
+  const previewEl = document.getElementById("hist-preview");
+  const file = document.getElementById("hist-file")?.files[0];
+  if (!file) { statusEl.innerHTML='<span style="color:var(--rd)">Sélectionnez un fichier.</span>'; return; }
+  statusEl.innerHTML = '<span style="color:var(--txS)">Lecture…</span>';
+  try {
+    const rows = await parseHistoricalWeekXLS(file);
+    _histImportData = rows;
+    const summary = {};
+    rows.forEach(r => {
+      if (!summary[r.year]) summary[r.year] = {};
+      summary[r.year][r.marketplace] = (summary[r.year][r.marketplace]||0) + r.revenue;
+    });
+    const years = Object.keys(summary).sort();
+    const mps = [...new Set(rows.map(r=>r.marketplace))].sort();
+    const fmtK = v => v>=1000000?(v/1000000).toFixed(1)+"M€":v>=1000?(v/1000).toFixed(0)+"k€":v+"€";
+    const hdr = `<tr style="background:var(--bg);border-bottom:1px solid var(--border)"><th style="padding:6px 10px;text-align:left">Marketplace</th>${years.map(y=>`<th style="padding:6px 10px;text-align:right">${y}</th>`).join("")}</tr>`;
+    const bdy = mps.map(mp=>`<tr style="border-bottom:1px solid var(--borderL)"><td style="padding:6px 10px;font-weight:500">${MP_LABELS[mp]||mp}</td>${years.map(y=>`<td style="padding:6px 10px;text-align:right">${summary[y]?.[mp]?fmtK(summary[y][mp]):"—"}</td>`).join("")}</tr>`).join("");
+    previewEl.style.display = "block";
+    previewEl.innerHTML = `<div style="font-size:12px;color:var(--gn);margin-bottom:8px">✓ ${rows.length} lignes lues — ${years.length} année(s), ${mps.length} marketplace(s)</div><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead>${hdr}</thead><tbody>${bdy}</tbody></table></div>`;
+    statusEl.innerHTML = '<span style="color:var(--gn)">✓ Prévisualisation prête — vérifiez puis importez.</span>';
+  } catch(e) {
+    statusEl.innerHTML = `<span style="color:var(--rd)">Erreur lecture : ${e.message}</span>`;
+  }
+}
+
+async function confirmHistoricalImport() {
+  const statusEl = document.getElementById("hist-status");
+  const pwd = document.getElementById("hist-pwd")?.value;
+  if (pwd !== ADMIN_PASSWORD) { statusEl.innerHTML='<span style="color:var(--rd)">❌ Mot de passe incorrect.</span>'; return; }
+  if (!_histImportData || !_histImportData.length) { statusEl.innerHTML='<span style="color:var(--am)">⚠ Lancez d\'abord la prévisualisation.</span>'; return; }
+  statusEl.innerHTML = '<span style="color:var(--txS)">Import en cours…</span>';
+  try {
+    const years = [...new Set(_histImportData.map(r=>r.year))];
+    const mps   = [...new Set(_histImportData.map(r=>r.marketplace))];
+    // Supprimer les données hist existantes pour les années/marketplaces importées
+    for (const mp of mps) {
+      for (const yr of years) {
+        await sbDelete("revenue_imports", `marketplace=eq.${mp}&year_type=eq.hist&period_start=gte.${yr}-01-01&period_start=lte.${yr}-12-31`);
+      }
+    }
+    // Préparer les lignes avec dates calculées
+    const toInsert = _histImportData
+      .filter(r => r.revenue > 0)
+      .map(r => {
+        const startStr = isoWeekStartFromNum(r.year, r.week);
+        const endD = new Date(startStr+"T00:00:00Z"); endD.setUTCDate(endD.getUTCDate()+6);
+        return { period_label:r.week_label, period_start:startStr, period_end:endD.toISOString().slice(0,10), year_type:"hist", marketplace:r.marketplace, revenue:r.revenue };
+      });
+    // Insérer par lots de 500
+    for (let i = 0; i < toInsert.length; i += 500) {
+      const batch = toInsert.slice(i, i+500);
+      const r = await fetch(`${SB_URL}/rest/v1/revenue_imports`, {
+        method:"POST",
+        headers:{"Content-Type":"application/json",apikey:SB_KEY,Authorization:`Bearer ${SB_KEY}`,Prefer:"return=minimal"},
+        body:JSON.stringify(batch)
+      });
+      if (!r.ok) { const t=await r.text(); throw new Error(`${r.status}: ${t}`); }
+    }
+    statusEl.innerHTML = `<span style="color:var(--gn)">✓ ${toInsert.length} lignes importées (${years.join(", ")}).</span>`;
+    _histImportData = null;
+    setTimeout(()=>{ closeModal(); loadData(); }, 1200);
+  } catch(e) {
+    statusEl.innerHTML = `<span style="color:var(--rd)">Erreur : ${e.message}</span>`;
+  }
+}
 
 async function parseOdooXLS(file, defaultMp = null) {
   return new Promise((resolve, reject) => {
