@@ -956,9 +956,14 @@ function renderProductSalesBlocks() {
 
   // ── Index ps_sales_daily ─────────────────────────────────────────
   const psDailyIdx = {};
+  const psRefNames = {}; // ref → nom produit (PS product_name en priorité, STATE.allProducts en fallback)
   (STATE.psSalesDaily || []).forEach(s => {
     const k = (s.product_ref||"")+"|"+String(s.sale_date||"").slice(0,10);
     psDailyIdx[k] = (psDailyIdx[k]||0) + (s.quantity||0);
+    if (s.product_ref && s.product_name && !psRefNames[s.product_ref]) psRefNames[s.product_ref] = s.product_name;
+  });
+  (STATE.allProducts||STATE.products||[]).forEach(p => {
+    if (p.sku && p.name && !psRefNames[p.sku]) psRefNames[p.sku] = p.name;
   });
   const DAY_FR = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
   const today = new Date().toISOString().slice(0,10);
@@ -1034,12 +1039,14 @@ function renderProductSalesBlocks() {
     }).join("");
     const rows = curTop10.map(([ref,data],i)=>{
       const bg=i%2?"background:var(--bg)":"";
+      const name=psRefNames[ref]||"";
       const cells=data.days.map((v,di)=>{
         const isToday=curDates[di]===today, isFut=curDates[di]>today;
         return "<td style='padding:5px 7px;text-align:right;font-weight:"+(v>0?"600":"400")+";color:"+(isFut?"transparent":v>0?(isToday?"var(--ac)":"var(--tx)"):"var(--txT)")+";background:"+(isToday?"rgba(44,94,160,.05)":"")+";width:38px'>"+(isFut?"":v>0?v:"—")+"</td>";
       }).join("");
       return "<tr style='"+bg+";border-bottom:1px solid var(--borderL)'>"
         +"<td style='padding:5px 10px;font-weight:600;white-space:nowrap;width:90px'>"+esc(ref)+"</td>"
+        +"<td style='padding:5px 8px;color:var(--txS);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px' title='"+esc(name)+"'>"+esc(name.slice(0,28))+"</td>"
         +cells
         +"<td style='padding:5px 10px;text-align:right;font-weight:700;color:var(--ac);border-left:1px solid var(--borderL);width:50px'>"+data.total+"</td>"
         +"</tr>";
@@ -1052,6 +1059,7 @@ function renderProductSalesBlocks() {
       +"<div style='overflow-x:auto'><table style='width:auto;border-collapse:collapse;font-size:12px'>"
       +"<thead><tr style='border-bottom:1px solid var(--border)'>"
       +"<th style='padding:5px 10px;text-align:left;font-weight:600;color:var(--txS);width:90px'>Réf</th>"
+      +"<th style='padding:5px 8px;text-align:left;color:var(--txS)'>Produit</th>"
       +dayHeaders
       +"<th style='padding:5px 10px;text-align:right;font-weight:700;color:var(--ac);border-left:1px solid var(--borderL);width:50px'>Total</th>"
       +"</tr></thead><tbody>"+rows+"</tbody></table></div>"
@@ -1138,12 +1146,14 @@ function renderProductSalesBlocks() {
     const leftRows = top10.map((r,i)=>{
       const basket = (r.ca_ht&&r.qty)?Math.round(r.ca_ht/r.qty*1.2)+"€":"—";
       const bg = i%2?"background:var(--bg)":"";
+      const name = psRefNames[r.ref]||"";
       const sea = showSeaPs?(getSeaActive(r.ref)
         ?'<span style="padding:2px 6px;border-radius:99px;font-size:10px;font-weight:600;background:#fff3e0;color:#e65100">⚡ SEA</span>'
         :'<span style="font-size:10px;color:var(--txT)">—</span>'):"";
       return "<tr style='"+bg+";border-bottom:1px solid var(--borderL)'>"
         +"<td style='padding:5px 8px;font-size:11px;color:var(--txT);width:22px;text-align:right'>"+(i+1)+"</td>"
         +"<td style='padding:5px 8px;font-weight:600;white-space:nowrap'>"+esc(r.ref)+"</td>"
+        +"<td style='padding:5px 8px;color:var(--txS);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px' title='"+esc(name)+"'>"+esc(name.slice(0,28))+"</td>"
         +"<td style='padding:5px 8px;text-align:right;font-weight:700'>"+r.qty+"</td>"
         +"<td style='padding:5px 8px;text-align:right;color:var(--txS)'>"+basket+"</td>"
         +(showSeaPs?"<td style='padding:5px 8px;text-align:center'>"+sea+"</td>":"")
@@ -1153,6 +1163,7 @@ function renderProductSalesBlocks() {
       +"<thead><tr style='border-bottom:1px solid var(--border)'>"
       +"<th style='padding:5px 8px;color:var(--txT);width:22px'>#</th>"
       +"<th style='padding:5px 8px;text-align:left;color:var(--txS)'>Réf</th>"
+      +"<th style='padding:5px 8px;text-align:left;color:var(--txS)'>Produit</th>"
       +"<th style='padding:5px 8px;text-align:right;color:var(--txS)'>Ventes</th>"
       +"<th style='padding:5px 8px;text-align:right;color:var(--txS)'>PM TTC</th>"
       +(showSeaPs?"<th style='padding:5px 8px;text-align:center;color:var(--txS)'>SEA</th>":"")
