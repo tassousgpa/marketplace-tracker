@@ -1404,11 +1404,11 @@ function renderRevenueBlock() {
     +allYears.map(y=>{const total=Object.entries(mergedMonthRevs).filter(([k])=>k.startsWith(y)).reduce((s,[,v])=>s+v,0);return'<td style="text-align:right">'+fmtCA(total)+'</td>';}).join("")+'</tr>';
 
   // ── Tableau pivot hebdomadaire S1-S52 × années ───────────────────
-  const histYears = new Set();
+  const curYearNum = now.getUTCFullYear();
+  const histYears = new Set([curYearNum-3, curYearNum-2, curYearNum-1, curYearNum]);
   imports.forEach(i=>{if(i.year_type==="hist"||i.year_type==="N"){const p=parseWeekLabel(i.period_label);if(p)histYears.add(p.year);}});
   entries.forEach(e=>{const p=parseWeekLabel(e.week_label);if(p)histYears.add(p.year);});
   if(lastWkParsed) histYears.add(lastWkParsed.year);
-  // Ajouter les années pour lesquelles PS a des données
   (STATE.psSalesDaily||[]).forEach(s=>{const p=isoWeekLabel(String(s.sale_date||"").slice(0,10));if(p){const yr=parseWeekLabel(p.label)?.year;if(yr)histYears.add(yr);}});
   const pivotYears = [...histYears].sort();
   const pivotRows = Array.from({length:52},(_,i)=>{
