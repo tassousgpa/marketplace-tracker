@@ -908,15 +908,14 @@ function checkAdminPw() {
 }
 
 async function openAnalyseSemaine() {
-  // ── Semaine de référence ─────────────────────────────────────────
+  // ── Semaine de référence ──────────────────────────────────────────
   const d7 = new Date(); d7.setUTCDate(d7.getUTCDate()-7);
-  const refWkInfo  = isoWeekLabel(d7.toISOString().slice(0,10));
-  const refWkLabel = refWkInfo?.label || "";
+  const refWkInfo   = isoWeekLabel(d7.toISOString().slice(0,10));
+  const refWkLabel  = refWkInfo?.label || "";
   const refWkParsed = refWkLabel ? parseWeekLabel(refWkLabel) : null;
-  const refWkNum   = refWkParsed?.week || 0;
-  const refWkYear  = refWkParsed?.year || new Date().getUTCFullYear();
+  const refWkNum    = refWkParsed?.week || 0;
+  const refWkYear   = refWkParsed?.year || new Date().getUTCFullYear();
   const reportTitle = `Suivi MKP – S${refWkNum}`;
-  const mpLabel = (MARKETPLACES.find(m=>m.id===MARKETPLACE)||{}).label || MARKETPLACE;
   const d7start = isoWeekStartFromNum(refWkYear, refWkNum) || "";
   const fmtDate = (str, addDays=0) => {
     if (!str) return "";
@@ -925,126 +924,150 @@ async function openAnalyseSemaine() {
   };
 
   openModal(reportTitle,`<div style="padding:40px;text-align:center;color:var(--txS)">
-    <div class="loading-spinner"></div><div style="margin-top:12px;font-size:13px">Génération du rapport…</div></div>`);
+    <div class="loading-spinner"></div><div style="margin-top:12px;font-size:13px">Génération du rapport… (données cross-marketplace)</div></div>`);
 
   // ── CA cross-marketplaces ────────────────────────────────────────
-  let allImports = [];
-  try { allImports = await sb("revenue_imports","year_type=eq.N&select=marketplace,period_label,revenue,period_start,period_end&order=period_start.desc&limit=1000"); } catch(e){}
-  const caMap = {};
-  allImports.forEach(r => {
-    const days=(new Date(r.period_end)-new Date(r.period_start))/86400000+1;
-    if (days>14) return;
-    const k=r.marketplace+"|"+r.period_label;
-    caMap[k]=(caMap[k]||0)+(r.revenue||0);
-  });
+  let allImports=[];
+  try{ allImports=await sb("revenue_imports","year_type=eq.N&select=marketplace,period_label,revenue,period_start,period_end&order=period_start.desc&limit=1000"); }catch(e){}
+  const caMap={};
+  allImports.forEach(r=>{const days=(new Date(r.period_end)-new Date(r.period_start))/86400000+1;if(days>14)return;const k=r.marketplace+"|"+r.period_label;caMap[k]=(caMap[k]||0)+(r.revenue||0);});
   const getCA=(mp,lbl)=>caMap[mp+"|"+lbl]||0;
   const wkLbl=(w,y)=>`S${w} ${y}`;
   const prevW=(w,y)=>w>1?[w-1,y]:[52,y-1];
-
-  function trendScore(mpId) {
-    const [w,y]=[refWkNum,refWkYear];
-    const [w1,y1]=prevW(w,y), [w2,y2]=prevW(w1,y1);
+  function trendScore(mpId){
+    const [w,y]=[refWkNum,refWkYear],[w1,y1]=prevW(w,y),[w2,y2]=prevW(w1,y1);
     const last3=getCA(mpId,wkLbl(w,y))+getCA(mpId,wkLbl(w1,y1))+getCA(mpId,wkLbl(w2,y2));
-    const [w3,y3]=prevW(w2,y2), [w4,y4]=prevW(w3,y3), [w5,y5]=prevW(w4,y4);
+    const [w3,y3]=prevW(w2,y2),[w4,y4]=prevW(w3,y3),[w5,y5]=prevW(w4,y4);
     const prev3=getCA(mpId,wkLbl(w3,y3))+getCA(mpId,wkLbl(w4,y4))+getCA(mpId,wkLbl(w5,y5));
     const caN1=getCA(mpId,wkLbl(w,y-1));
-    const tA=prev3>0?(last3-prev3)/prev3:null;
-    const tB=caN1>0?(getCA(mpId,wkLbl(w,y))-caN1)/caN1:null;
-    if (tA===null&&tB===null) return null;
+    const tA=prev3>0?(last3-prev3)/prev3:null,tB=caN1>0?(getCA(mpId,wkLbl(w,y))-caN1)/caN1:null;
+    if(tA===null&&tB===null)return null;
     return (tA??0)*0.6+(tB??0)*0.4;
   }
-  function dotHtml(score) {
-    const col=score===null?'#d4d2cc':score>0.05?'#1a7a4c':score<-0.05?'#b5312c':'#9c9a92';
-    const tip=score===null?'Données insuffisantes':(score>=0?'+':'')+Math.round(score*100)+'%';
-    return `<span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${col};vertical-align:middle" title="${tip}"></span>`;
-  }
+  function dotHtml(score){const col=score===null?'#d4d2cc':score>0.05?'#1a7a4c':score<-0.05?'#b5312c':'#9c9a92';const tip=score===null?'Données insuffisantes':(score>=0?'+':'')+Math.round(score*100)+'%';return`<span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${col};vertical-align:middle" title="${tip}"></span>`;}
   const fmtK=v=>{if(!v)return"—";if(v>=1e6)return(v/1e6).toFixed(2).replace(".",",")+"M€";if(v>=1e3)return(v/1e3).toFixed(1).replace(".",",")+"k€";return Math.round(v)+"€";};
+  const mpRanking=MARKETPLACES.map(mp=>({...mp,ca:getCA(mp.id,refWkLabel),score:trendScore(mp.id)})).filter(mp=>mp.ca>0).sort((a,b)=>b.ca-a.ca);
 
-  const mpRanking=MARKETPLACES.map(mp=>({...mp,ca:getCA(mp.id,refWkLabel),score:trendScore(mp.id)}))
-    .filter(mp=>mp.ca>0).sort((a,b)=>b.ca-a.ca);
+  // ── Fetch cross-MP : positions, seller_stats, ventes semaine ─────
+  const dayFilter=(()=>{const d=new Date();d.setUTCDate(d.getUTCDate()-30);return d.toISOString().slice(0,10);})();
+  let allPos=[], allSStats=[], allSalesWeek=[];
+  try{
+    [allPos, allSStats, allSalesWeek] = await Promise.all([
+      sb("positions",`date=gte.${dayFilter}&select=marketplace,keyword,seller,product_id,date&order=date.desc&limit=10000`),
+      sb("seller_stats",`date=gte.${dayFilter}&select=marketplace,seller,date,seller_sales,seller_ratings_count&order=date.desc&limit=6000`),
+      sb("product_sales_weekly",`week_label=eq.${refWkLabel}&select=marketplace,ref,product_name,qty&order=qty.desc&limit=1000`),
+    ]);
+  }catch(e){ console.warn("Cross-MP fetch:",e); }
 
-  // ── Positions BM ─────────────────────────────────────────────────
+  // ── Traitement positions cross-MP ────────────────────────────────
   const BM_LC=new Set(["bestmobilier","best mobilier","lisa design"]);
   const isBm=s=>BM_LC.has((s||"").toLowerCase().trim());
-  const topKws=Object.entries(STATE.bmByKeyword||{}).filter(([,n])=>n>0).sort((a,b)=>b[1]-a[1]).slice(0,3);
-  function refsForKw(kw) {
-    return (STATE.keywordData[kw]||[]).filter(i=>isBm(i.seller)).map(i=>i._product?.sku||i._product?.product_id||"").filter(Boolean).slice(0,3);
+  // Dernière date par MP
+  const mpLatest={};
+  allPos.forEach(p=>{if(!mpLatest[p.marketplace]||p.date>mpLatest[p.marketplace])mpLatest[p.marketplace]=p.date;});
+  const latestPos=allPos.filter(p=>p.date===mpLatest[p.marketplace]);
+  // Index KW par MP
+  const mpKwData={}, mpBmKw={};
+  latestPos.forEach(p=>{
+    const mp=p.marketplace, kw=normalizeKeyword(p.keyword);
+    if(!mpKwData[mp])mpKwData[mp]={};
+    if(!mpKwData[mp][kw])mpKwData[mp][kw]=[];
+    mpKwData[mp][kw].push(p);
+    if(!mpBmKw[mp])mpBmKw[mp]={};
+    if(!mpBmKw[mp][kw])mpBmKw[mp][kw]=0;
+    if(isBm(p.seller))mpBmKw[mp][kw]++;
+  });
+  // Top réf BM pour une MP (la plus fréquente sur ses mots-clés)
+  function topBmRef(mpId){
+    const rc={};
+    Object.entries(mpBmKw[mpId]||{}).filter(([,n])=>n>0).forEach(([kw])=>{
+      (mpKwData[mpId]?.[kw]||[]).filter(i=>isBm(i.seller)).forEach(i=>{const pid=(i.product_id||"").slice(0,20);if(pid)rc[pid]=(rc[pid]||0)+1;});
+    });
+    const s=Object.entries(rc).sort((a,b)=>b[1]-a[1]);
+    return s.length?s[0][0]:"—";
   }
-  const totalSlots=kw=>(STATE.keywordData[kw]||[]).length;
 
-  // ── Top 5 ventes ─────────────────────────────────────────────────
-  const psQty={}, nameMap={};
-  if (d7start) {
-    const wkDates=new Set(Array.from({length:7},(_,i)=>{const d=new Date(d7start+"T12:00:00Z");d.setUTCDate(d.getUTCDate()+i);return d.toISOString().slice(0,10);}));
-    (STATE.psSalesDaily||[]).forEach(s=>{const dt=String(s.sale_date||"").slice(0,10);if(!wkDates.has(dt))return;const ref=s.product_ref||"";psQty[ref]=(psQty[ref]||0)+(s.quantity||0);if(s.product_name&&!nameMap[ref])nameMap[ref]=s.product_name;});
+  // ── Exclusion vendeurs (mkp + marques La Redoute) ────────────────
+  const EXCL_EXACT=new Set(["but","amazon","cdiscount","conforama","manomano","mano mano","leroymerlin"]);
+  const EXCL_PART=["maisons du monde","maisonsdumonde","maison du monde","leroy merlin","leroy-merlin","la redoute","laredoute","redoute interieur","redoute intérieur","am.pm","ampm","a.m.p.m"];
+  function isExcl(name,mpId){
+    if(!name)return true;const nm=name.toLowerCase().trim();
+    if(BM_LC.has(nm))return true;
+    if(EXCL_EXACT.has(nm))return true;
+    if(EXCL_PART.some(ex=>nm.includes(ex)))return true;
+    if(mpId&&nm.includes(mpId.toLowerCase()))return true;
+    return false;
   }
-  const odooQty={};
-  (STATE.productSalesWeekly||[]).filter(r=>r.week_label===refWkLabel).forEach(r=>{odooQty[r.ref]=(odooQty[r.ref]||0)+(r.qty||0);if(r.product_name&&!nameMap[r.ref])nameMap[r.ref]=r.product_name;});
-  (STATE.products||[]).forEach(p=>{if(p.sku&&p.name&&!nameMap[p.sku])nameMap[p.sku]=p.name;});
-  const salesMap=Object.keys(odooQty).length?odooQty:psQty;
-  const top5=Object.entries(salesMap).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([ref,qty])=>({ref,qty,name:nameMap[ref]||""}));
 
-  // Deals actifs pendant la semaine de référence
+  // ── Deals actifs pendant la semaine ──────────────────────────────
   const refWkStart=d7start?new Date(d7start+"T12:00:00Z"):null;
-  const refWkEnd  =d7start?(()=>{const d=new Date(d7start+"T12:00:00Z");d.setUTCDate(d.getUTCDate()+6);return d;})():null;
-  const activeOpIdsInWk=new Set((STATE.activeOps||[])
-    .filter(op=>refWkStart&&refWkEnd&&new Date(op.date_debut)<=refWkEnd&&new Date(op.date_fin)>=refWkStart)
-    .map(op=>op.id));
+  const refWkEnd=d7start?(()=>{const d=new Date(d7start+"T12:00:00Z");d.setUTCDate(d.getUTCDate()+6);return d;})():null;
+  const activeOpIdsInWk=new Set((STATE.activeOps||[]).filter(op=>refWkStart&&refWkEnd&&new Date(op.date_debut)<=refWkEnd&&new Date(op.date_fin)>=refWkStart).map(op=>op.id));
   const hasDeal=ref=>!!(STATE.activeOpProducts||[]).find(p=>p.ref===ref&&activeOpIdsInWk.has(p.operation_id));
 
-  // ── Alertes concurrents ──────────────────────────────────────────
-  const tracked=new Set((STATE.trackedSellers||[]).map(s=>(s.seller_name||"").toLowerCase()));
-  const sellerHist={};
-  (STATE.sellerStats||[]).forEach(s=>{
-    const nm=(s.seller||"").toLowerCase();
-    if(BM_LC.has(nm))return;
-    if(tracked.size&&!tracked.has(nm))return;
-    if(!sellerHist[s.seller])sellerHist[s.seller]=[];
-    sellerHist[s.seller].push({date:s.date,sales:s.seller_sales||0,ratings:s.seller_ratings_count||0});
-  });
-  const alerts=[];
-  Object.entries(sellerHist).forEach(([name,hist])=>{
-    if(hist.length<2)return;
-    hist.sort((a,b)=>a.date>b.date?1:-1);
-    const l=hist[hist.length-1], p=hist[hist.length-2];
-    const delta=(l.sales-p.sales)||(l.ratings-p.ratings);
-    if(delta>0)alerts.push({name,delta});
-  });
-  alerts.sort((a,b)=>b.delta-a.delta);
+  // ── Top 3 ventes cross-MP ────────────────────────────────────────
+  const salesByMp={};
+  allSalesWeek.forEach(r=>{if(!salesByMp[r.marketplace])salesByMp[r.marketplace]=[];salesByMp[r.marketplace].push({ref:r.ref,name:r.product_name||"",qty:r.qty||0});});
+  MARKETPLACES.forEach(m=>{if(salesByMp[m.id])salesByMp[m.id]=salesByMp[m.id].sort((a,b)=>b.qty-a.qty).slice(0,3);});
+  // Enrichir noms depuis STATE.products (current MP)
+  const nameMapLocal={};
+  (STATE.products||[]).forEach(p=>{if(p.sku&&p.name)nameMapLocal[p.sku]=p.name;});
 
-  // ── Domination page 1 ────────────────────────────────────────────
-  const dominators=[];
-  Object.entries(STATE.leaderCounts||{}).forEach(([kw,sellers])=>{
-    const tot=totalSlots(kw); if(!tot)return;
-    Object.entries(sellers).forEach(([seller,cnt])=>{
-      if(BM_LC.has((seller||"").toLowerCase()))return;
-      if((seller||"").toLowerCase().includes(MARKETPLACE.toLowerCase()))return;
-      const pct=cnt/tot; if(pct>0.5)dominators.push({kw,seller,pct,cnt});
+  // ── Domination page 1 cross-MP (seuil 30%) ──────────────────────
+  const domMap={};
+  MARKETPLACES.forEach(({id:mpId,label:mpLbl})=>{
+    Object.entries(mpKwData[mpId]||{}).forEach(([kw,items])=>{
+      const tot=items.length; if(!tot)return;
+      const byS={};items.forEach(i=>{byS[i.seller||""]=(byS[i.seller||""]||0)+1;});
+      Object.entries(byS).forEach(([seller,cnt])=>{
+        if(isExcl(seller,mpId))return;
+        const pct=cnt/tot; if(pct<=0.30)return;
+        const k=(seller||"").toLowerCase()+"|"+kw;
+        if(!domMap[k])domMap[k]={kw,seller,pct,mps:new Set()};
+        domMap[k].mps.add(mpLbl);
+        if(pct>domMap[k].pct)domMap[k].pct=pct;
+      });
     });
   });
-  dominators.sort((a,b)=>b.pct-a.pct);
+  const dominators=Object.values(domMap).sort((a,b)=>b.pct-a.pct);
 
-  // ── Co-présence ──────────────────────────────────────────────────
-  const coPres={};
-  Object.entries(STATE.keywordData||{}).forEach(([kw,items])=>{
-    if(!(STATE.bmByKeyword[kw]>0))return;
-    items.forEach(i=>{if(BM_LC.has((i.seller||"").toLowerCase()))return;if(!coPres[i.seller])coPres[i.seller]={count:0,kws:new Set()};coPres[i.seller].count++;coPres[i.seller].kws.add(kw);});
+  // ── Co-présence cross-MP ─────────────────────────────────────────
+  const coMap={};
+  MARKETPLACES.forEach(({id:mpId,label:mpLbl})=>{
+    Object.entries(mpKwData[mpId]||{}).forEach(([kw,items])=>{
+      if(!(mpBmKw[mpId]?.[kw]>0))return;
+      items.forEach(i=>{
+        if(isExcl(i.seller,mpId))return;
+        const k=(i.seller||"").toLowerCase().trim();
+        if(!coMap[k])coMap[k]={name:i.seller,count:0,kws:new Set(),mps:new Set()};
+        coMap[k].count++;coMap[k].kws.add(kw);coMap[k].mps.add(mpLbl);
+      });
+    });
   });
-  const topCo=Object.entries(coPres).sort((a,b)=>b[1].count-a[1].count).slice(0,5).map(([name,d])=>({name,count:d.count,kws:[...d.kws].slice(0,2)}));
+  const topCo=Object.values(coMap).sort((a,b)=>b.count-a.count).slice(0,10);
 
-  // ── Montée en puissance (3+ sessions croissantes) ────────────────
-  const trending=[];
-  Object.entries(sellerHist).forEach(([name,hist])=>{
+  // ── Montée en puissance cross-MP (3+ sessions) ──────────────────
+  const mpSH={};
+  allSStats.forEach(s=>{
+    const k=(s.marketplace||"")+"|"+(s.seller||"");
+    if(!mpSH[k])mpSH[k]={mp:s.marketplace,seller:s.seller,hist:[]};
+    mpSH[k].hist.push({date:s.date,v:(s.seller_sales||0)||(s.seller_ratings_count||0)});
+  });
+  const trendMap={};
+  Object.values(mpSH).forEach(({mp,seller,hist})=>{
+    if(isExcl(seller,mp))return;
     if(hist.length<4)return;
     hist.sort((a,b)=>a.date>b.date?1:-1);
-    const last3=hist.slice(-3);
-    const grows=last3.every((h,i)=>i===0||((h.sales||h.ratings)>(last3[i-1].sales||last3[i-1].ratings)));
-    if(!grows)return;
-    const kws=Object.entries(STATE.keywordData||{}).filter(([,items])=>items.some(i=>(i.seller||"").toLowerCase()===name.toLowerCase())).map(([kw])=>kw).slice(0,2);
-    trending.push({name,kws});
+    const l3=hist.slice(-3);
+    if(!l3.every((h,i)=>i===0||h.v>l3[i-1].v))return;
+    const mpLbl=(MARKETPLACES.find(m=>m.id===mp)||{}).label||mp;
+    const k=(seller||"").toLowerCase().trim();
+    if(!trendMap[k])trendMap[k]={name:seller,mps:new Set()};
+    trendMap[k].mps.add(mpLbl);
   });
+  const trending=Object.values(trendMap).sort((a,b)=>b.mps.size-a.mps.size);
 
-  // ── Construction HTML du rapport ─────────────────────────────────
+  // ── HTML helpers ─────────────────────────────────────────────────
   const TH="padding:7px 10px;text-align:left;color:#6b6a65;font-weight:600;font-size:11px;border-bottom:1px solid #e8e6e1;background:#fafaf8;";
   const TD="padding:6px 10px;font-size:12px;border-bottom:.5px solid #f0eee9;";
   const SEC_HDR="background:#2c5ea0;color:#fff;padding:8px 14px;border-radius:6px 6px 0 0;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;";
@@ -1053,54 +1076,86 @@ async function openAnalyseSemaine() {
   const noData=msg=>`<div style="padding:11px 14px;color:#9c9a92;font-size:12px">${msg}</div>`;
   const badge=(txt,bg,col)=>`<span style="padding:1px 7px;border-radius:99px;font-size:10px;font-weight:600;background:${bg};color:${col}">${txt}</span>`;
 
-  // Classement
-  const rankHtml=mpRanking.length?`<table style="width:100%;border-collapse:collapse">
-    <thead><tr><th style="${TH}text-align:center;width:30px">#</th><th style="${TH}">Marketplace</th><th style="${TH}text-align:right">CA semaine</th><th style="${TH}text-align:center;width:70px">Tendance</th></tr></thead><tbody>
-    ${mpRanking.map((mp,i)=>`<tr style="background:${i%2?"#fafaf8":"#fff"}"><td style="${TD}text-align:center;font-weight:700;color:#9c9a92">${i+1}</td><td style="${TD}font-weight:600">${mp.label}</td><td style="${TD}text-align:right;font-weight:700;font-family:monospace">${fmtK(mp.ca)}</td><td style="${TD}text-align:center">${dotHtml(mp.score)}</td></tr>`).join("")}
-    </tbody></table>`:noData("Aucun CA disponible pour cette semaine.");
+  // Section 1 : Classement CA
+  const rankHtml=mpRanking.length?`<table style="width:100%;border-collapse:collapse"><thead><tr>
+    <th style="${TH}text-align:center;width:30px">#</th><th style="${TH}">Marketplace</th>
+    <th style="${TH}text-align:right">CA semaine</th><th style="${TH}text-align:center;width:70px">Tendance</th>
+    </tr></thead><tbody>${mpRanking.map((mp,i)=>`<tr style="background:${i%2?"#fafaf8":"#fff"}">
+    <td style="${TD}text-align:center;font-weight:700;color:#9c9a92">${i+1}</td><td style="${TD}font-weight:600">${mp.label}</td>
+    <td style="${TD}text-align:right;font-weight:700;font-family:monospace">${fmtK(mp.ca)}</td><td style="${TD}text-align:center">${dotHtml(mp.score)}</td>
+    </tr>`).join("")}</tbody></table>`:noData("Aucun CA disponible pour cette semaine.");
 
-  // Positions
-  const posHtml=topKws.length?`<table style="width:100%;border-collapse:collapse">
-    <thead><tr><th style="${TH}">Recherche</th><th style="${TH}text-align:center">Présence BM</th><th style="${TH}">Top réfs.</th></tr></thead><tbody>
-    ${topKws.map(([kw,n])=>{const tot=totalSlots(kw),pct=tot?Math.round(n/tot*100):0,refs=refsForKw(kw).join(", ")||"—";return`<tr><td style="${TD}font-weight:600">${esc(kw)}</td><td style="${TD}text-align:center"><b>${n}</b>/${tot} <span style="color:#9c9a92;font-size:11px">(${pct}%)</span></td><td style="${TD}font-size:11px;color:#6b6a65">${esc(refs)}</td></tr>`;}).join("")}
-    </tbody></table>`:noData("Aucune donnée de positions disponible pour "+mpLabel+".");
+  // Section 2 : Positions page 1 cross-MP
+  const posHtml=`<table style="width:100%;border-collapse:collapse"><thead><tr>
+    <th style="${TH}">Marketplace</th><th style="${TH}">Top 1 recherche</th>
+    <th style="${TH}">Top 2 recherche</th><th style="${TH}">Top 3 recherche</th><th style="${TH}">Top réf.</th>
+    </tr></thead><tbody>${MARKETPLACES.map(({id:mpId,label:mpLbl},i)=>{
+    const kwSorted=Object.entries(mpBmKw[mpId]||{}).filter(([,n])=>n>0).sort((a,b)=>b[1]-a[1]);
+    if(!kwSorted.length)return`<tr style="background:${i%2?"#fafaf8":"#fff"}"><td style="${TD}font-weight:600;color:#9c9a92">${mpLbl}</td><td colspan="4" style="${TD}color:#d4d2cc;font-size:11px">Pas de données</td></tr>`;
+    const [k1,k2,k3]=[kwSorted[0]?.[0]||"",kwSorted[1]?.[0]||"",kwSorted[2]?.[0]||""];
+    return`<tr style="background:${i%2?"#fafaf8":"#fff"}">
+      <td style="${TD}font-weight:600">${mpLbl}</td>
+      <td style="${TD}font-size:11px">${esc(k1)||"—"}</td>
+      <td style="${TD}font-size:11px;color:#6b6a65">${esc(k2)||"—"}</td>
+      <td style="${TD}font-size:11px;color:#9c9a92">${esc(k3)||"—"}</td>
+      <td style="${TD}font-size:11px;font-weight:600;color:#2c5ea0">${esc(topBmRef(mpId))}</td>
+    </tr>`;
+  }).join("")}</tbody></table>`;
 
-  // Top 5 ventes
-  const salesHtml=top5.length?`<table style="width:100%;border-collapse:collapse">
-    <thead><tr><th style="${TH}text-align:center;width:26px">#</th><th style="${TH}">Réf.</th><th style="${TH}">Produit</th><th style="${TH}text-align:center">Qté</th><th style="${TH}text-align:center">SEA</th><th style="${TH}text-align:center">Opé.</th></tr></thead><tbody>
-    ${top5.map((r,i)=>`<tr style="background:${i%2?"#fafaf8":"#fff"}"><td style="${TD}text-align:center;color:#9c9a92">${i+1}</td><td style="${TD}font-weight:600;font-size:11px;white-space:nowrap">${esc(r.ref)}</td><td style="${TD}font-size:11px;max-width:180px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="${esc(r.name)}">${esc((r.name||"").slice(0,40))}</td><td style="${TD}text-align:center;font-weight:700">${r.qty}</td><td style="${TD}text-align:center">${getSeaActive(r.ref)?badge("⚡ SEA","#fff3e0","#e65100"):badge("—","transparent","#9c9a92")}</td><td style="${TD}text-align:center">${hasDeal(r.ref)?badge("Deal","#e8f5e9","#1a7a4c"):badge("—","transparent","#9c9a92")}</td></tr>`).join("")}
-    </tbody></table>`:noData("Aucune vente enregistrée pour "+mpLabel+" — "+refWkLabel+".");
+  // Section 3 : Top 3 ventes cross-MP
+  const mpWithSales=MARKETPLACES.filter(m=>(salesByMp[m.id]||[]).length>0);
+  const salesHtml=mpWithSales.length?`<table style="width:100%;border-collapse:collapse"><thead><tr>
+    <th style="${TH}text-align:center;width:26px">#</th><th style="${TH}">Réf.</th>
+    <th style="${TH}">Produit</th><th style="${TH}text-align:center">Qté</th>
+    <th style="${TH}text-align:center">SEA</th><th style="${TH}text-align:center">Opé.</th>
+    </tr></thead><tbody>${mpWithSales.map(({id:mpId,label:mpLbl})=>{
+    const rows=salesByMp[mpId]||[];
+    const hdr=`<tr style="background:#e8f0fa"><td colspan="6" style="padding:5px 10px;font-size:11px;font-weight:700;color:#2c5ea0;letter-spacing:.04em;text-transform:uppercase">${mpLbl}</td></tr>`;
+    const rws=rows.map((r,i)=>{const nm=r.name||nameMapLocal[r.ref]||"";return`<tr style="background:${i%2?"#fafaf8":"#fff"}">
+      <td style="${TD}text-align:center;color:#9c9a92">${i+1}</td>
+      <td style="${TD}font-weight:600;font-size:11px;white-space:nowrap">${esc(r.ref)}</td>
+      <td style="${TD}font-size:11px;max-width:200px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="${esc(nm)}">${esc(nm.slice(0,40))}</td>
+      <td style="${TD}text-align:center;font-weight:700">${r.qty}</td>
+      <td style="${TD}text-align:center">${getSeaActive(r.ref)?badge("⚡ SEA","#fff3e0","#e65100"):badge("—","transparent","#9c9a92")}</td>
+      <td style="${TD}text-align:center">${hasDeal(r.ref)?badge("Deal","#e8f5e9","#1a7a4c"):badge("—","transparent","#9c9a92")}</td>
+    </tr>`;}).join("");
+    return hdr+rws;
+  }).join("")}</tbody></table>`:noData("Aucune vente enregistrée pour la semaine "+refWkLabel+".");
 
-  // Alertes concurrents
-  const alertHtml=alerts.length?`<table style="width:100%;border-collapse:collapse">
-    <thead><tr><th style="${TH}">Concurrent</th><th style="${TH}text-align:right">Δ ventes</th></tr></thead><tbody>
-    ${alerts.slice(0,5).map(s=>`<tr><td style="${TD}font-weight:600">${esc(s.name)}</td><td style="${TD}text-align:right;color:#b5312c;font-weight:700">+${s.delta.toLocaleString("fr-FR")}</td></tr>`).join("")}
-    </tbody></table>`:noData("✓ Aucun concurrent en forte progression détecté.");
+  // Section 4 : Monopoles page 1 (>30%)
+  const domHtml=dominators.length?`<table style="width:100%;border-collapse:collapse"><thead><tr>
+    <th style="${TH}">Recherche</th><th style="${TH}">Acteur</th>
+    <th style="${TH}text-align:center">Occupation P1</th><th style="${TH}">MKP</th>
+    </tr></thead><tbody>${dominators.slice(0,8).map((d,i)=>`<tr style="background:${i%2?"#fafaf8":"#fff"}">
+    <td style="${TD}">${esc(d.kw)}</td><td style="${TD}font-weight:600;color:#b5312c">${esc(d.seller)}</td>
+    <td style="${TD}text-align:center;font-weight:700">${Math.round(d.pct*100)}%</td>
+    <td style="${TD}font-size:11px;color:#6b6a65">${[...d.mps].join(", ")}</td>
+    </tr>`).join("")}</tbody></table>`:noData("✓ Aucune domination de page 1 détectée (seuil > 30 %).");
 
-  // Domination
-  const domHtml=dominators.length?`<table style="width:100%;border-collapse:collapse">
-    <thead><tr><th style="${TH}">Recherche</th><th style="${TH}">Acteur</th><th style="${TH}text-align:center">Occupation P1</th></tr></thead><tbody>
-    ${dominators.slice(0,5).map(d=>`<tr><td style="${TD}">${esc(d.kw)}</td><td style="${TD}font-weight:600;color:#b5312c">${esc(d.seller)}</td><td style="${TD}text-align:center;font-weight:700">${Math.round(d.pct*100)}%</td></tr>`).join("")}
-    </tbody></table>`:noData("✓ Aucune domination de page 1 détectée (seuil > 50 %).");
+  // Section 5 : Co-présence cross-MP
+  const coHtml=topCo.length?`<table style="width:100%;border-collapse:collapse"><thead><tr>
+    <th style="${TH}">Concurrent</th><th style="${TH}text-align:center">Apparitions communes</th>
+    <th style="${TH}">MKP concernées</th><th style="${TH}">Recherches</th>
+    </tr></thead><tbody>${topCo.map((c,i)=>`<tr style="background:${i%2?"#fafaf8":"#fff"}">
+    <td style="${TD}font-weight:600">${esc(c.name)}</td><td style="${TD}text-align:center;font-weight:700">${c.count}</td>
+    <td style="${TD}font-size:11px;color:#6b6a65">${[...c.mps].join(", ")}</td>
+    <td style="${TD}font-size:11px;color:#9c9a92">${[...c.kws].slice(0,2).map(k=>esc(k)).join(", ")||"—"}</td>
+    </tr>`).join("")}</tbody></table>`:noData("Données de positions insuffisantes pour calculer la co-présence.");
 
-  // Co-présence
-  const coHtml=topCo.length?`<table style="width:100%;border-collapse:collapse">
-    <thead><tr><th style="${TH}">Concurrent</th><th style="${TH}text-align:center">Apparitions communes</th><th style="${TH}">Recherches</th></tr></thead><tbody>
-    ${topCo.map(c=>`<tr><td style="${TD}font-weight:600">${esc(c.name)}</td><td style="${TD}text-align:center;font-weight:700">${c.count}</td><td style="${TD}font-size:11px;color:#6b6a65">${c.kws.map(k=>esc(k)).join(", ")||"—"}</td></tr>`).join("")}
-    </tbody></table>`:noData("Données de positions insuffisantes pour calculer la co-présence.");
+  // Section 6 : Montée en puissance cross-MP
+  const trendHtml=trending.length?`<table style="width:100%;border-collapse:collapse"><thead><tr>
+    <th style="${TH}">Concurrent</th><th style="${TH}">MKP concernées</th>
+    </tr></thead><tbody>${trending.slice(0,8).map((t,i)=>`<tr style="background:${i%2?"#fafaf8":"#fff"}">
+    <td style="${TD}font-weight:600">${esc(t.name)}</td>
+    <td style="${TD}font-size:11px;color:#6b6a65">${[...t.mps].join(", ")}</td>
+    </tr>`).join("")}</tbody></table>`:noData("Historique insuffisant (< 4 sessions) pour identifier une tendance.");
 
-  // Montée en puissance
-  const trendHtml=trending.length?`<table style="width:100%;border-collapse:collapse">
-    <thead><tr><th style="${TH}">Concurrent</th><th style="${TH}">Catégories</th></tr></thead><tbody>
-    ${trending.slice(0,5).map(t=>`<tr><td style="${TD}font-weight:600">${esc(t.name)}</td><td style="${TD}font-size:11px;color:#6b6a65">${t.kws.length?t.kws.map(k=>esc(k)).join(", "):"—"}</td></tr>`).join("")}
-    </tbody></table>`:noData("Historique insuffisant (< 4 sessions) pour identifier une tendance.");
-
-  // ── Rendu final du rapport ────────────────────────────────────────
+  // ── Rendu final ──────────────────────────────────────────────────
   const reportContent=`<div id="analyse-report-content" style="font-family:'Inter',system-ui,sans-serif;background:#fff;padding:28px;max-width:700px;margin:0 auto;color:#1a1a18;">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;padding-bottom:14px;border-bottom:2.5px solid #2c5ea0">
       <div>
         <div style="font-size:22px;font-weight:800;color:#2c5ea0;letter-spacing:-.02em">${reportTitle}</div>
-        <div style="font-size:12px;color:#6b6a65;margin-top:3px">Marketplace : <b>${mpLabel}</b> &nbsp;·&nbsp; ${fmtDate(d7start)} au ${fmtDate(d7start,6)}</div>
+        <div style="font-size:12px;color:#6b6a65;margin-top:3px">${fmtDate(d7start)} au ${fmtDate(d7start,6)} &nbsp;·&nbsp; Toutes marketplaces</div>
       </div>
       <div style="text-align:right;padding-top:2px">
         <div style="font-size:11px;font-weight:700;color:#b0aea8;letter-spacing:.06em;text-transform:uppercase">BestMobilier</div>
@@ -1108,23 +1163,22 @@ async function openAnalyseSemaine() {
       </div>
     </div>
     ${sec("📊","Classement CA semaine — "+refWkLabel,rankHtml)}
-    ${sec("🔍","Visibilité page 1 — Top 3 recherches ("+mpLabel+")",posHtml)}
-    ${sec("🏆","Top 5 ventes — "+refWkLabel+" ("+mpLabel+")",salesHtml)}
-    ${sec("⚠️","Alertes concurrents en progression",alertHtml)}
-    ${sec("🔒","Monopoles page 1 (acteur > 50 % des emplacements)",domHtml)}
-    ${sec("🤝","Co-présence face à BestMobilier",coHtml)}
-    ${sec("📈","Montée en puissance (3+ sessions consécutives)",trendHtml)}
+    ${sec("🔍","Visibilité page 1 — Toutes marketplaces",posHtml)}
+    ${sec("🏆","Top 3 ventes — "+refWkLabel,salesHtml)}
+    ${sec("🔒","Monopoles page 1 (acteur > 30 % des emplacements)",domHtml)}
+    ${sec("🤝","Co-présence face à BestMobilier — toutes marketplaces",coHtml)}
+    ${sec("📈","Montée en puissance (3+ sessions consécutives) — toutes marketplaces",trendHtml)}
     <div style="margin-top:14px;padding-top:10px;border-top:1px solid #e8e6e1;display:flex;justify-content:space-between">
       <div style="font-size:10px;color:#b0aea8">Généré le ${new Date().toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"numeric"})} à ${new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</div>
       <div style="font-size:10px;color:#b0aea8">Usage interne BestMobilier</div>
     </div>
   </div>`;
 
-  const exportBtnId = "analyse-export-btn";
+  const exportBtnId="analyse-export-btn";
   openModal(reportTitle,`
     <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
-      <div style="font-size:12px;color:var(--txS);flex:1">${mpLabel} · ${refWkLabel}</div>
-      <button id="${exportBtnId}" onclick="exportAnalysePNG('${reportTitle.replace(/'/g,'')}')"
+      <div style="font-size:12px;color:var(--txS);flex:1">Toutes marketplaces · ${refWkLabel}</div>
+      <button id="${exportBtnId}" onclick="exportAnalysePNG('${reportTitle.replace(/'/g,"")}')"
         style="padding:7px 16px;background:var(--ac);color:#fff;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">⬇ Export PNG</button>
     </div>
     <div style="overflow-y:auto;max-height:72vh;border:.5px solid var(--border);border-radius:6px;background:#f0ede6">${reportContent}</div>`);
