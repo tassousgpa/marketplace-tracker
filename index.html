@@ -1555,7 +1555,7 @@ function buildProduitsTableHTML() {
       <div style="font-size:11px;color:var(--txT);margin-top:2px">${nbIndispo} produit${nbIndispo>1?"s":""}</div>
     </div>
     <div style="background:${pctSansLienValide>10?"var(--amBg)":"var(--card)"};border:.5px solid ${pctSansLienValide>10?"var(--am)":"var(--border)"};border-radius:10px;padding:12px 16px;min-width:130px;flex:1">
-      <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">% Produits sans URL renseigné</div>
+      <div style="font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">% de produits avec un problème de liens</div>
       <div style="font-size:24px;font-weight:700;color:${pctSansLienValide>0?"var(--am)":"var(--gn)"}">${pctSansLienValide}%</div>
       <div style="font-size:11px;color:var(--txT);margin-top:2px">${nbSansLienValide} prod. (${nbSansLien} sans URL)</div>
     </div>
