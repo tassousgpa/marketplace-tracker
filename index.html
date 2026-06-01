@@ -948,29 +948,28 @@ async function openAnalyseSemaine() {
   const fmtK=v=>{if(!v)return"—";if(v>=1e6)return(v/1e6).toFixed(2).replace(".",",")+"M€";if(v>=1e3)return(v/1e3).toFixed(1).replace(".",",")+"k€";return Math.round(v)+"€";};
   const mpRanking=MARKETPLACES.map(mp=>({...mp,ca:getCA(mp.id,refWkLabel),score:trendScore(mp.id)})).filter(mp=>mp.ca>0).sort((a,b)=>b.ca-a.ca);
 
-  // ── Fetch cross-MP : positions, seller_stats, ventes semaine ─────
-  // positions : sans filtre de date (on prend les 10 000 plus récentes et on cherche la dernière session par MP)
-  // seller_stats : 180j pour avoir assez de sessions (trending = 4+ sessions requises)
-  // product_sales_weekly : sans filtre semaine → on utilisera la dernière dispo par MP
+  // ── Fetch cross-MP ───────────────────────────────────────────────
   const ssFilter=(()=>{const d=new Date();d.setUTCDate(d.getUTCDate()-180);return d.toISOString().slice(0,10);})();
-  let allPos=[], allSStats=[], allSalesWeekRaw=[];
+  // Ventes S22 = ps_sales_daily (source Prestashop, données en temps réel)
+  const d7end=d7start?(()=>{const d=new Date(d7start+"T12:00:00Z");d.setUTCDate(d.getUTCDate()+6);return d.toISOString().slice(0,10);})():"";
+  let allPos=[], allSStats=[], psSalesRaw=[];
   try{
-    [allPos, allSStats, allSalesWeekRaw] = await Promise.all([
+    [allPos, allSStats, psSalesRaw] = await Promise.all([
       sb("positions","select=marketplace,keyword,seller,product_id,date&order=date.desc&limit=10000"),
       sb("seller_stats",`date=gte.${ssFilter}&select=marketplace,seller,date,seller_sales,seller_ratings_count&order=date.desc&limit=8000`),
-      sb("product_sales_weekly","select=marketplace,ref,name,qty,week_label&order=week_label.desc"),
+      d7start?sb("ps_sales_daily",`sale_date=gte.${d7start}&sale_date=lte.${d7end}&select=marketplace,product_ref,product_name,quantity`):Promise.resolve([]),
     ]);
   }catch(e){ console.warn("Cross-MP fetch:",e); }
 
-  // Trouver la dernière semaine disponible par MP (comparaison numérique S1-S52)
-  const latestWkByMp={};
-  allSalesWeekRaw.forEach(r=>{
-    const p=parseWeekLabel(r.week_label);if(!p)return;
-    const n=p.year*100+p.week;
-    if(!latestWkByMp[r.marketplace]||n>latestWkByMp[r.marketplace].n)
-      latestWkByMp[r.marketplace]={label:r.week_label,n};
+  // Agréger ps_sales_daily par (marketplace, product_ref) → top 3 par MP
+  const psSalesAgg={};
+  psSalesRaw.forEach(s=>{
+    const mp=s.marketplace, ref=s.product_ref||"";
+    if(!psSalesAgg[mp])psSalesAgg[mp]={};
+    if(!psSalesAgg[mp][ref])psSalesAgg[mp][ref]={qty:0,name:s.product_name||""};
+    psSalesAgg[mp][ref].qty+=(s.quantity||0);
+    if(s.product_name&&!psSalesAgg[mp][ref].name)psSalesAgg[mp][ref].name=s.product_name;
   });
-  const allSalesWeek=allSalesWeekRaw.filter(r=>r.week_label===latestWkByMp[r.marketplace]?.label);
 
   // ── Traitement positions cross-MP ────────────────────────────────
   const BM_LC=new Set(["bestmobilier","best mobilier","lisa design"]);
@@ -1018,12 +1017,16 @@ async function openAnalyseSemaine() {
   const activeOpIdsInWk=new Set((STATE.activeOps||[]).filter(op=>refWkStart&&refWkEnd&&new Date(op.date_debut)<=refWkEnd&&new Date(op.date_fin)>=refWkStart).map(op=>op.id));
   const hasDeal=ref=>!!(STATE.activeOpProducts||[]).find(p=>p.ref===ref&&activeOpIdsInWk.has(p.operation_id));
 
-  // ── Top 3 ventes cross-MP ────────────────────────────────────────
+  // ── Top 3 ventes cross-MP (source PS, semaine de référence) ──────
   const salesByMp={};
-  allSalesWeek.forEach(r=>{if(!salesByMp[r.marketplace])salesByMp[r.marketplace]=[];salesByMp[r.marketplace].push({ref:r.ref,name:r.name||"",qty:r.qty||0,wk:r.week_label});});
-  MARKETPLACES.forEach(m=>{if(salesByMp[m.id])salesByMp[m.id]=salesByMp[m.id].sort((a,b)=>b.qty-a.qty).slice(0,3);});
   const nameMapLocal={};
   (STATE.products||[]).forEach(p=>{if(p.sku&&p.name)nameMapLocal[p.sku]=p.name;});
+  MARKETPLACES.forEach(m=>{
+    const mpAgg=psSalesAgg[m.id]||{};
+    salesByMp[m.id]=Object.entries(mpAgg)
+      .map(([ref,d])=>({ref,qty:d.qty,name:d.name||nameMapLocal[ref]||""}))
+      .sort((a,b)=>b.qty-a.qty).slice(0,3);
+  });
 
   // ── Domination page 1 cross-MP (seuil 30%) ──────────────────────
   const domMap={};
@@ -1097,20 +1100,20 @@ async function openAnalyseSemaine() {
     <td style="${TD}text-align:right;font-weight:700;font-family:monospace">${fmtK(mp.ca)}</td><td style="${TD}text-align:center">${dotHtml(mp.score)}</td>
     </tr>`).join("")}</tbody></table>`:noData("Aucun CA disponible pour cette semaine.");
 
-  // Section 2 : Positions page 1 cross-MP
+  // Section 2 : Positions page 1 cross-MP (LM et ManoMano masqués — pas de scraping positions)
+  const MP_WITH_POS=MARKETPLACES.filter(m=>!['leroymerlin','manomano'].includes(m.id));
   const posHtml=`<table style="width:100%;border-collapse:collapse"><thead><tr>
     <th style="${TH}">Marketplace</th><th style="${TH}">Top 1 recherche</th>
-    <th style="${TH}">Top 2 recherche</th><th style="${TH}">Top 3 recherche</th><th style="${TH}">Top réf.</th>
-    </tr></thead><tbody>${MARKETPLACES.map(({id:mpId,label:mpLbl},i)=>{
+    <th style="${TH}">Top 2 recherche</th><th style="${TH}">Top 3 recherche</th>
+    </tr></thead><tbody>${MP_WITH_POS.map(({id:mpId,label:mpLbl},i)=>{
     const kwSorted=Object.entries(mpBmKw[mpId]||{}).filter(([,n])=>n>0).sort((a,b)=>b[1]-a[1]);
-    if(!kwSorted.length)return`<tr style="background:${i%2?"#fafaf8":"#fff"}"><td style="${TD}font-weight:600;color:#9c9a92">${mpLbl}</td><td colspan="4" style="${TD}color:#d4d2cc;font-size:11px">Pas de données</td></tr>`;
+    if(!kwSorted.length)return`<tr style="background:${i%2?"#fafaf8":"#fff"}"><td style="${TD}font-weight:600;color:#9c9a92">${mpLbl}</td><td colspan="3" style="${TD}color:#d4d2cc;font-size:11px">Pas de données</td></tr>`;
     const [k1,k2,k3]=[kwSorted[0]?.[0]||"",kwSorted[1]?.[0]||"",kwSorted[2]?.[0]||""];
     return`<tr style="background:${i%2?"#fafaf8":"#fff"}">
       <td style="${TD}font-weight:600">${mpLbl}</td>
       <td style="${TD}font-size:11px">${esc(k1)||"—"}</td>
       <td style="${TD}font-size:11px;color:#6b6a65">${esc(k2)||"—"}</td>
       <td style="${TD}font-size:11px;color:#9c9a92">${esc(k3)||"—"}</td>
-      <td style="${TD}font-size:11px;font-weight:600;color:#2c5ea0">${esc(topBmRef(mpId))}</td>
     </tr>`;
   }).join("")}</tbody></table>`;
 
@@ -1122,8 +1125,7 @@ async function openAnalyseSemaine() {
     <th style="${TH}text-align:center">SEA</th><th style="${TH}text-align:center">Opé.</th>
     </tr></thead><tbody>${mpWithSales.map(({id:mpId,label:mpLbl})=>{
     const rows=salesByMp[mpId]||[];
-    const wkForMp=latestWkByMp[mpId]?.label||"";
-    const hdr=`<tr style="background:#e8f0fa"><td colspan="6" style="padding:5px 10px;font-size:11px;font-weight:700;color:#2c5ea0;letter-spacing:.04em;text-transform:uppercase">${mpLbl}${wkForMp?" — "+wkForMp:""}</td></tr>`;
+    const hdr=`<tr style="background:#e8f0fa"><td colspan="6" style="padding:5px 10px;font-size:11px;font-weight:700;color:#2c5ea0;letter-spacing:.04em;text-transform:uppercase">${mpLbl} — ${refWkLabel} (Prestashop)</td></tr>`;
     const rws=rows.map((r,i)=>{const nm=r.name||nameMapLocal[r.ref]||"";return`<tr style="background:${i%2?"#fafaf8":"#fff"}">
       <td style="${TD}text-align:center;color:#9c9a92">${i+1}</td>
       <td style="${TD}font-weight:600;font-size:11px;white-space:nowrap">${esc(r.ref)}</td>
@@ -1176,7 +1178,7 @@ async function openAnalyseSemaine() {
       </div>
     </div>
     ${sec("📊","Classement CA semaine — "+refWkLabel,rankHtml)}
-    ${sec("🔍","Visibilité page 1 — Toutes marketplaces",posHtml)}
+    ${sec("🔍","Présence de BestMobilier en page 1 — Toutes marketplaces",posHtml)}
     ${sec("🏆","Top 3 ventes — "+refWkLabel,salesHtml)}
     ${sec("🔒","Monopoles page 1 (acteur > 30 % des emplacements)",domHtml)}
     ${sec("🤝","Co-présence face à BestMobilier — toutes marketplaces",coHtml)}
