@@ -4763,7 +4763,9 @@ async function parseAuditXLS(file, semaine) {
         for (let i = 4; i < rows.length; i++) {
           const r = rows[i];
           if (!r || !r[0] || !r[2]) continue; // SKU et Marketplace obligatoires
-          const na = v => (v === "N/A" || v === null || v === undefined) ? null : (isNaN(parseFloat(v)) ? String(v) : parseFloat(v));
+          // Ignorer les lignes récapitulatives/séparateurs (marketplace non reconnue)
+          if (!normalizeAuditMp(String(r[2]).trim())) continue;
+          const na = v => (v === "N/A" || v === null || v === undefined) ? null : (isNaN(parseFloat(v)) ? null : parseFloat(v));
           const str = v => v ? String(v).trim() : null;
           result.push({
             marketplace: str(r[2]),
