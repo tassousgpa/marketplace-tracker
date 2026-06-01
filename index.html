@@ -1192,37 +1192,35 @@ function renderProductSalesBlocks() {
   const curWkIsHandled = curWkLabel && (completedWeeks.includes(curWkLabel) || psOnlyWeeks.includes(curWkLabel));
   if (!curWkIsHandled) out += renderCurrentWeekLive();
 
-  // Semaines terminées avec split tableau
-  if (completedWeeks.length) {
-    out += "<div class='card' style='padding:14px'>"
-      +"<div class='card-title' style='margin-bottom:12px'>🏆 Top 10 — "+completedWeeks[0]+"</div>"
-      +renderCompletedBlock(completedWeeks[0]);
-    const hist = completedWeeks.slice(1).map(w=>
-      "<details style='margin-top:8px'>"
-      +"<summary style='cursor:pointer;font-size:11px;color:var(--txS);font-weight:600;padding:4px 0'>Top 10 — "+w+"</summary>"
-      +"<div style='margin-top:8px'>"+renderCompletedBlock(w)+"</div>"
-      +"</details>"
-    ).join("");
-    if (hist) out += "<div style='border-top:1px solid var(--borderL);margin-top:12px;padding-top:8px'>"+hist+"</div>";
-    out += "</div>";
-  }
+  // Semaines terminées — fusion Odoo + PS triée par label décroissant
+  const allCompleted = [
+    ...completedWeeks.map(w => ({ label: w, src: "odoo" })),
+    ...psOnlyWeeks.map(w => ({ label: w, src: "ps" })),
+  ].sort((a, b) => b.label.localeCompare(a.label));
 
-  // Semaines PS-only (terminées, sans données Odoo)
-  if (psOnlyWeeks.length) {
-    const mainPs = psOnlyWeeks[0];
+  if (allCompleted.length) {
+    const [first, ...rest] = allCompleted;
+    const badgePs = "<span style='font-size:10px;color:var(--txS);padding:2px 7px;border-radius:99px;border:.5px solid var(--border)'>Source Prestashop</span>";
+    function blockHeader(w) {
+      return "<div style='display:flex;align-items:center;gap:8px;margin-bottom:12px'>"
+        +"<div class='card-title' style='margin:0'>🏆 Top 10 — "+w.label+"</div>"
+        +(w.src==="ps" ? badgePs : "")
+        +"</div>";
+    }
+    function blockBody(w) {
+      return w.src==="odoo" ? renderCompletedBlock(w.label) : renderPsOnlyBlock(w.label);
+    }
     out += "<div class='card' style='padding:14px;margin-top:14px'>"
-      +"<div style='display:flex;align-items:center;gap:8px;margin-bottom:12px'>"
-      +"<div class='card-title' style='margin:0'>🏆 Top 10 — "+mainPs+"</div>"
-      +"<span style='font-size:10px;color:var(--txS);padding:2px 7px;border-radius:99px;border:.5px solid var(--border)'>Source Prestashop</span>"
-      +"</div>"
-      +renderPsOnlyBlock(mainPs);
-    const histPs = psOnlyWeeks.slice(1).map(w=>
-      "<details style='margin-top:8px'>"
-      +"<summary style='cursor:pointer;font-size:11px;color:var(--txS);font-weight:600;padding:4px 0'>Top 10 — "+w+" <span style='font-weight:400;color:var(--txT)'>(PS)</span></summary>"
-      +"<div style='margin-top:8px'>"+renderPsOnlyBlock(w)+"</div>"
-      +"</details>"
-    ).join("");
-    if (histPs) out += "<div style='border-top:1px solid var(--borderL);margin-top:12px;padding-top:8px'>"+histPs+"</div>";
+      + blockHeader(first)
+      + blockBody(first);
+    const hist = rest.map(w => {
+      const srcLabel = w.src==="ps" ? " <span style='font-weight:400;color:var(--txT)'>(PS)</span>" : "";
+      return "<details style='margin-top:8px'>"
+        +"<summary style='cursor:pointer;font-size:11px;color:var(--txS);font-weight:600;padding:4px 0'>Top 10 — "+w.label+srcLabel+"</summary>"
+        +"<div style='margin-top:8px'>"+blockBody(w)+"</div>"
+        +"</details>";
+    }).join("");
+    if (hist) out += "<div style='border-top:1px solid var(--borderL);margin-top:12px;padding-top:8px'>"+hist+"</div>";
     out += "</div>";
   }
 
