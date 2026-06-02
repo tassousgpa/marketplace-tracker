@@ -4344,8 +4344,13 @@ const AUDIT_SCORE_FORMULA = (r) => {
   const gdvScore   = tScore(r.gdv_couleur,1)+tScore(r.gdv_autre,1);
   const aplusScore = tScore(r.aplus_fiche,2)+tScore(r.aplus_video,1);
 
-  const rawTotal = titreTotal + descTotal + visTotal + gdvTotal + aplusTotal;
-  const score = rawTotal === 0 ? 0 : Math.round((titreScore + descScore + visScore + gdvScore + aplusScore) / 35 * 100);
+  // Score = 0 uniquement si aucun champ n'a jamais été saisi (tout null = non audité)
+  // N/A (null avec champ saisi) = note maximale — distinct de "non audité" grâce aux autres champs
+  const allNull = [r.titre_longueur,r.titre_marque,r.titre_collection,r.titre_couleur,r.titre_matiere,r.titre_fonctions,
+    r.desc_bullets_nb,r.desc_bullets_pertinence,r.desc_caract_tech,r.desc_dimensions,r.desc_colis,r.desc_textes_mkt,
+    r.visuels_fond_blanc,r.visuels_dimensions,r.visuels_lifestyle,r.visuels_zoom_matiere,r.visuels_fonction,r.visuels_qualite_carrousel,
+    r.gdv_couleur,r.gdv_autre,r.aplus_fiche,r.aplus_video].every(val => val === null || val === undefined || val === "");
+  const score = allNull ? 0 : Math.round((titreScore + descScore + visScore + gdvScore + aplusScore) / 35 * 100);
   return { titreTotal, descTotal, visTotal, gdvTotal, aplusTotal, score };
 };
 
