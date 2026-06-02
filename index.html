@@ -6715,17 +6715,13 @@ async function confirmSEAImport() {
       statusEl.innerHTML='<span style="color:var(--am)">Aucune ligne reconnue ('+ horsLigneCount +' lignes invalides). Vérifiez la console (F12) pour le détail.</span>';
       return;
     }
-    // Détection doublons
-    var existingQ = periodType === 'month'
-      ? "marketplace=eq."+MARKETPLACE+"&period_start=gte."+debut+"&period_end=lte."+fin+"&period_type=eq.week&select=id"
-      : "marketplace=eq."+MARKETPLACE+"&period_start=eq."+debut+"&period_type=eq."+periodType+"&select=id";
-    var existing = await sb("sea_product_stats", existingQ);
+    // Détection et suppression des données existantes pour cette période exacte
+    // Contrainte unique : (marketplace, ref, period_start, period_end, period_type)
+    var periodQ = "marketplace=eq."+MARKETPLACE+"&period_start=eq."+debut+"&period_end=eq."+fin+"&period_type=eq."+periodType;
+    var existing = await sb("sea_product_stats", periodQ+"&select=id");
     if (existing.length > 0) {
       if (!confirm(existing.length+" entrée(s) existante(s) pour cette période seront remplacées. Continuer ?")) { statusEl.innerHTML=''; return; }
-      var delQ = periodType === 'month'
-        ? "marketplace=eq."+MARKETPLACE+"&period_start=gte."+debut+"&period_end=lte."+fin+"&period_type=eq.week"
-        : "marketplace=eq."+MARKETPLACE+"&period_start=eq."+debut+"&period_type=eq."+periodType;
-      await sbDelete("sea_product_stats", delQ);
+      await sbDelete("sea_product_stats", periodQ);
     }
     // Construction du payload — impressions/clics/conversions arrondis à l'entier (bigint Supabase)
     var toInt = function(v) { return Math.round(v)||0; };
@@ -6743,7 +6739,7 @@ async function confirmSEAImport() {
       var batch = insertRows.slice(i, i+200);
       var resp = await fetch(SB_URL+"/rest/v1/sea_product_stats", {
         method:"POST",
-        headers:{"Content-Type":"application/json",apikey:SB_KEY,Authorization:"Bearer "+SB_KEY,Prefer:"return=minimal"},
+        headers:{"Content-Type":"application/json",apikey:SB_KEY,Authorization:"Bearer "+SB_KEY,Prefer:"return=minimal,resolution=merge-duplicates"},
         body:JSON.stringify(batch)
       });
       if (!resp.ok) {
