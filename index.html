@@ -6927,19 +6927,29 @@ async function parseSEAXLS(file) {
             handleRow(seaRef, parseNum(r[17]), parseNum(r[18]), parseNum(r[19]), parseNum(r[5]));
           });
         } else if (mp === 'conforama') {
-          // col J(9)=ref SEA (format V_XXXXX_REF → garder REF = partie après 2e _)
-          // col R(17)=Vues/Impressions · col S(18)=Clics · col V(21)=Budget (spend) · col W(22)=CA SEA → conversions = CA / prix produit
+          // col J(9)=ref SEA (V_XXXXX_REF → REF) · col R(17)=Vues · col S(18)=Clics · col V(21)=Budget · col W(22)=CA
+          // Conversions = CA total par SKU / prix (calcul APRÈS cumul pour éviter pertes d'arrondi ligne par ligne)
+          var confoCABySku = {};
           dataRows.forEach(function(r) {
             var rawRef = String(r[9]||'').trim();
-            // Nettoyer : V_98484_F92403292 → F92403292
             var parts = rawRef.split('_');
             var seaRef = parts.length >= 3 ? parts.slice(2).join('_') : rawRef;
             if (!seaRef) { horsLigneCount++; return; }
-            var caSea = parseNum(r[22]);
+            // Impressions, clics, budget : cumulés via handleRow (conv=0, calculé après)
+            handleRow(seaRef, parseNum(r[17]), parseNum(r[18]), 0, parseNum(r[21]));
+            // Accumuler le CA séparément pour calcul de conversions précis
             var sku = refMap[seaRef];
-            var price = sku ? priceMap[sku] : null;
-            var conv = (price && price > 0 && caSea > 0) ? Math.round(caSea / price) : 0;
-            handleRow(seaRef, parseNum(r[17]), parseNum(r[18]), conv, parseNum(r[21]));
+            if (sku && trackedSkus.has(sku)) {
+              var ca = parseNum(r[22]);
+              if (ca > 0) confoCABySku[sku] = (confoCABySku[sku]||0) + ca;
+            }
+          });
+          // Calcul conversions en une seule division sur le CA total — pas de perte d'arrondi
+          Object.keys(confoCABySku).forEach(function(sku) {
+            var price = priceMap[sku];
+            if (aggMap[sku] && price && price > 0) {
+              aggMap[sku].conversions = Math.round(confoCABySku[sku] / price);
+            }
           });
         }
 
