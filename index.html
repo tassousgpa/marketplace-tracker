@@ -6887,12 +6887,14 @@ async function parseSEAXLS(file) {
         function handleRow(seaRef, imp, clic, conv, bud) {
           if (!seaRef || isNA(seaRef)) { horsLigneCount++; return; }
           var sku = refMap[seaRef];
-          if (!sku || !trackedSkus.has(sku)) {
+          if (!sku) {
+            // Réf absente du fichier de correspondance → Autres
             noMatchCount++;
             addTo(autresAgg, imp, clic, conv, bud);
-            if (noMatchCount <= 5) console.log('[SEA Parse] Non suivi — ref:', seaRef, '/ sku:', sku||'?');
+            if (noMatchCount <= 5) console.log('[SEA Parse] Non trouvé corresp — ref:', seaRef);
             return;
           }
+          // Réf trouvée dans la correspondance : cumuler (source de vérité, indépendant de STATE.products)
           matchCount++;
           if (!aggMap[sku]) aggMap[sku] = { impressions:0, clics:0, conversions:0, budget:0 };
           addTo(aggMap[sku], imp, clic, conv, bud);
