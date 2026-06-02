@@ -750,7 +750,16 @@ function renderTabs() {
   const names = getTabNames();
   document.getElementById("tabs").innerHTML = names.map((t,i) => `<button class="tab ${i===STATE.tab?'active':''}" onclick="switchTab(${i})">${t}</button>`).join("");
 }
-function switchTab(i) { STATE.tab=i; renderTabs(); renderContent(); }
+function switchTab(i) {
+  if (i !== STATE.tab && isAuditTabActive() && Object.keys(auditPendingChanges).length > 0) {
+    showAuditUnsavedModal(
+      () => { STATE.tab=i; renderTabs(); renderContent(); },
+      () => { STATE.tab=i; renderTabs(); renderContent(); }
+    );
+    return;
+  }
+  STATE.tab=i; renderTabs(); renderContent();
+}
 function renderContent() {
   const el = document.getElementById("content");
   // Minimal marketplaces (Leroy Merlin, ManoMano) -> Synthèse CA uniquement, Audit, Opé., Gestion
@@ -4366,6 +4375,16 @@ let auditData = [];
 let auditFilters = { type: "all", categorie: "all", niveau: "all", canal: "all", search: "" };
 let auditColFilters = {};
 let auditSaving = {};
+let auditPendingChanges = {}; // { rowId: { field: { orig, cur } } }
+
+const AUDIT_SCORE_FIELDS = ["titre_longueur","titre_marque","titre_collection","titre_couleur","titre_matiere","titre_fonctions","desc_bullets_nb","desc_bullets_pertinence","desc_caract_tech","desc_dimensions","desc_colis","desc_textes_mkt","visuels_fond_blanc","visuels_dimensions","visuels_lifestyle","visuels_zoom_matiere","visuels_fonction","visuels_qualite_carrousel","gdv_couleur","gdv_autre","aplus_fiche","aplus_video"];
+
+const AUDIT_FIELD_LABELS = {
+  titre_longueur:'Long.',titre_marque:'Marque',titre_collection:'Collection',titre_couleur:'Couleur',titre_matiere:'Matière',titre_fonctions:'Fonctions',
+  desc_bullets_nb:'Bullets nb',desc_bullets_pertinence:'Pertinence',desc_caract_tech:'Caract. tech',desc_dimensions:'Dims desc.',desc_colis:'Colis',desc_textes_mkt:'Textes MKT',
+  visuels_fond_blanc:'Fond blanc',visuels_dimensions:'Dims vis.',visuels_lifestyle:'Lifestyle',visuels_zoom_matiere:'Zoom mat.',visuels_fonction:'Fonction',visuels_qualite_carrousel:'Carrousel',
+  gdv_couleur:'GDV Couleur',gdv_autre:'GDV Autre',aplus_fiche:'Fiche A+',aplus_video:'Vidéo'
+};
 
 async function loadAuditData() {
   try {
@@ -4380,6 +4399,7 @@ async function loadAuditData() {
 async function renderAudit() {
   const el = document.getElementById("content");
   el.innerHTML = `<div class="loading"><div class="loading-spinner"></div><div>Chargement de l'audit...</div></div>`;
+  auditPendingChanges = {};
   await loadAuditData();
   el.innerHTML = buildAuditHTML();
 }
@@ -4649,6 +4669,7 @@ function buildAuditHTML() {
     ]},
     { label:"SCORE", cols:[
       {key:"_score",label:"IDQ /100",w:70,editable:false,isScore:true},
+      {key:"_save",label:"",w:90,editable:false,isSave:true},
       {key:"_niveau",label:"Niveau",w:100,editable:false,isNiveau:true},
       {key:"plan_action",label:"Plan d'action",w:160,editable:true},
     ]},
@@ -4793,6 +4814,7 @@ function buildAuditRows(filteredList) {
     ]},
     {cols:[
       {key:"_score",w:70,editable:false,isScore:true},
+      {key:"_save",w:90,editable:false,isSave:true},
       {key:"_niveau",w:100,editable:false,isNiveau:true},
       {key:"plan_action",w:160,editable:false,isPlan:true},
     ]},
@@ -4833,6 +4855,7 @@ function buildAuditRows(filteredList) {
       _niveau:      niveau
     };
     const rowBg = i%2 ? 'var(--bg)' : 'var(--card)';
+    const hasPendingRow = !!(auditPendingChanges[r.id] && Object.keys(auditPendingChanges[r.id]).length > 0);
     const bg = i%2 ? "background:var(--bg)" : "";
 
     // Helper : injecte le sticky style dans la cellule si colonne IDENTIFICATION
@@ -4855,6 +4878,15 @@ function buildAuditRows(filteredList) {
         return '<td style="text-align:center;background:var(--borderL);padding:4px 6px;white-space:nowrap">'
           + '<span style="font-weight:800;font-size:14px;color:' + col + '">' + (s || "—") + '</span>'
           + '<button onclick="showAuditHistory(' + r.id + ',\'' + esc(r.sku) + '\')" title="Historique" style="background:none;border:none;cursor:pointer;font-size:12px;padding:0 2px;vertical-align:middle">📈</button>'
+          + '</td>';
+      }
+
+      if (c.isSave) {
+        const hasPending = !!(auditPendingChanges[r.id] && Object.keys(auditPendingChanges[r.id]).length > 0);
+        return '<td style="text-align:center;background:var(--borderL);padding:4px 6px">'
+          + '<button data-save-row="'+r.id+'" onclick="auditSaveRow('+r.id+')" '+(hasPending?'':'disabled ')
+          + 'style="padding:4px 10px;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:'+(hasPending?'pointer':'default')+';font-family:inherit;transition:all .15s;'
+          + (hasPending ? 'background:var(--gn);color:#fff' : 'background:var(--borderL);color:var(--txT);opacity:.5')+'">💾 Enreg.</button>'
           + '</td>';
       }
 
@@ -4913,7 +4945,7 @@ function buildAuditRows(filteredList) {
         const opts = '<option value=""'+(curVal===''?' selected':'')+'>—</option>'
           + Array.from({length: c.max+1}, (_,i) => '<option value="'+i+'"'+(curVal===String(i)?' selected':'')+'>'+i+'</option>').join('');
         return '<td style="text-align:center;padding:2px 3px">'
-          + '<select onchange="auditSaveCell('+r.id+',\''+c.key+'\',this.value)" style="width:'+(c.w-6)+'px;text-align:center;padding:2px 1px;border:none;border-bottom:.5px solid rgba(0,0,0,0.12);border-radius:0;font-size:11px;font-family:inherit;background:transparent;color:var(--tx);cursor:pointer;outline:none">'
+          + '<select onchange="auditMarkPending('+r.id+',\''+c.key+'\',this.value)" style="width:'+(c.w-6)+'px;text-align:center;padding:2px 1px;border:none;border-bottom:.5px solid rgba(0,0,0,0.12);border-radius:0;font-size:11px;font-family:inherit;background:transparent;color:var(--tx);cursor:pointer;outline:none">'
           + opts + '</select>'
           + '</td>';
       }
@@ -4927,12 +4959,125 @@ function buildAuditRows(filteredList) {
 
     }).join("");
 
-    return '<tr style="' + bg + ';border-bottom:1px solid var(--borderL)" id="audit-row-' + r.id + '">'
+    return '<tr style="' + bg + ';border-bottom:1px solid var(--borderL);'+(hasPendingRow?'outline:2px solid var(--am);outline-offset:-1px;':'')+'" id="audit-row-' + r.id + '">'
       + cells
       + '<td style="display:none"></td>'
       + '</tr>';
 
   }).join("");
+}
+
+function auditMarkPending(id, field, newValue) {
+  const row = auditData.find(r => r.id === id);
+  if (!row) return;
+  const parsed = newValue === "" ? null : newValue;
+  if (!auditPendingChanges[id]) auditPendingChanges[id] = {};
+  const existing = auditPendingChanges[id][field];
+  const origValue = existing !== undefined ? existing.orig : row[field];
+  row[field] = parsed;
+  const origStr = String(origValue ?? '');
+  const curStr = String(parsed ?? '');
+  if (origStr === curStr) {
+    delete auditPendingChanges[id][field];
+    if (Object.keys(auditPendingChanges[id]).length === 0) delete auditPendingChanges[id];
+  } else {
+    auditPendingChanges[id][field] = { orig: origValue, cur: parsed };
+  }
+  const rowEl = document.getElementById('audit-row-' + id);
+  if (rowEl) rowEl.outerHTML = buildAuditRows([row]);
+}
+
+async function auditSaveRow(id) {
+  const row = auditData.find(r => r.id === id);
+  if (!row) return;
+  const pending = auditPendingChanges[id];
+  if (!pending || !Object.keys(pending).length) return;
+  const btn = document.querySelector('[data-save-row="'+id+'"]');
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    const updateData = { updated_at: new Date().toISOString() };
+    Object.entries(pending).forEach(([f, {cur}]) => { updateData[f] = cur; });
+    await sbUpdate("audit_idq", "id=eq."+id, updateData);
+    const hasScoreChange = Object.keys(pending).some(f => AUDIT_SCORE_FIELDS.includes(f));
+    if (hasScoreChange) {
+      const calc = AUDIT_SCORE_FORMULA(row);
+      await sbInsert("audit_idq_history", {
+        audit_idq_id: id, marketplace: MARKETPLACE, sku: row.sku,
+        score_idq: calc.score, niveau: AUDIT_NIVEAU(calc.score),
+        semaine: row.semaine || null, recorded_at: new Date().toISOString()
+      });
+    }
+    delete auditPendingChanges[id];
+    const rowEl = document.getElementById('audit-row-' + id);
+    if (rowEl) rowEl.outerHTML = buildAuditRows([row]);
+  } catch(e) {
+    if (btn) { btn.disabled = false; btn.textContent = '💾'; }
+    console.error("Erreur sauvegarde ligne audit:", e.message);
+  }
+}
+
+async function auditSaveAllPending() {
+  const ids = Object.keys(auditPendingChanges);
+  for (const id of ids) await auditSaveRow(Number(id));
+}
+
+function isAuditTabActive() {
+  if (isMinimalMp()) return STATE.tab === 1;
+  if (MARKETPLACE === 'laredoute') return STATE.tab === 3;
+  if (isLightMp()) return STATE.tab === 4;
+  return STATE.tab === 6;
+}
+
+function showAuditUnsavedModal(onSave, onDiscard) {
+  const entries = Object.entries(auditPendingChanges);
+  const tableRows = entries.map(([id, changes]) => {
+    const row = auditData.find(r => String(r.id) === id);
+    const sku = row ? (row.sku || id) : id;
+    const nom = row ? (row.nom_produit || '') : '';
+    const diffs = Object.entries(changes).map(([f, {orig, cur}]) => {
+      const label = AUDIT_FIELD_LABELS[f] || f;
+      const o = orig === null || orig === undefined ? 'N/A' : orig;
+      const c = cur  === null || cur  === undefined ? 'N/A' : cur;
+      return '<span style="background:var(--amBg);color:var(--am);padding:1px 6px;border-radius:4px;font-size:10px;white-space:nowrap">'+esc(label)+' : '+o+' → <b>'+c+'</b></span>';
+    }).join(' ');
+    return '<tr style="border-bottom:1px solid var(--borderL)">'
+      + '<td style="padding:6px 10px;font-weight:600;white-space:nowrap;font-size:12px">'+esc(sku)+'</td>'
+      + '<td style="padding:6px 10px;color:var(--txS);font-size:11px;max-width:200px">'+esc(nom.slice(0,40))+'</td>'
+      + '<td style="padding:6px 10px;font-size:11px">'+diffs+'</td>'
+      + '</tr>';
+  }).join('');
+
+  const html = '<div style="font-size:13px;color:var(--tx);margin-bottom:14px">⚠️ <b>'+entries.length+' produit'+(entries.length>1?'s':'')+' avec des notes non enregistrées</b></div>'
+    + '<div style="overflow-x:auto;max-height:300px;overflow-y:auto;margin-bottom:16px"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+    + '<thead><tr style="background:var(--bg)"><th style="padding:6px 10px;text-align:left;font-size:11px;color:var(--txS)">SKU</th><th style="padding:6px 10px;text-align:left;font-size:11px;color:var(--txS)">Produit</th><th style="padding:6px 10px;text-align:left;font-size:11px;color:var(--txS)">Modifications</th></tr></thead>'
+    + '<tbody>'+tableRows+'</tbody></table></div>'
+    + '<div id="audit-unsaved-status" style="font-size:12px;color:var(--gn);min-height:18px;margin-bottom:10px;text-align:center"></div>'
+    + '<div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">'
+    + '<button onclick="auditUnsavedDiscard()" style="padding:8px 18px;border:.5px solid var(--border);border-radius:8px;font-size:12px;cursor:pointer;font-family:inherit;background:var(--bg);color:var(--txS)">Ignorer les modifications</button>'
+    + '<button onclick="auditUnsavedSaveAll()" style="padding:8px 18px;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--gn);color:#fff">✓ Tout enregistrer</button>'
+    + '</div>';
+
+  openModal("Notes non enregistrées", html);
+  window._auditUnsavedOnSave = onSave;
+  window._auditUnsavedOnDiscard = onDiscard;
+}
+
+async function auditUnsavedSaveAll() {
+  const statusEl = document.getElementById('audit-unsaved-status');
+  const btns = document.querySelectorAll('.modal button');
+  btns.forEach(b => b.disabled = true);
+  if (statusEl) statusEl.textContent = 'Enregistrement en cours…';
+  await auditSaveAllPending();
+  if (statusEl) statusEl.textContent = '✓ Enregistré !';
+  await new Promise(r => setTimeout(r, 800));
+  closeModal();
+  if (window._auditUnsavedOnSave) window._auditUnsavedOnSave();
+}
+
+function auditUnsavedDiscard() {
+  auditPendingChanges = {};
+  closeModal();
+  if (window._auditUnsavedOnDiscard) window._auditUnsavedOnDiscard();
 }
 
 async function auditSaveCell(id, field, value) {
