@@ -4416,6 +4416,64 @@ function applyAuditColFilters(list) {
   return list;
 }
 
+const _AUDIT_COL_LABELS = {
+  titre_longueur:'Long.',titre_marque:'Marque',titre_collection:'Collection',titre_couleur:'Couleur',titre_matiere:'Matière',titre_fonctions:'Fonctions',
+  desc_bullets_nb:'Bullets nb',desc_bullets_pertinence:'Pertinence',desc_caract_tech:'Caract. tech',desc_dimensions:'Dims desc.',desc_colis:'Colis',desc_textes_mkt:'Textes MKT',
+  visuels_fond_blanc:'Fond blanc',visuels_dimensions:'Dims vis.',visuels_lifestyle:'Lifestyle',visuels_zoom_matiere:'Zoom mat.',visuels_fonction:'Fonction',visuels_qualite_carrousel:'Carrousel',
+  gdv_couleur:'GDV Couleur',gdv_autre:'GDV Autre',aplus_fiche:'Fiche A+',aplus_video:'Vidéo'
+};
+
+function buildAuditColFilterTagsHTML() {
+  const active = Object.entries(auditColFilters).filter(([,v])=>!!v);
+  if (!active.length) return '<div id="audit-col-filter-tags"></div>';
+  const tags = active.map(([key, val]) => {
+    const label = _AUDIT_COL_LABELS[key] || key;
+    const dispVal = val === '__empty__' ? 'Vide' : val;
+    return '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px 2px 10px;border-radius:99px;font-size:11px;font-weight:500;background:var(--acBg);color:var(--ac);border:.5px solid var(--ac)">'
+      + label+' = '+dispVal
+      + '<button onclick="delete auditColFilters[\''+key+'\'];updateAuditFiltered()" style="background:none;border:none;cursor:pointer;font-size:13px;line-height:1;color:var(--ac);padding:0 0 0 2px;font-family:inherit">×</button></span>';
+  }).join('');
+  return '<div id="audit-col-filter-tags" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">'
+    + '<span style="font-size:11px;color:var(--txS);font-weight:600">Filtres colonnes :</span>'
+    + tags
+    + '<button onclick="auditColFilters={};updateAuditFiltered()" style="padding:2px 10px;border:.5px solid var(--border);border-radius:99px;font-size:11px;cursor:pointer;font-family:inherit;background:var(--bg);color:var(--txS)">Tout effacer</button>'
+    + '</div>';
+}
+
+let _auditFilterPopup = null;
+function openAuditColFilter(e, key, max) {
+  e.stopPropagation();
+  if (_auditFilterPopup) { _auditFilterPopup.remove(); _auditFilterPopup = null; }
+  const btn = e.currentTarget;
+  const rect = btn.getBoundingClientRect();
+  const curVal = auditColFilters[key] || '';
+  const popup = document.createElement('div');
+  popup.style.cssText = 'position:fixed;z-index:2000;background:var(--card);border:.5px solid var(--border);border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.18);padding:4px 0;min-width:110px;font-size:11px;font-family:DM Sans,sans-serif';
+  popup.style.top = (rect.bottom + 4) + 'px';
+  popup.style.left = Math.min(rect.left, window.innerWidth - 130) + 'px';
+  const options = [{val:'', label:'Tous'}, {val:'__empty__', label:'Vide (N/A)'}]
+    .concat(Array.from({length: max+1}, (_,i) => ({val:String(i), label:String(i)})));
+  options.forEach(opt => {
+    const item = document.createElement('div');
+    const isActive = curVal === opt.val;
+    item.style.cssText = 'padding:6px 14px;cursor:pointer;color:'+(isActive?'var(--ac)':'var(--tx)')+';font-weight:'+(isActive?'600':'400')+';white-space:nowrap;display:flex;align-items:center;gap:6px';
+    item.innerHTML = (isActive ? '<span style="font-size:10px">✓</span> ' : '<span style="font-size:10px;opacity:0"> </span> ') + esc(opt.label);
+    item.onmouseenter = () => { item.style.background = 'var(--bg)'; };
+    item.onmouseleave = () => { item.style.background = ''; };
+    item.onclick = () => {
+      if (opt.val === '') delete auditColFilters[key]; else auditColFilters[key] = opt.val;
+      popup.remove(); _auditFilterPopup = null;
+      updateAuditFiltered();
+    };
+    popup.appendChild(item);
+  });
+  document.body.appendChild(popup);
+  _auditFilterPopup = popup;
+  setTimeout(() => {
+    document.addEventListener('click', function _close() { popup.remove(); _auditFilterPopup = null; document.removeEventListener('click', _close); }, {once:true});
+  }, 0);
+}
+
 function updateAuditFiltered() {
   const skuToCanal = {};
   (STATE.products||[]).forEach(p=>{ if(p.sku) skuToCanal[p.sku] = p.canal_attribue||""; });
@@ -4435,6 +4493,15 @@ function updateAuditFiltered() {
   if (tbodyEl) tbodyEl.innerHTML = buildAuditRows(list);
   const countEl = document.querySelector("#audit-count-label");
   if (countEl) countEl.textContent = list.length+" référence"+(list.length>1?"s":"");
+  // Rafraîchir les tags de filtres colonnes
+  const tagsEl = document.getElementById('audit-col-filter-tags');
+  if (tagsEl) tagsEl.outerHTML = buildAuditColFilterTagsHTML();
+  // Mettre à jour les icônes des colonnes filtrées
+  document.querySelectorAll('[data-acf-key]').forEach(btn => {
+    const k = btn.getAttribute('data-acf-key');
+    btn.style.color = auditColFilters[k] ? 'var(--ac)' : 'var(--txT)';
+    btn.style.opacity = auditColFilters[k] ? '1' : '0.35';
+  });
 }
 
 function buildAuditHTML() {
@@ -4613,28 +4680,26 @@ function buildAuditHTML() {
     return '<th colspan="'+g.cols.length+'" style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;text-align:center;border-right:1px solid var(--border);position:sticky;top:0;z-index:'+(isIdent?6:4)+';background:var(--bg)'+(isIdent?';left:0':'')+'">'+g.label+'</th>';
   }).join("");
 
-  // Ligne 2 : colonnes (sticky top:28px + filtres pour colonnes de notes)
+  // Ligne 2 : colonnes (sticky top:28px) — icône filtre cliquable pour colonnes de notes
   const thRow2 = allCols.map(c => {
     const isIdent = c.stickyLeft !== undefined;
     const bg = (c.isTotal||c.isScore) ? 'var(--borderL)' : 'var(--bg)';
     let stickyStyle = 'position:sticky;top:28px;z-index:'+(isIdent?6:4)+';background:'+bg;
     if (isIdent) stickyStyle += ';left:'+c.stickyLeft+'px';
     if (c.isLastIdent) stickyStyle += ';border-right:2px solid var(--border)';
-    let filterHtml = '';
+    let filterBtn = '';
     if (c.max !== undefined) {
-      const curFilt = auditColFilters[c.key] || '';
-      const opts = '<option value=""'+(curFilt===''?' selected':'')+'>—</option>'
-        + '<option value="__empty__"'+(curFilt==='__empty__'?' selected':'')+'>Vide</option>'
-        + Array.from({length: c.max+1}, (_,i) => '<option value="'+i+'"'+(curFilt===String(i)?' selected':'')+'>'+i+'</option>').join('');
-      filterHtml = '<br><select onchange="auditColFilters[\''+c.key+'\']=this.value;updateAuditFiltered()" style="font-size:9px;padding:1px 2px;border:.5px solid var(--border);border-radius:3px;background:var(--bg);margin-top:2px;width:100%;max-width:54px;font-family:inherit">'+opts+'</select>';
+      const hasFilter = !!(auditColFilters[c.key]);
+      filterBtn = ' <button data-acf-key="'+c.key+'" onclick="openAuditColFilter(event,\''+c.key+'\','+c.max+')" title="Filtrer" style="background:none;border:none;cursor:pointer;font-size:9px;padding:0 1px;vertical-align:middle;color:'+(hasFilter?'var(--ac)':'var(--txT)')+';opacity:'+(hasFilter?'1':'0.35')+'">▼</button>';
     }
-    return '<th style="padding:4px 6px;font-size:10px;font-weight:600;color:var(--txS);white-space:nowrap;min-width:'+c.w+'px;text-align:center;'+stickyStyle+'">'+(c.label||'')+filterHtml+'</th>';
+    return '<th style="padding:6px 8px;font-size:10px;font-weight:600;color:var(--txS);white-space:nowrap;min-width:'+c.w+'px;text-align:center;'+stickyStyle+'">'+(c.label||'')+filterBtn+'</th>';
   }).join("");
 
   const thead = '<thead><tr style="background:var(--bg);border-bottom:1px solid var(--borderL)">'+thRow1+'<th style="padding:6px 10px;position:sticky;top:0;z-index:3;background:var(--bg)"></th></tr>'
     +'<tr style="background:var(--bg);border-bottom:2px solid var(--border)">'+thRow2+'<th style="position:sticky;top:28px;z-index:3;background:var(--bg)"></th></tr></thead>';
 
   const html = synthese + filters +
+    buildAuditColFilterTagsHTML() +
     '<div id="audit-scroll-top" style="position:sticky;top:0;z-index:10;overflow-x:auto;overflow-y:hidden;height:10px;background:var(--bg);border-bottom:1px solid var(--borderL)"><div id="audit-scroll-phantom" style="height:1px"></div></div>' +
     '<div class="card" style="padding:0;overflow:hidden"><div class="scroll-table" id="audit-scroll-body">' +
     '<table id="audit-table" style="min-width:'+totalW+'px;border-collapse:collapse;font-size:11px">' +
@@ -4845,10 +4910,10 @@ function buildAuditRows(filteredList) {
       // Dropdown pour les champs de note (max défini)
       if (c.max !== undefined) {
         const curVal = (v === "" || v === null) ? "" : String(v);
-        const opts = '<option value=""'+(curVal===''?' selected':'')+'>N/A</option>'
+        const opts = '<option value=""'+(curVal===''?' selected':'')+'>—</option>'
           + Array.from({length: c.max+1}, (_,i) => '<option value="'+i+'"'+(curVal===String(i)?' selected':'')+'>'+i+'</option>').join('');
-        return '<td style="text-align:center;padding:2px 4px">'
-          + '<select onchange="auditSaveCell('+r.id+',\''+c.key+'\',this.value)" style="width:'+(c.w-6)+'px;text-align:center;padding:3px 2px;border:.5px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:transparent">'
+        return '<td style="text-align:center;padding:2px 3px">'
+          + '<select onchange="auditSaveCell('+r.id+',\''+c.key+'\',this.value)" style="width:'+(c.w-6)+'px;text-align:center;padding:2px 1px;border:none;border-bottom:.5px solid rgba(0,0,0,0.12);border-radius:0;font-size:11px;font-family:inherit;background:transparent;color:var(--tx);cursor:pointer;outline:none">'
           + opts + '</select>'
           + '</td>';
       }
