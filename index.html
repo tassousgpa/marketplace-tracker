@@ -4653,12 +4653,12 @@ function buildAuditHTML() {
       {key:"plan_action",label:"Plan d'action",w:160,editable:true},
     ]},
     { label:"COMMENTAIRES", cols:[
-      {key:"commentaire_1",label:"Titre",w:140,editable:true},
-      {key:"commentaire_2",label:"Description",w:140,editable:true},
-      {key:"commentaire_3",label:"Visuels",w:140,editable:true},
-      {key:"commentaire_4",label:"GDV",w:140,editable:true},
-      {key:"commentaire_5",label:"Fiche A+",w:140,editable:true},
-      {key:"commentaire_6",label:"Divers",w:140,editable:true},
+      {key:"commentaire_5",label:"Titre",w:140,editable:true},
+      {key:"commentaire_6",label:"Description",w:140,editable:true},
+      {key:"commentaire_1",label:"Visuels",w:140,editable:true},
+      {key:"commentaire_2",label:"GDV",w:140,editable:true},
+      {key:"commentaire_3",label:"Fiche A+",w:140,editable:true},
+      {key:"commentaire_4",label:"Divers",w:140,editable:true},
     ]},
   ];
 
@@ -4797,12 +4797,12 @@ function buildAuditRows(filteredList) {
       {key:"plan_action",w:160,editable:false,isPlan:true},
     ]},
     {cols:[
-      {key:"commentaire_1",w:160,editable:true,isTextarea:true},
-      {key:"commentaire_2",w:160,editable:true,isTextarea:true},
-      {key:"commentaire_3",w:160,editable:true,isTextarea:true},
-      {key:"commentaire_4",w:160,editable:true,isTextarea:true},
-      {key:"commentaire_5",w:160,editable:true,isTextarea:true},
-      {key:"commentaire_6",w:160,editable:true,isTextarea:true},
+      {key:"commentaire_5",w:140,editable:true,isTextarea:true},
+      {key:"commentaire_6",w:140,editable:true,isTextarea:true},
+      {key:"commentaire_1",w:140,editable:true,isTextarea:true},
+      {key:"commentaire_2",w:140,editable:true,isTextarea:true},
+      {key:"commentaire_3",w:140,editable:true,isTextarea:true},
+      {key:"commentaire_4",w:140,editable:true,isTextarea:true},
     ]},
   ];
 
@@ -5344,8 +5344,8 @@ async function parseAuditXLS(file, semaine) {
             commentaire_2: str(r[41]),
             commentaire_3: str(r[42]),
             commentaire_4: str(r[43]),
-            commentaire_5: str(r[44]),
-            commentaire_6: str(r[45]),
+            commentaire_5: str(r[38]),
+            commentaire_6: str(r[39]),
             semaine: semaine,
           });
         }
@@ -5383,7 +5383,7 @@ function exportAuditCSV() {
     const calc = AUDIT_SCORE_FORMULA(r);
     const niveau = AUDIT_NIVEAU(calc.score);
     const pa = calc.score >= 90 ? "OK — Surveiller" : calc.score >= 75 ? "Ajustements mineurs" : calc.score >= 50 ? "Optimisation contenu + visuels" : "Refonte complète urgente";
-    return [r.sku,r.nom_produit,r.marketplace,r.lien_mkp,r.categorie,r.type_ref,r.titre_longueur,r.titre_marque,r.titre_collection,r.titre_couleur,r.titre_matiere,r.titre_fonctions,calc.titreTotal,r.desc_bullets_nb,r.desc_bullets_pertinence,r.desc_caract_tech,r.desc_dimensions,r.desc_colis,r.desc_textes_mkt,calc.descTotal,r.visuels_fond_blanc,r.visuels_dimensions,r.visuels_lifestyle,r.visuels_zoom_matiere,r.visuels_fonction,r.visuels_qualite_carrousel,calc.visTotal,r.gdv_couleur,r.gdv_autre,calc.gdvTotal,r.aplus_fiche,r.aplus_video,calc.aplusTotal,calc.score,niveau,pa,r.commentaire_1,r.commentaire_2,r.commentaire_3,r.commentaire_4,r.commentaire_5,r.commentaire_6,r.semaine];
+    return [r.sku,r.nom_produit,r.marketplace,r.lien_mkp,r.categorie,r.type_ref,r.titre_longueur,r.titre_marque,r.titre_collection,r.titre_couleur,r.titre_matiere,r.titre_fonctions,calc.titreTotal,r.desc_bullets_nb,r.desc_bullets_pertinence,r.desc_caract_tech,r.desc_dimensions,r.desc_colis,r.desc_textes_mkt,calc.descTotal,r.visuels_fond_blanc,r.visuels_dimensions,r.visuels_lifestyle,r.visuels_zoom_matiere,r.visuels_fonction,r.visuels_qualite_carrousel,calc.visTotal,r.gdv_couleur,r.gdv_autre,calc.gdvTotal,r.aplus_fiche,r.aplus_video,calc.aplusTotal,calc.score,niveau,pa,r.commentaire_5,r.commentaire_6,r.commentaire_1,r.commentaire_2,r.commentaire_3,r.commentaire_4,r.semaine];
   });
   const csvCell = v => { const s = String(v??''); return s.includes(';')||s.includes('"')||s.includes('\n') ? `"${s.replace(/"/g,'""')}"` : s; };
   const csv = [headers,...rows].map(row=>row.map(csvCell).join(';')).join('\n');
