@@ -4335,7 +4335,8 @@ const AUDIT_SCORE_FORMULA = (r) => {
   const gdvScore   = tScore(r.gdv_couleur,1)+tScore(r.gdv_autre,1);
   const aplusScore = tScore(r.aplus_fiche,2)+tScore(r.aplus_video,1);
 
-  const score = Math.round((titreScore + descScore + visScore + gdvScore + aplusScore) / 35 * 100);
+  const rawTotal = titreTotal + descTotal + visTotal + gdvTotal + aplusTotal;
+  const score = rawTotal === 0 ? 0 : Math.round((titreScore + descScore + visScore + gdvScore + aplusScore) / 35 * 100);
   return { titreTotal, descTotal, visTotal, gdvTotal, aplusTotal, score };
 };
 
