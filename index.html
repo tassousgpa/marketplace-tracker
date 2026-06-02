@@ -4317,7 +4317,7 @@ async function confirmImport() {
 // =============================================
 
 const AUDIT_SCORE_FORMULA = (r) => {
-  const v = val => (val === null || val === undefined || val === "") ? null : parseFloat(val);
+  const v = val => { if (val === null || val === undefined || val === "") return null; const n = parseFloat(val); return isNaN(n) ? null : n; };
   // NULL = max du critère (N/A = non applicable = meilleur score, convention Excel)
   const t = (val, max) => { const n = v(val); return n === null ? (max||0) : n; };
   const tScore = (val, max) => { const n = v(val); return n === null ? (max||0) : n; };
@@ -4364,6 +4364,7 @@ const AUDIT_NIVEAU_BG = (niveau) => ({
 
 let auditData = [];
 let auditFilters = { type: "all", categorie: "all", niveau: "all", canal: "all", search: "" };
+let auditColFilters = {};
 let auditSaving = {};
 
 async function loadAuditData() {
@@ -4403,6 +4404,18 @@ function buildAuditKpiCardsHTML(list) {
     </div>`).join("")}`;
 }
 
+function applyAuditColFilters(list) {
+  Object.entries(auditColFilters).forEach(([key, fval]) => {
+    if (!fval) return;
+    if (fval === '__empty__') {
+      list = list.filter(r => r[key] === null || r[key] === undefined || r[key] === "");
+    } else {
+      list = list.filter(r => String(r[key] ?? "") === fval);
+    }
+  });
+  return list;
+}
+
 function updateAuditFiltered() {
   const skuToCanal = {};
   (STATE.products||[]).forEach(p=>{ if(p.sku) skuToCanal[p.sku] = p.canal_attribue||""; });
@@ -4415,6 +4428,7 @@ function updateAuditFiltered() {
     const s = auditFilters.search.toLowerCase();
     list = list.filter(r=>(r.sku||"").toLowerCase().includes(s)||(r.nom_produit||"").toLowerCase().includes(s));
   }
+  list = applyAuditColFilters(list);
   const kpiEl = document.getElementById("audit-kpi-section");
   if (kpiEl) kpiEl.innerHTML = buildAuditKpiCardsHTML(list);
   const tbodyEl = document.getElementById("audit-tbody");
@@ -4442,12 +4456,13 @@ function buildAuditHTML() {
     const s = auditFilters.search.toLowerCase();
     list = list.filter(r=>(r.sku||"").toLowerCase().includes(s)||(r.nom_produit||"").toLowerCase().includes(s));
   }
+  list = applyAuditColFilters(list);
 
   const niveaux = ["🔴 Critique","🟡 À optimiser","🟢 Conforme","⭐ Excellence"];
   const categories = [...new Set(auditData.map(r=>r.categorie).filter(Boolean))];
   const types = [...new Set(auditData.map(r=>r.type_ref).filter(Boolean))];
   const canaux = [...new Set(auditData.map(r=>skuToCanal[r.sku]||"").filter(Boolean))].sort();
-  const isFiltered = auditFilters.niveau!=="all"||auditFilters.type!=="all"||auditFilters.categorie!=="all"||auditFilters.canal!=="all"||auditFilters.search;
+  const isFiltered = auditFilters.niveau!=="all"||auditFilters.type!=="all"||auditFilters.categorie!=="all"||auditFilters.canal!=="all"||auditFilters.search||Object.values(auditColFilters).some(v=>!!v);
 
   const synthese = `
   <div class="card" style="margin-bottom:14px">
@@ -4509,7 +4524,7 @@ function buildAuditHTML() {
       ${niveaux.map(n=>`<option value="${esc(n)}" ${auditFilters.niveau===n?"selected":""}>${esc(n)}</option>`).join("")}
     </select>
     ${isFiltered
-      ?`<button onclick="auditFilters={type:'all',categorie:'all',niveau:'all',canal:'all',search:''};document.getElementById('content').innerHTML=buildAuditHTML()" style="padding:6px 12px;border:.5px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg);cursor:pointer;font-family:inherit">✕ Reset</button>`:""}
+      ?`<button onclick="auditFilters={type:'all',categorie:'all',niveau:'all',canal:'all',search:''};auditColFilters={};document.getElementById('content').innerHTML=buildAuditHTML()" style="padding:6px 12px;border:.5px solid var(--border);border-radius:6px;font-size:12px;background:var(--bg);cursor:pointer;font-family:inherit">✕ Reset</button>`:""}
   </div>
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">
     <div id="audit-count-label" style="font-size:12px;color:var(--txS)">${list.length} référence${list.length>1?"s":""}</div>
@@ -4580,35 +4595,68 @@ function buildAuditHTML() {
     ]},
   ];
 
+  // Marquer colonnes IDENTIFICATION comme sticky-left
+  let _cumLeft = 0;
+  colGroups[0].cols.forEach((c, ci) => {
+    c.stickyLeft = _cumLeft;
+    c.isLastIdent = ci === colGroups[0].cols.length - 1;
+    _cumLeft += c.w;
+  });
+  const identWidth = _cumLeft;
+
   const allCols = colGroups.flatMap(g=>g.cols);
   const totalW = allCols.reduce((s,c)=>s+c.w,0)+60;
 
-  const thRow1 = colGroups.map(g=>'<th colspan="'+g.cols.length+'" style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;text-align:center;border-right:1px solid var(--border)">'+g.label+'</th>').join("");
-  const thRow2 = allCols.map(c=>'<th style="padding:6px 8px;font-size:10px;font-weight:600;color:var(--txS);white-space:nowrap;min-width:'+c.w+'px;text-align:center'+(c.isTotal||c.isScore?';background:var(--borderL)':'')+'">'+(c.label||'')+'</th>').join("");
-  const thead = '<thead><tr style="background:var(--bg);border-bottom:1px solid var(--borderL)">'+thRow1+'<th style="padding:6px 10px"></th></tr><tr style="background:var(--bg);border-bottom:2px solid var(--border)">'+thRow2+'<th style="display:none"></th></tr></thead>';
+  // Ligne 1 : groupes (sticky top:0)
+  const thRow1 = colGroups.map((g, gi) => {
+    const isIdent = gi === 0;
+    return '<th colspan="'+g.cols.length+'" style="padding:6px 10px;font-size:10px;font-weight:700;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;text-align:center;border-right:1px solid var(--border);position:sticky;top:0;z-index:'+(isIdent?6:4)+';background:var(--bg)'+(isIdent?';left:0':'')+'">'+g.label+'</th>';
+  }).join("");
 
-  return synthese + filters +
-    '<div id="audit-scroll-top" style="overflow-x:auto;overflow-y:hidden;height:12px;margin-bottom:2px"><div style="height:1px"></div></div>' +
-    '<div class="card" style="padding:0;overflow:hidden"><div class="scroll-table">' +
+  // Ligne 2 : colonnes (sticky top:28px + filtres pour colonnes de notes)
+  const thRow2 = allCols.map(c => {
+    const isIdent = c.stickyLeft !== undefined;
+    const bg = (c.isTotal||c.isScore) ? 'var(--borderL)' : 'var(--bg)';
+    let stickyStyle = 'position:sticky;top:28px;z-index:'+(isIdent?6:4)+';background:'+bg;
+    if (isIdent) stickyStyle += ';left:'+c.stickyLeft+'px';
+    if (c.isLastIdent) stickyStyle += ';border-right:2px solid var(--border)';
+    let filterHtml = '';
+    if (c.max !== undefined) {
+      const curFilt = auditColFilters[c.key] || '';
+      const opts = '<option value=""'+(curFilt===''?' selected':'')+'>—</option>'
+        + '<option value="__empty__"'+(curFilt==='__empty__'?' selected':'')+'>Vide</option>'
+        + Array.from({length: c.max+1}, (_,i) => '<option value="'+i+'"'+(curFilt===String(i)?' selected':'')+'>'+i+'</option>').join('');
+      filterHtml = '<br><select onchange="auditColFilters[\''+c.key+'\']=this.value;updateAuditFiltered()" style="font-size:9px;padding:1px 2px;border:.5px solid var(--border);border-radius:3px;background:var(--bg);margin-top:2px;width:100%;max-width:54px;font-family:inherit">'+opts+'</select>';
+    }
+    return '<th style="padding:4px 6px;font-size:10px;font-weight:600;color:var(--txS);white-space:nowrap;min-width:'+c.w+'px;text-align:center;'+stickyStyle+'">'+(c.label||'')+filterHtml+'</th>';
+  }).join("");
+
+  const thead = '<thead><tr style="background:var(--bg);border-bottom:1px solid var(--borderL)">'+thRow1+'<th style="padding:6px 10px;position:sticky;top:0;z-index:3;background:var(--bg)"></th></tr>'
+    +'<tr style="background:var(--bg);border-bottom:2px solid var(--border)">'+thRow2+'<th style="position:sticky;top:28px;z-index:3;background:var(--bg)"></th></tr></thead>';
+
+  const html = synthese + filters +
+    '<div id="audit-scroll-top" style="position:sticky;top:0;z-index:10;overflow-x:auto;overflow-y:hidden;height:10px;background:var(--bg);border-bottom:1px solid var(--borderL)"><div id="audit-scroll-phantom" style="height:1px"></div></div>' +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="scroll-table" id="audit-scroll-body">' +
     '<table id="audit-table" style="min-width:'+totalW+'px;border-collapse:collapse;font-size:11px">' +
     thead +
     '<tbody id="audit-tbody">'+buildAuditRows(list)+'</tbody>' +
     '</table></div></div>';
 
-  // Appliquer zoom initial après render
+  // Setup zoom et sync scrollbar après render
   setTimeout(() => {
     const t = document.getElementById('audit-table');
     if (t) t.style.fontSize = '85%';
-    // Sync scroll haut ↔ bas
-    const scrollWrap = document.querySelector('.scroll-table');
+    const scrollBody = document.getElementById('audit-scroll-body');
     const topBar = document.getElementById('audit-scroll-top');
-    if (scrollWrap && topBar) {
-      const inner = topBar.querySelector('div');
-      if (inner) inner.style.width = scrollWrap.scrollWidth + 'px';
-      topBar.addEventListener('scroll', () => { scrollWrap.scrollLeft = topBar.scrollLeft; });
-      scrollWrap.addEventListener('scroll', () => { topBar.scrollLeft = scrollWrap.scrollLeft; });
+    const phantom = document.getElementById('audit-scroll-phantom');
+    if (scrollBody && topBar && phantom) {
+      phantom.style.width = scrollBody.scrollWidth + 'px';
+      topBar.addEventListener('scroll', () => { scrollBody.scrollLeft = topBar.scrollLeft; });
+      scrollBody.addEventListener('scroll', () => { topBar.scrollLeft = scrollBody.scrollLeft; });
     }
   }, 50);
+
+  return html;
 }
 
 function buildAuditRows(filteredList) {
@@ -4625,6 +4673,7 @@ function buildAuditRows(filteredList) {
       const s = auditFilters.search.toLowerCase();
       list = list.filter(r=>(r.sku||"").toLowerCase().includes(s)||(r.nom_produit||"").toLowerCase().includes(s));
     }
+    list = applyAuditColFilters(list);
   }
 
   // Lookup canal pour les lignes
@@ -4691,6 +4740,15 @@ function buildAuditRows(filteredList) {
       {key:"commentaire_6",w:160,editable:true,isTextarea:true},
     ]},
   ];
+
+  // Marquer colonnes IDENTIFICATION comme sticky-left
+  let _cl = 0;
+  colGroups[0].cols.forEach((c, ci) => {
+    c.stickyLeft = _cl;
+    c.isLastIdent = ci === colGroups[0].cols.length - 1;
+    _cl += c.w;
+  });
+
   const allCols = colGroups.flatMap(g=>g.cols);
 
   if (!list.length) {
@@ -4709,7 +4767,15 @@ function buildAuditRows(filteredList) {
       _score:       calc.score,
       _niveau:      niveau
     };
+    const rowBg = i%2 ? 'var(--bg)' : 'var(--card)';
     const bg = i%2 ? "background:var(--bg)" : "";
+
+    // Helper : injecte le sticky style dans la cellule si colonne IDENTIFICATION
+    function stickyWrap(cellHtml, c) {
+      if (c.stickyLeft === undefined) return cellHtml;
+      const extra = 'position:sticky;left:'+c.stickyLeft+'px;z-index:2;background:'+rowBg+';'+(c.isLastIdent?'border-right:2px solid var(--border);':'');
+      return cellHtml.replace('<td style="', '<td style="'+extra);
+    }
 
     const cells = allCols.map(function(c) {
 
@@ -4743,21 +4809,21 @@ function buildAuditRows(filteredList) {
 
       if (c.isCanal) {
         const cv = skuToCanal[r.sku] || "";
-        return '<td style="text-align:center;padding:4px 6px">'
+        return stickyWrap('<td style="text-align:center;padding:4px 6px">'
           + (cv ? '<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:var(--acBg);color:var(--ac)">' + esc(cv) + '</span>' : '<span style="color:var(--txT);font-size:10px">—</span>')
-          + '</td>';
+          + '</td>', c);
       }
 
       if (c.isLink) {
         const v = r[c.key] || "";
         const isReal = v && v !== "Pas en ligne" && v.startsWith("http");
-        return '<td style="text-align:center;padding:4px 6px">'
+        return stickyWrap('<td style="text-align:center;padding:4px 6px">'
           + (isReal ? '<a href="' + esc(v) + '" target="_blank" class="link">Voir ↗</a>' : '<span style="color:var(--txT);font-size:10px">—</span>')
-          + '</td>';
+          + '</td>', c);
       }
 
       if (!c.editable) {
-        return '<td style="padding:4px 8px;font-size:12px;font-weight:500">' + esc(String(r[c.key] || "")) + '</td>';
+        return stickyWrap('<td style="padding:4px 8px;font-size:12px;font-weight:500">' + esc(String(r[c.key] || "")) + '</td>', c);
       }
 
       if (c.isSelect) {
@@ -4767,21 +4833,23 @@ function buildAuditRows(filteredList) {
           const sel = ((isOther && o === 'Autre') || v === o) ? ' selected' : '';
           return '<option value="' + esc(o) + '"' + sel + '>' + esc(o) + '</option>';
         }).join("");
-        return '<td style="padding:2px 4px;min-width:' + c.w + 'px">'
+        return stickyWrap('<td style="padding:2px 4px;min-width:' + c.w + 'px">'
           + '<select onchange="auditHandleSelect(' + r.id + ',\'' + c.key + '\',this.value,this)" style="width:100%;padding:3px 4px;border:.5px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:transparent">'
-          + opts
-          + '</select>'
+          + opts + '</select>'
           + (isOther ? '<input value="' + esc(v) + '" style="width:100%;margin-top:2px;padding:2px 4px;border:.5px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit" onblur="auditSaveCell(' + r.id + ',\'' + c.key + '\',this.value)" onkeydown="if(event.key===\'Enter\')this.blur()">' : "")
-          + '</td>';
+          + '</td>', c);
       }
 
       const v = (r[c.key] !== null && r[c.key] !== undefined) ? r[c.key] : "";
 
+      // Dropdown pour les champs de note (max défini)
       if (c.max !== undefined) {
+        const curVal = (v === "" || v === null) ? "" : String(v);
+        const opts = '<option value=""'+(curVal===''?' selected':'')+'>N/A</option>'
+          + Array.from({length: c.max+1}, (_,i) => '<option value="'+i+'"'+(curVal===String(i)?' selected':'')+'>'+i+'</option>').join('');
         return '<td style="text-align:center;padding:2px 4px">'
-          + '<input type="text" value="' + esc(String(v)) + '" style="width:' + (c.w - 10) + 'px;text-align:center;padding:3px 4px;border:.5px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:transparent" title="Max: ' + c.max + '"'
-          + ' onblur="auditSaveCell(' + r.id + ',\'' + c.key + '\',this.value)"'
-          + ' onkeydown="if(event.key===\'Enter\')this.blur()">'
+          + '<select onchange="auditSaveCell('+r.id+',\''+c.key+'\',this.value)" style="width:'+(c.w-6)+'px;text-align:center;padding:3px 2px;border:.5px solid var(--border);border-radius:4px;font-size:11px;font-family:inherit;background:transparent">'
+          + opts + '</select>'
           + '</td>';
       }
 
