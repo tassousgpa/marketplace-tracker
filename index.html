@@ -395,9 +395,10 @@ function normalizeKeyword(kw) {
 const TAB_NAMES = ["Synthèse","Produits","Historique","Positions","Concurrents","Anomalies","Audit","Opé. Commerciales","Gestion"];
 const TAB_NAMES_LIGHT = ["Synthèse","Produits","Historique","Anomalies","Audit","Opé. Commerciales","Gestion"];
 const TAB_NAMES_MINIMAL = ["Synthèse","Audit","Opé. Commerciales","Gestion"];
+const TAB_NAMES_MINIMAL_SEA = ["Synthèse","Audit","Opé. Commerciales","Gestion","SEA"];
 const LAREDOUTE_TABS = ["Synthèse","Positions","Concurrents","Audit","Opé. Commerciales","Gestion"];
 const MINIMAL_MP = new Set(["leroymerlin","manomano"]);
-const SEA_MP = new Set(["cdiscount","but","maisonsdumonde"]);
+const SEA_MP = new Set(["cdiscount","but","maisonsdumonde","conforama","manomano"]);
 const TAB_NAMES_SEA = ["Synthèse","Produits","Historique","Positions","Concurrents","Anomalies","Audit","Opé. Commerciales","Gestion","SEA"];
 
 function isLightMp() { return NO_POSITIONS_MP.has(MARKETPLACE); }
@@ -413,7 +414,7 @@ function stripUrlParams(s) {
   return s;
 }
 function getTabNames() {
-  if (isMinimalMp()) return TAB_NAMES_MINIMAL;
+  if (isMinimalMp()) return SEA_MP.has(MARKETPLACE) ? TAB_NAMES_MINIMAL_SEA : TAB_NAMES_MINIMAL;
   if (MARKETPLACE === "laredoute") return LAREDOUTE_TABS;
   if (isLightMp()) return TAB_NAMES_LIGHT;
   if (SEA_MP.has(MARKETPLACE)) return TAB_NAMES_SEA;
@@ -762,13 +763,14 @@ function switchTab(i) {
 }
 function renderContent() {
   const el = document.getElementById("content");
-  // Minimal marketplaces (Leroy Merlin, ManoMano) -> Synthèse CA uniquement, Audit, Opé., Gestion
+  // Minimal marketplaces (Leroy Merlin, ManoMano) -> Synthèse CA uniquement, Audit, Opé., Gestion [+ SEA si activé]
   if (isMinimalMp()) {
     switch(STATE.tab) {
       case 0: el.innerHTML = renderSyntheseMinimal(); break;
       case 1: renderAudit(); break;
       case 2: renderOpeCommerciales(); break;
       case 3: el.innerHTML = renderGestion(); break;
+      case 4: if (SEA_MP.has(MARKETPLACE)) renderSEA(); break;
       default: el.innerHTML = '';
     }
     return;
@@ -6672,9 +6674,11 @@ function openSEAImport() {
   var today = new Date().toISOString().slice(0,10);
   var mpLabel = (MARKETPLACES.find(function(m){return m.id===MARKETPLACE;})||{label:MARKETPLACE}).label;
   var fmtInfo = {
-    cdiscount: 'col A = réf SEA (BES...) · col C = Imp · col D = Clics · col F = Budget · col H = Conv',
-    maisonsdumonde: 'col B = réf SEA (M...) · col G = Imp · col H = Clics · col I = Budget · col J = Conv',
-    but: 'col J = réf SEA (préfixe 2177_ supprimé auto.) · col M = Imp · col N = Clics · col S = CA TTC'
+    cdiscount:      'col A = réf SEA (BES...) · col C = Imp · col D = Clics · col F = Budget · col H = Conv',
+    maisonsdumonde: 'col B = réf SEA · col G = Imp · col H = Clics · col I = Budget · col J = Conv',
+    but:            'col J = réf SEA (préfixe 2177_ supprimé auto.) · col M = Imp · col N = Clics · col S = CA TTC → conv auto.',
+    manomano:       'col C = SKU BestMobilier (rapprochement auto.) · col F = Dépenses · col R = Impressions · col S = Clics · col T = Achats',
+    conforama:      'col J = réf SEA (V_X_REF → REF, nettoyage auto.) · col R = Vues · col S = Clics · col V = Budget · col W = CA → conversions = CA ÷ prix produit'
   }[MARKETPLACE] || 'Fichier brut SEA spécifique à la marketplace';
   openModal("Import SEA — "+mpLabel, '<div style="display:grid;gap:10px">'
     + '<div style="background:var(--acBg);border-radius:8px;padding:10px 12px;font-size:11px;color:var(--ac)"><strong>Format attendu :</strong> '+fmtInfo+'<br><span style="color:var(--txS)">La table de correspondance est chargée automatiquement depuis le dépôt.</span></div>'
@@ -6763,8 +6767,13 @@ async function confirmSEAImport() {
 // Charge et met en cache la table de correspondance SEA depuis le repo
 async function loadSeaCorrespondence() {
   if (_seaCorrespCache) return _seaCorrespCache;
-  // Essayer les deux formes d'URL (avec et sans encodage des espaces)
-  var urls = ['/Fichiers%20correspondance%20-%20SEA.xlsx', '/Fichiers correspondance - SEA.xlsx'];
+  // Priorité : nouveau fichier avec ManoMano + Conforama, puis ancien fichier en fallback
+  var urls = [
+    '/Fichiers%20correspondance%20-%20SEA%20avec%20ManoMano-Confo.xlsx',
+    '/Fichiers correspondance - SEA avec ManoMano-Confo.xlsx',
+    '/Fichiers%20correspondance%20-%20SEA.xlsx',
+    '/Fichiers correspondance - SEA.xlsx'
+  ];
   var resp, lastErr;
   for (var ui = 0; ui < urls.length; ui++) {
     console.log('[SEA Corresp] Tentative chargement :', urls[ui]);
@@ -6777,24 +6786,33 @@ async function loadSeaCorrespondence() {
   var ws = wb.Sheets[wb.SheetNames[0]];
   var rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
   console.log('[SEA Corresp] Feuille lue :', rows.length, 'lignes (dont 1 en-tête)');
-  if (rows.length > 0) console.log('[SEA Corresp] En-tête :', JSON.stringify(rows[0]).slice(0,200));
-  if (rows.length > 1) console.log('[SEA Corresp] Ligne 1 :', JSON.stringify(rows[1]).slice(0,200));
-  var maps = { mdm: {}, but: {}, cds: {} };
+  if (rows.length > 0) console.log('[SEA Corresp] En-tête :', JSON.stringify(rows[0]).slice(0,300));
+  if (rows.length > 1) console.log('[SEA Corresp] Ligne 1 :', JSON.stringify(rows[1]).slice(0,300));
+  var maps = { mdm: {}, but: {}, cds: {}, conforama: {}, manomano: {} };
   function isNA(v) { var s = String(v||'').trim(); return !s || s === '#N/A' || s.startsWith('#'); }
   rows.slice(1).forEach(function(r) {
     var sku = String(r[0]||'').trim();
     if (!sku) return;
-    // col A(0)=sku · col C(2)=réf MdM · col D(3)=réf BUT · col E(4)=réf CDS
-    var mdmRef = String(r[2]||'').trim();
-    var butRef = String(r[3]||'').trim();
-    var cdsRef = String(r[4]||'').trim();
-    if (!isNA(mdmRef)) maps.mdm[mdmRef] = sku;
-    if (!isNA(butRef)) maps.but[butRef] = sku;
-    if (!isNA(cdsRef)) maps.cds[cdsRef] = sku;
+    // col A(0)=sku · col B(1)=id (format 836_5565, clé ManoMano) · col C(2)=réf MdM · col D(3)=réf BUT
+    // col E(4)=réf CDS · col G(6)=réf Conforama · col H(7)=réf ManoMano col H (non utilisée, id col B = 100%)
+    var manoId   = String(r[1]||'').trim();
+    var mdmRef   = String(r[2]||'').trim();
+    var butRef   = String(r[3]||'').trim();
+    var cdsRef   = String(r[4]||'').trim();
+    var confoRef = String(r[6]||'').trim();
+    if (!isNA(manoId))   maps.manomano[manoId]    = sku;
+    if (!isNA(mdmRef))   maps.mdm[mdmRef]         = sku;
+    if (!isNA(butRef))   maps.but[butRef]          = sku;
+    if (!isNA(cdsRef))   maps.cds[cdsRef]          = sku;
+    if (!isNA(confoRef)) maps.conforama[confoRef]  = sku;
   });
-  console.log('[SEA Corresp] Maps construites — MdM:', Object.keys(maps.mdm).length, '/ BUT:', Object.keys(maps.but).length, '/ CDS:', Object.keys(maps.cds).length);
-  var cdsKeys = Object.keys(maps.cds).slice(0,3);
-  console.log('[SEA Corresp] Exemples CDS :', cdsKeys.map(function(k){ return k+'→'+maps.cds[k]; }).join(', '));
+  console.log('[SEA Corresp] Maps construites — MdM:', Object.keys(maps.mdm).length,
+    '/ BUT:', Object.keys(maps.but).length, '/ CDS:', Object.keys(maps.cds).length,
+    '/ Confo:', Object.keys(maps.conforama).length, '/ Mano:', Object.keys(maps.manomano).length);
+  var manoKeys = Object.keys(maps.manomano).slice(0,3);
+  console.log('[SEA Corresp] Exemples ManoMano :', manoKeys.map(function(k){ return k+'→'+maps.manomano[k]; }).join(', '));
+  var confoKeys = Object.keys(maps.conforama).slice(0,3);
+  console.log('[SEA Corresp] Exemples Conforama :', confoKeys.map(function(k){ return k+'→'+maps.conforama[k]; }).join(', '));
   _seaCorrespCache = maps;
   return maps;
 }
@@ -6802,7 +6820,11 @@ async function loadSeaCorrespondence() {
 async function parseSEAXLS(file) {
   var corresp = await loadSeaCorrespondence();
   var mp = MARKETPLACE;
-  var refMap = mp === 'maisonsdumonde' ? corresp.mdm : mp === 'but' ? corresp.but : corresp.cds;
+  var refMap = mp === 'maisonsdumonde' ? corresp.mdm
+    : mp === 'but'        ? corresp.but
+    : mp === 'conforama'  ? corresp.conforama
+    : mp === 'manomano'   ? corresp.manomano
+    : corresp.cds;
   console.log('[SEA Parse] Marketplace:', mp, '— taille refMap:', Object.keys(refMap).length);
 
   // Set des SKUs suivis dans le catalogue
@@ -6895,6 +6917,29 @@ async function parseSEAXLS(file) {
             var price = sku ? priceMap[sku] : null;
             var conv = (price && price > 0) ? Math.round(caTtc / price) : 0;
             handleRow(seaRef, parseNum(r[12]), parseNum(r[13]), conv, caTtc);
+          });
+        } else if (mp === 'manomano') {
+          // col C(2)=SKU BestMobilier (ex: "836_5565") → rapprochement via col B (id) du fichier corresp → 100% match
+          // col F(5)=Dépenses publicitaires (budget) · col R(17)=Impressions · col S(18)=Clics · col T(19)=Achats (conv)
+          // En-tête en ligne 0 (null,Article,SKU,Identifiant,...) — données à partir de la ligne 1
+          dataRows.forEach(function(r) {
+            var seaRef = String(r[2]||'').trim(); // col C = SKU = "836_5565"
+            handleRow(seaRef, parseNum(r[17]), parseNum(r[18]), parseNum(r[19]), parseNum(r[5]));
+          });
+        } else if (mp === 'conforama') {
+          // col J(9)=ref SEA (format V_XXXXX_REF → garder REF = partie après 2e _)
+          // col R(17)=Vues/Impressions · col S(18)=Clics · col V(21)=Budget (spend) · col W(22)=CA SEA → conversions = CA / prix produit
+          dataRows.forEach(function(r) {
+            var rawRef = String(r[9]||'').trim();
+            // Nettoyer : V_98484_F92403292 → F92403292
+            var parts = rawRef.split('_');
+            var seaRef = parts.length >= 3 ? parts.slice(2).join('_') : rawRef;
+            if (!seaRef) { horsLigneCount++; return; }
+            var caSea = parseNum(r[22]);
+            var sku = refMap[seaRef];
+            var price = sku ? priceMap[sku] : null;
+            var conv = (price && price > 0 && caSea > 0) ? Math.round(caSea / price) : 0;
+            handleRow(seaRef, parseNum(r[17]), parseNum(r[18]), conv, parseNum(r[21]));
           });
         }
 
