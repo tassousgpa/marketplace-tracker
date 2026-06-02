@@ -5419,7 +5419,9 @@ async function renderOpeCommerciales() {
     opeData.forEach(op => {
       op._prodCount = countMap[op.id] || 0;
       const comms = commMap[op.id] || [];
-      op._commAvg = comms.length ? Math.round(comms.reduce((s,v) => s+v, 0) / comms.length * 1000) / 10 : null;
+      op._commAvg = comms.length ? (MARKETPLACE === 'manomano'
+        ? Math.round(comms.reduce((s,v) => s+v, 0) / comms.length)
+        : Math.round(comms.reduce((s,v) => s+v, 0) / comms.length * 1000) / 10) : null;
     });
   } catch(e) {}
   el.innerHTML = buildOpeHTML();
@@ -5523,7 +5525,7 @@ function buildOpeHTML() {
       const statusLabel = isAct ? "● Actif" : (new Date(op.date_debut) > now ? "○ A venir" : "○ Expire");
       const subParts = [statusLabel];
       if (op._prodCount) subParts.push(op._prodCount+" prod.");
-      if (op._commAvg != null) subParts.push(op._commAvg+"%");
+      if (op._commAvg != null) subParts.push(op._commAvg+(MARKETPLACE==='manomano'?' €':'%'));
       svg += '<text x="'+(x1+8).toFixed(1)+'" y="'+(cy+11).toFixed(1)+'" font-size="9" fill="#fff" opacity="0.85">'+subParts.join(" · ")+'</text>';
     }
   });
@@ -5564,7 +5566,7 @@ function renderOpeCards() {
       + '</div>'
       + '<div style="font-size:11px;color:var(--txS);margin-bottom:8px">'+fmtD(op.date_debut)+' → '+fmtD(op.date_fin)+'</div>'
       + (op.type_ope ? '<div style="font-size:10px;color:var(--txT);margin-bottom:6px">'+esc(op.type_ope)+'</div>' : "")
-      + '<div style="font-size:11px;color:var(--txS)">'+(op._prodCount||0)+' produit'+(op._prodCount>1?"s":"")+(op._commAvg!=null?' · Comm. moy. <strong>'+op._commAvg+'%</strong>':'')+'</div>'
+      + '<div style="font-size:11px;color:var(--txS)">'+(op._prodCount||0)+' produit'+(op._prodCount>1?"s":"")+(op._commAvg!=null?' · '+(MARKETPLACE==='manomano'?'Co-fin.':'Comm.')+' moy. <strong>'+op._commAvg+(MARKETPLACE==='manomano'?' €':'%')+'</strong>':'')+'</div>'
       + '</div>';
   }
 
@@ -5614,7 +5616,10 @@ async function openOpeDetail(id) {
   const totalCaHt   = prods.reduce((s,p) => s + (salesByRef[p.ref]?.ca_ht|| 0), 0);
 
 
-  const avgComm = prods.length ? (prods.reduce((s,p)=>s+(p.taux_commission||0),0)/prods.length*100).toFixed(1) : "—";
+  const isMM = MARKETPLACE === 'manomano';
+  const avgComm = prods.length ? (isMM
+    ? Math.round(prods.reduce((s,p)=>s+(p.taux_commission||0),0)/prods.length)
+    : (prods.reduce((s,p)=>s+(p.taux_commission||0),0)/prods.length*100).toFixed(1)) : "—";
 
   function buildOpeProdsTable(onlyWithSales) {
     const filtered = onlyWithSales ? prods.filter(p => salesByRef[p.ref]?.qty > 0) : prods;
@@ -5631,7 +5636,7 @@ async function openOpeDetail(id) {
         + '<td style="padding:6px 10px;font-weight:600;white-space:nowrap">'+esc(p.ref)+'</td>'
         + '<td style="padding:6px 10px;color:var(--txS)">'+esc(p.nom_produit||"—")+'</td>'
         + '<td style="padding:6px 10px;text-align:right">'+(p.prix!=null?p.prix+"€":"—")+'</td>'
-        + '<td style="padding:6px 10px;text-align:right">'+(p.taux_commission!=null?Math.round(p.taux_commission*100)+"%":"—")+'</td>'
+        + '<td style="padding:6px 10px;text-align:right">'+(p.taux_commission!=null?(isMM?p.taux_commission+' €':Math.round(p.taux_commission*100)+"%"):"—")+'</td>'
         + '<td style="padding:6px 10px;text-align:right;font-weight:600">'+(ps.qty>0?ps.qty:'<span style="color:var(--txT)">—</span>')+'</td>'
         + '<td style="padding:6px 10px;text-align:right;color:var(--gn);font-weight:600">'+(ps.ca_ht>0?Math.round(ps.ca_ht).toLocaleString("fr-FR")+" €":'<span style="color:var(--txT)">—</span>')+'</td>'
         + '</tr>';
@@ -5654,7 +5659,7 @@ async function openOpeDetail(id) {
     + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:14px">'
     + '<div style="background:var(--bg);border-radius:8px;padding:10px 12px"><div style="font-size:10px;color:var(--txS);text-transform:uppercase;margin-bottom:4px">Début</div><div style="font-size:13px;font-weight:600">'+fmtD(op.date_debut)+'</div></div>'
     + '<div style="background:var(--bg);border-radius:8px;padding:10px 12px"><div style="font-size:10px;color:var(--txS);text-transform:uppercase;margin-bottom:4px">Fin</div><div style="font-size:13px;font-weight:600">'+fmtD(op.date_fin)+'</div></div>'
-    + '<div style="background:var(--bg);border-radius:8px;padding:10px 12px"><div style="font-size:10px;color:var(--txS);text-transform:uppercase;margin-bottom:4px">Commission moy.</div><div style="font-size:13px;font-weight:600">'+avgComm+'%</div></div>'
+    + '<div style="background:var(--bg);border-radius:8px;padding:10px 12px"><div style="font-size:10px;color:var(--txS);text-transform:uppercase;margin-bottom:4px">'+(isMM?'Co-Financement moy.':'Commission moy.')+'</div><div style="font-size:13px;font-weight:600">'+avgComm+(isMM?' €':'%')+'</div></div>'
     + '<div style="background:'+(totalVentes>0?"var(--gnBg)":"var(--bg)")+';border-radius:8px;padding:10px 12px"><div style="font-size:10px;color:var(--txS);text-transform:uppercase;margin-bottom:4px">Ventes période</div><div style="font-size:13px;font-weight:700;color:'+(totalVentes>0?"var(--gn)":"var(--txS)")+'">'+totalVentes+'</div><div style="font-size:11px;color:var(--txS)">'+(totalCaHt>0?Math.round(totalCaHt).toLocaleString("fr-FR")+" € HT":"—")+'</div></div>'
     + '</div>'
     + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">'
@@ -5666,7 +5671,7 @@ async function openOpeDetail(id) {
     + '<th style="padding:6px 10px;text-align:left">Réf</th>'
     + '<th style="padding:6px 10px;text-align:left">Produit</th>'
     + '<th style="padding:6px 10px;text-align:right">Prix</th>'
-    + '<th style="padding:6px 10px;text-align:right">Commission</th>'
+    + '<th style="padding:6px 10px;text-align:right">'+(isMM?'Co-Financement':'Commission')+'</th>'
     + '<th id="ope-th-qty" style="padding:6px 10px;text-align:right;color:var(--ac);cursor:pointer;user-select:none">Ventes ↕</th>'
     + '<th id="ope-th-ca"  style="padding:6px 10px;text-align:right;color:var(--gn);cursor:pointer;user-select:none">CA HT ↕</th>'
     + '</tr></thead><tbody id="ope-detail-tbody">'+buildOpeProdsTable(false)+'</tbody></table></div>'
@@ -5779,7 +5784,7 @@ async function confirmOpeCreate() {
 
 function openOpeImport() {
   openModal("Import Excel opération", '<div style="display:grid;gap:10px">'
-    + '<div style="background:var(--puBg);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--pu)">Format attendu : colonnes Ref enfant, Nom, Prix, Taux com, Opé, Début, Fin (à partir de la ligne 7).</div>'
+    + '<div style="background:var(--puBg);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--pu)">Format attendu : colonnes Ref enfant, Nom, Prix, '+(MARKETPLACE==='manomano'?'Co-financement':'Taux com')+', Opé, Début, Fin (à partir de la ligne 7).</div>'
     + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Fichier Excel *</label><input id="ope-imp-file" type="file" accept=".xls,.xlsx" style="width:100%;padding:6px;border:.5px solid var(--border);border-radius:6px;font-size:11px;font-family:inherit;background:var(--card)"></div>'
     + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Mot de passe admin *</label><input id="ope-imp-pwd" type="password" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
     + '<button onclick="confirmOpeImport()" style="padding:10px;background:var(--pu);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">⬆ Importer</button>'
@@ -5895,7 +5900,9 @@ async function parseOpeXLSFull(file) {
             ref: refVal,
             nom: clean(r[2]),
             prix: r[3] ? parseFloat(String(r[3]).replace(/[€\s]/g,"").replace(",",".")) : null,
-            taux: r[4] ? parseFloat(String(r[4]).replace(/[%\s]/g,"").replace(",","."))/100 : null
+            taux: r[4] ? (MARKETPLACE === 'manomano'
+              ? parseFloat(String(r[4]).replace(/[€\s]/g,"").replace(",","."))
+              : parseFloat(String(r[4]).replace(/[%\s]/g,"").replace(",","."))/100) : null
           });
         }
         const finalNom = nomOpe || (rows[6]?.[5] ? clean(rows[6][5]) : null);
