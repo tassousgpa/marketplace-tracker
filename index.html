@@ -6866,6 +6866,7 @@ function buildSEACampaignsHTML() {
 function renderSEAProductsTable() {
   var stats = STATE.seaProductStats || [];
   var curYear = new Date().getFullYear();
+  var today = new Date().toISOString().slice(0,10);
 
   // Aggrégation YTD par SKU catalogue
   var seaMap = {};
@@ -6888,12 +6889,15 @@ function renderSEAProductsTable() {
     var ctr = imp > 0 ? clics/imp*100 : 0;
     var tauxConv = imp > 0 ? conv/imp*100 : 0;
     var hasData = imp > 0 || clics > 0 || conv > 0;
+    var isActive = (STATE.seaActiveProducts||[]).some(function(a) {
+      return a.sku === p.sku && a.period_start <= today && a.period_end >= today;
+    });
     return {
       sku: p.sku||'', name: p.name||'', type: p.type||'', product_id: p.product_id||'',
       impressions: imp, clics: clics, conversions: conv, budget: budget,
       ctr: ctr, tauxConv: tauxConv,
       grade: hasData ? seaGrade(ctr, tauxConv, conv) : null,
-      hasData: hasData
+      hasData: hasData, isActive: isActive
     };
   });
 
@@ -6932,7 +6936,11 @@ function renderSEAProductsTable() {
     var typeCol = r.type==="Classe A"?"green":r.type==="Deals exclus"?"amber":"accent";
     var rowStyle = (i%2?"background:var(--bg);":"")+(r.hasData?"":"opacity:0.42;")+"border-bottom:1px solid var(--borderL);cursor:pointer";
     var budgetFmt = r.budget > 0 ? Math.round(r.budget).toLocaleString('fr-FR')+' €' : '—';
+    var activeTag = r.isActive
+      ? '<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:var(--gnBg);color:var(--gn)">● Actif</span>'
+      : '<span style="font-size:11px;color:var(--txT)">—</span>';
     return '<tr style="'+rowStyle+'" onclick="openSEAProductDetail(\''+esc(r.sku)+'\')">'
+      + '<td style="padding:7px 10px;text-align:center">'+activeTag+'</td>'
       + '<td style="padding:7px 10px;font-weight:500;max-width:240px"><div style="line-height:1.3">'+esc(r.name)+'</div></td>'
       + '<td style="padding:7px 10px;font-size:11px;color:var(--txS);white-space:nowrap"><div>'+esc(r.product_id)+'</div><div style="font-weight:600">'+esc(r.sku)+'</div></td>'
       + '<td style="padding:7px 10px;text-align:center">'+(r.type?pill(typeLbl,typeCol):'')+'</td>'
@@ -6954,6 +6962,7 @@ function renderSEAProductsTable() {
     var aConvFmt = aClics > 0 ? (aConv/aClics*100).toFixed(2)+'%' : '—';
     var aBudget = autresSeaAgg.budget;
     tbody += '<tr style="border-top:2px solid var(--border);background:var(--bg);font-style:italic;color:var(--txS)">'
+      + '<td style="padding:7px 10px;text-align:center">—</td>'
       + '<td style="padding:7px 10px;font-weight:600;color:var(--txS)">Autres produits</td>'
       + '<td style="padding:7px 10px;font-size:11px;color:var(--txT)">Non suivis dans le catalogue</td>'
       + '<td style="padding:7px 10px;text-align:center">—</td>'
@@ -6983,6 +6992,7 @@ function renderSEAProductsTable() {
     + '</div>'
     + '<div class="card" style="padding:0;overflow:hidden"><div class="scroll-table"><table style="min-width:1050px">'
     + '<thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)">'
+    + '<th style="padding:8px 10px;font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;text-align:center">Statut</th>'
     + th('name','Produit','left')
     + '<th style="padding:8px 10px;font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;text-align:left">Réfs</th>'
     + '<th style="padding:8px 10px;font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;text-align:center">Type</th>'
@@ -7245,30 +7255,36 @@ function openSEAActiveImport() {
     weekOptions += '<option value="'+wd.start+'|'+wd.end+'">'+wd.label+'</option>';
   }
   var today = new Date().toISOString().slice(0,10);
-  openModal('⚡ Produits SEA actifs — '+mpLabel, '<div style="display:grid;gap:12px">'
-    + '<div style="background:var(--amBg);border-radius:8px;padding:10px 12px;font-size:11px;color:var(--am)"><strong>Format fichier :</strong> colonne A = SKU produit (une ligne par produit actif). Le tag ⚡ SEA sera piloté exclusivement par ces imports.</div>'
-    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Type de période *</label>'
-    + '<select id="seaact-period-type" onchange="seaActTogglePeriod()" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">'
-    + '<option value="week">Semaine ISO</option><option value="custom">Période personnalisée</option></select></div>'
-    + '<div id="seaact-week-block"><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Semaine *</label>'
-    + '<select id="seaact-week" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">'+weekOptions+'</select></div>'
-    + '<div id="seaact-custom-block" style="display:none;display:grid;grid-template-columns:1fr 1fr;gap:8px">'
-    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Date début *</label><input id="seaact-debut" type="date" value="'+today+'" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
-    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Date fin *</label><input id="seaact-fin" type="date" value="'+today+'" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+  openModal('⚡ Produits SEA actifs — '+mpLabel, '<div style="display:grid;gap:14px">'
+    + '<div style="background:var(--amBg);border-radius:8px;padding:10px 12px;font-size:11px;color:var(--am)">Format : colonne A = SKU produit. Le tag ⚡ SEA sera piloté exclusivement par ces imports.</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0;border:.5px solid var(--border);border-radius:8px;overflow:hidden">'
+    + '<label id="seaact-lbl-week" style="display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;background:var(--ac);color:#fff;font-size:12px;font-weight:600">'
+    + '<input type="radio" name="seaact-mode" value="week" checked onchange="seaActTogglePeriod()" style="accent-color:#fff"> Semaine</label>'
+    + '<label id="seaact-lbl-custom" style="display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;background:var(--card);color:var(--txS);font-size:12px;font-weight:600;border-left:.5px solid var(--border)">'
+    + '<input type="radio" name="seaact-mode" value="custom" onchange="seaActTogglePeriod()"> Période personnalisée</label>'
     + '</div>'
-    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Fichier (colonne A = SKU) *</label><input id="seaact-file" type="file" accept=".xls,.xlsx,.csv" style="width:100%;padding:6px;border:.5px solid var(--border);border-radius:6px;font-size:11px;font-family:inherit;background:var(--card)"></div>'
-    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Mot de passe admin *</label><input id="seaact-pwd" type="password" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '<div id="seaact-week-block"><select id="seaact-week" style="width:100%;padding:8px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">'+weekOptions+'</select></div>'
+    + '<div id="seaact-custom-block" style="display:none;grid-template-columns:1fr 1fr;gap:8px">'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Date début</label><input id="seaact-debut" type="date" value="'+today+'" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Date fin</label><input id="seaact-fin" type="date" value="'+today+'" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    + '</div>'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Fichier (colonne A = SKU)</label><input id="seaact-file" type="file" accept=".xls,.xlsx,.csv" style="width:100%;padding:6px;border:.5px solid var(--border);border-radius:6px;font-size:11px;font-family:inherit;background:var(--card)"></div>'
+    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Mot de passe admin</label><input id="seaact-pwd" type="password" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
     + '<button onclick="confirmSEAActiveImport()" style="padding:10px;background:var(--am);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Importer</button>'
     + '<div id="seaact-status" style="font-size:12px;text-align:center;min-height:16px"></div>'
     + '</div>');
 }
 
 function seaActTogglePeriod() {
-  var t = document.getElementById('seaact-period-type')?.value;
+  var t = document.querySelector('input[name="seaact-mode"]:checked')?.value || 'week';
   var wb = document.getElementById('seaact-week-block');
   var cb = document.getElementById('seaact-custom-block');
+  var lw = document.getElementById('seaact-lbl-week');
+  var lc = document.getElementById('seaact-lbl-custom');
   if (wb) wb.style.display = t === 'week' ? 'block' : 'none';
   if (cb) cb.style.display = t === 'custom' ? 'grid' : 'none';
+  if (lw) { lw.style.background = t === 'week' ? 'var(--ac)' : 'var(--card)'; lw.style.color = t === 'week' ? '#fff' : 'var(--txS)'; }
+  if (lc) { lc.style.background = t === 'custom' ? 'var(--ac)' : 'var(--card)'; lc.style.color = t === 'custom' ? '#fff' : 'var(--txS)'; }
 }
 
 async function confirmSEAActiveImport() {
@@ -7278,7 +7294,7 @@ async function confirmSEAActiveImport() {
   if (btoa(pwd) !== _ADMIN_HASH) { statusEl.innerHTML = '<span style="color:var(--rd)">Mot de passe incorrect.</span>'; return; }
   if (!file) { statusEl.innerHTML = '<span style="color:var(--rd)">Sélectionnez un fichier.</span>'; return; }
 
-  var periodType = document.getElementById('seaact-period-type')?.value || 'week';
+  var periodType = document.querySelector('input[name="seaact-mode"]:checked')?.value || 'week';
   var periodStart, periodEnd;
   if (periodType === 'week') {
     var parts = (document.getElementById('seaact-week')?.value || '').split('|');
