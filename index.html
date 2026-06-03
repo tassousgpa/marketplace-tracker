@@ -87,6 +87,8 @@ tr.stripe{background:var(--bg)}
 .loading-spinner{display:inline-block;width:32px;height:32px;border:3px solid var(--borderL);border-top-color:var(--ac);border-radius:50%;animation:spin .8s linear infinite;margin-bottom:12px}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes alertPulse{0%,100%{background:var(--rdBg);color:var(--rd)}50%{background:#b5312c;color:#fff}}
+#audit-scroll-body thead th{position:sticky;top:0;z-index:4;background:var(--bg)}
+#audit-scroll-body thead tr:nth-child(2) th{top:28px}
 .tab-alert{color:var(--rd)!important;border-bottom-color:var(--rd)!important}
 .tab-alert-blink{animation:alertPulse 1.2s ease-in-out 6;border-radius:6px 6px 0 0}
 .hidden{display:none}
@@ -395,15 +397,30 @@ function normalizeKeyword(kw) {
   return kw;
 }
 
-const TAB_NAMES = ["Synthèse","Produits","Historique","Positions","Concurrents","Anomalies","Alertes","Audit","Opé. Commerciales","Gestion"];
-const TAB_NAMES_LIGHT = ["Synthèse","Produits","Historique","Anomalies","Alertes","Audit","Opé. Commerciales","Gestion"];
-const TAB_NAMES_LIGHT_SEA = ["Synthèse","Produits","Historique","Anomalies","Alertes","Audit","Opé. Commerciales","Gestion","SEA"];
-const TAB_NAMES_MINIMAL = ["Synthèse","Alertes","Audit","Opé. Commerciales","Gestion"];
-const TAB_NAMES_MINIMAL_SEA = ["Synthèse","Alertes","Audit","Opé. Commerciales","Gestion","SEA"];
-const LAREDOUTE_TABS = ["Synthèse","Positions","Concurrents","Alertes","Audit","Opé. Commerciales","Gestion"];
+// Gestion et Anomalies masqués (non supprimés, code conservé)
+const TAB_NAMES     = ["Synthèse","Produits","Historique","Positions","Concurrents","Alertes","Audit","Opé. Commerciales"];
+const TAB_NAMES_SEA = ["Synthèse","Produits","Historique","Positions","Concurrents","Alertes","Audit","Opé. Commerciales","SEA"];
+const TAB_NAMES_LIGHT     = ["Synthèse","Produits","Historique","Alertes","Audit","Opé. Commerciales"];
+const TAB_NAMES_LIGHT_SEA = ["Synthèse","Produits","Historique","Alertes","Audit","Opé. Commerciales","SEA"];
+const TAB_NAMES_MINIMAL     = ["Synthèse","Alertes","Audit","Opé. Commerciales"];
+const TAB_NAMES_MINIMAL_SEA = ["Synthèse","Alertes","Audit","Opé. Commerciales","SEA"];
+const LAREDOUTE_TABS = ["Synthèse","Positions","Concurrents","Alertes","Audit","Opé. Commerciales"];
 const MINIMAL_MP = new Set(["leroymerlin"]);
 const SEA_MP = new Set(["cdiscount","but","maisonsdumonde","conforama","manomano"]);
-const TAB_NAMES_SEA = ["Synthèse","Produits","Historique","Positions","Concurrents","Anomalies","Alertes","Audit","Opé. Commerciales","Gestion","SEA"];
+
+// Nouveautés 2026 — SKUs sortis depuis janvier 2026 (source: Date de sortie produit par SKU.xlsx)
+const NEW_2026_SET = new Set(["3420GANT","3430VBEI","3431BLBEI","3448B","3448BEI","3448G","3448N","3448VO","3449B","3449BEI","3449G","3449GANT","3449P","3449RO","3449V","3449VO","3449VS","3450B","3450BEI","3450G","3450GANT","3450P","3450RO","3450V","3450VO","3450VS","3482BEI","3482TER","3482VK","3483BEI","3483TER","3483VK","3484BEI","3484TER","3484VK","3485BEI","3485TER","3485VK","3486BEI","3486GANT","3486VK","3487BEI","3487GANT","3487VK","3488BEI","3488COG","3488G","3488M","3488N","3491BEI","3491N","3491T","3491TER","3491V","3498GC","3499BEI","3500BEI","3501BEI","3502BEI","3503BEI","3504BEI","3505BEI","3506BEI","3507BEI","3508BEI","3509BEI","3511BEI","3513BEI","3514BEI","3515BEI","3516BEI","3517BEI","3518J","3519BEI","3520BEI","3521BEI","3525VK","3526VK","3527BEI","3528BEI","3530BOBEI","3545BEI","3545TER","3545VK","3545VS","3546BEI","3546TER","3546VK","3546VS","3553BEI","3567BEI","3568BEI","3568TER","3568V","3569BEI","3571BEI","3571TER","3571VK","3571VS","3572BEI","3572TER","3572VK","3572VS","3575BEI","3575G","3575R","3576BEI","3576G","3576R","3577BEI","3577G","3577R","3578BEIVT","3583EC","3583EN","3584BEI","3585BEI","3589TER","3590BEI","3592BEI","3601BEI"]);
+
+// Table parent→enfants — chargée lazily depuis data/product_refs.json
+let _productRefsCache = null;
+async function loadProductRefs() {
+  if (_productRefsCache) return _productRefsCache;
+  try {
+    const r = await fetch('data/product_refs.json');
+    _productRefsCache = await r.json();
+  } catch(e) { _productRefsCache = { new2026:[], child_to_parent:{}, parent_to_children:{} }; }
+  return _productRefsCache;
+}
 
 function isLightMp() { return NO_POSITIONS_MP.has(MARKETPLACE); }
 function isMinimalMp() { return MINIMAL_MP.has(MARKETPLACE); }
@@ -469,7 +486,7 @@ async function loadData() {
       sb("sea_campaigns_general", "marketplace=eq."+MARKETPLACE+"&select=*&order=date_debut.desc").catch(()=>[]),
       sb("sea_product_stats", "marketplace=eq."+MARKETPLACE+"&select=ref,period_start,period_end,period_label,period_type,budget,impressions,clics,conversions&order=period_start.desc").catch(()=>[]),
       sb("product_supply_stats", `select=product_ref,warehouse_stock,in_transit_stock,unshipped_orders,import_date&order=import_date.desc&limit=10000`).catch(()=>[]),
-      (()=>{ const d=`${new Date().getFullYear()}-01-01`; return sb("ps_sales_daily",`marketplace=eq.${MARKETPLACE}&sale_date=gte.${d}&select=product_ref,sale_date,quantity,revenue_ht,shipping_ht&order=sale_date.desc&limit=10000`).catch(()=>[]); })(),
+      (()=>{ const d=`${new Date().getFullYear()}-01-01`; return sb("ps_sales_daily",`marketplace=eq.${MARKETPLACE}&sale_date=gte.${d}&select=product_ref,product_name,sale_date,quantity,revenue_ht,shipping_ht&order=sale_date.desc&limit=10000`).catch(()=>[]); })(),
       sb("sea_active_products", `marketplace=eq.${MARKETPLACE}&select=sku,period_start,period_end`).catch(()=>[]),
       sb("sea_active_products", `select=marketplace,sku,period_start,period_end`).catch(()=>[]),
     ]);
@@ -801,21 +818,20 @@ function switchTab(i) {
 }
 function renderContent() {
   const el = document.getElementById("content");
-  // Minimal marketplaces (Leroy Merlin) -> Synthèse CA uniquement, Alertes, Audit, Opé., Gestion [+ SEA si activé]
+  // Minimal marketplaces (Leroy Merlin) — Synthèse, Alertes, Audit, Opé. [+ SEA]
   if (isMinimalMp()) {
     switch(STATE.tab) {
       case 0: el.innerHTML = renderSyntheseMinimal(); break;
       case 1: renderAlertes(); break;
       case 2: renderAudit(); break;
       case 3: renderOpeCommerciales(); break;
-      case 4: el.innerHTML = renderGestion(); break;
-      case 5: if (SEA_MP.has(MARKETPLACE)) renderSEA(); break;
+      case 4: if (SEA_MP.has(MARKETPLACE)) renderSEA(); break;
       default: el.innerHTML = '';
     }
     return;
   }
 
-  // La Redoute : custom tab set
+  // La Redoute
   if (MARKETPLACE === "laredoute") {
     switch(STATE.tab) {
       case 0: el.innerHTML = renderSynthese(); break;
@@ -824,7 +840,6 @@ function renderContent() {
       case 3: renderAlertes(); break;
       case 4: renderAudit(); break;
       case 5: renderOpeCommerciales(); break;
-      case 6: el.innerHTML = renderGestion(); break;
       default: el.innerHTML = '';
     }
     return;
@@ -836,12 +851,10 @@ function renderContent() {
       case 0: el.innerHTML = renderSynthese(); break;
       case 1: el.innerHTML = renderProduits(); break;
       case 2: el.innerHTML = renderHistorique(); break;
-      case 3: el.innerHTML = renderAnomalies(); break;
-      case 4: renderAlertes(); break;
-      case 5: renderAudit(); break;
-      case 6: renderOpeCommerciales(); break;
-      case 7: el.innerHTML = renderGestion(); break;
-      case 8: if (SEA_MP.has(MARKETPLACE)) renderSEA(); break;
+      case 3: renderAlertes(); break;
+      case 4: renderAudit(); break;
+      case 5: renderOpeCommerciales(); break;
+      case 6: if (SEA_MP.has(MARKETPLACE)) renderSEA(); break;
       default: el.innerHTML = '';
     }
     return;
@@ -854,12 +867,10 @@ function renderContent() {
     case 2: el.innerHTML = renderHistorique(); break;
     case 3: el.innerHTML = renderPositions(); break;
     case 4: el.innerHTML = renderConcurrents(); break;
-    case 5: el.innerHTML = renderAnomalies(); break;
-    case 6: renderAlertes(); break;
-    case 7: renderAudit(); break;
-    case 8: renderOpeCommerciales(); break;
-    case 9: el.innerHTML = renderGestion(); break;
-    case 10: if (SEA_MP.has(MARKETPLACE)) renderSEA(); break;
+    case 5: renderAlertes(); break;
+    case 6: renderAudit(); break;
+    case 7: renderOpeCommerciales(); break;
+    case 8: if (SEA_MP.has(MARKETPLACE)) renderSEA(); break;
     default: el.innerHTML = '';
   }
 }
@@ -1423,6 +1434,7 @@ function renderProductSalesBlocks() {
   // ── Index ps_sales_daily ─────────────────────────────────────────
   const psDailyIdx = {};
   const psRefNames = {}; // ref → nom produit (PS product_name en priorité, STATE.allProducts en fallback)
+  const skuCanal = {};   // sku → canal d'attribution (depuis products)
   (STATE.psSalesDaily || []).forEach(s => {
     const k = (s.product_ref||"")+"|"+String(s.sale_date||"").slice(0,10);
     psDailyIdx[k] = (psDailyIdx[k]||0) + (s.quantity||0);
@@ -1430,6 +1442,7 @@ function renderProductSalesBlocks() {
   });
   (STATE.allProducts||STATE.products||[]).forEach(p => {
     if (p.sku && p.name && !psRefNames[p.sku]) psRefNames[p.sku] = p.name;
+    if (p.sku && p.canal) skuCanal[p.sku] = p.canal;
   });
   const DAY_FR = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
   const today = new Date().toISOString().slice(0,10);
@@ -1532,70 +1545,91 @@ function renderProductSalesBlocks() {
       +"</div>";
   }
 
-  // ── Semaine terminée — tableau double (gauche: classement Odoo, droite: détail PS) ──
+  // ── Semaine terminée — gauche: classement + détail jour; droite: top10 nouveautés 2026 ──
   function renderCompletedBlock(weekLabel) {
     const wSales = allSales.filter(r=>r.week_label===weekLabel);
     const top10 = [...wSales].sort((a,b)=>b.qty-a.qty).slice(0,10);
     if (!top10.length) return "<div style='color:var(--txT);font-size:12px;padding:8px'>Aucune donnée Odoo</div>";
     const wDates = getWeekDates(weekLabel);
-
-    // Gauche : classement Odoo
+    const seaDate = wDates ? wDates[0] : null;
     const showSea = SEA_MP.has(MARKETPLACE);
+
+    function newTag(ref) { return NEW_2026_SET.has(ref) ? ' <span style="padding:1px 5px;border-radius:99px;font-size:9px;font-weight:700;background:#e8f5e9;color:#1a7a4c;vertical-align:middle">new</span>' : ''; }
+    function dealBadge(ref) {
+      const d = getActiveDealForWeek(ref, weekLabel);
+      return d ? '<span style="padding:2px 6px;border-radius:99px;font-size:10px;font-weight:600;background:#fff3e0;color:#e65100">'+esc(d.length>18?d.slice(0,17)+'…':d)+'</span>'
+               : '<span style="font-size:10px;color:var(--txT)">—</span>';
+    }
+
+    // ── Tableau gauche : Odoo + détail jour ───────────────────────
     const leftRows = top10.map((r,i)=>{
-      const basket=(r.ca_ht&&r.qty)?Math.round(r.ca_ht/r.qty*1.2)+"€":"—";
       const bg=i%2?"background:var(--bg)":"";
-      const deal=getActiveDealForWeek(r.ref,weekLabel)
-        ?'<span style="padding:2px 6px;border-radius:99px;font-size:10px;font-weight:600;background:#fff3e0;color:#e65100">Deal</span>'
-        :'<span style="font-size:10px;color:var(--txT)">—</span>';
-      const seaDate = wDates ? wDates[0] : null;
-      const sea=showSea?(getSeaActive(r.ref, seaDate)
-        ?'<span style="padding:2px 6px;border-radius:99px;font-size:10px;font-weight:600;background:#fff3e0;color:#e65100">⚡ SEA</span>'
+      const productName = r.name || psRefNames[r.ref] || r.ref;
+      const canal = skuCanal[r.ref] || '—';
+      const sea = showSea?(getSeaActive(r.ref,seaDate)
+        ?'<span style="padding:2px 5px;border-radius:99px;font-size:9px;font-weight:700;background:#fff3e0;color:#e65100">⚡</span>'
         :'<span style="font-size:10px;color:var(--txT)">—</span>'):"";
+      let tot=0;
+      const days = wDates ? wDates.map(d=>{const v=psDailyIdx[r.ref+"|"+d]||0;tot+=v;return v;}) : [];
+      const dayCells = days.map(v=>"<td style='padding:4px 5px;text-align:right;font-size:11px;font-weight:"+(v>0?"700":"400")+";color:"+(v>0?"var(--tx)":"var(--txT)")+";width:32px'>"+(v>0?v:"—")+"</td>").join("");
+      const totalCell = "<td style='padding:4px 8px;text-align:right;font-weight:700;font-size:12px;color:"+(tot>0?"var(--ac)":"var(--txT)")+";border-left:2px solid var(--border);background:"+(tot>0?"var(--acBg)":"")+"'>"+( tot>0?tot:"—")+"</td>";
       return "<tr style='"+bg+";border-bottom:1px solid var(--borderL)'>"
-        +"<td style='padding:5px 8px;font-size:11px;color:var(--txT);width:22px;text-align:right'>"+(i+1)+"</td>"
-        +"<td style='padding:5px 8px;font-weight:600;white-space:nowrap'>"+esc(r.ref)+"</td>"
-        +"<td style='padding:5px 8px;color:var(--txS);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px' title='"+esc(r.name)+"'>"+esc((r.name||"").slice(0,28))+"</td>"
-        +"<td style='padding:5px 8px;text-align:right;font-weight:700'>"+r.qty+"</td>"
-        +"<td style='padding:5px 8px;text-align:right;color:var(--txS)'>"+basket+"</td>"
-        +"<td style='padding:5px 8px;text-align:center'>"+deal+"</td>"
-        +(showSea?"<td style='padding:5px 8px;text-align:center'>"+sea+"</td>":"")
+        +"<td style='padding:4px 6px;font-size:11px;color:var(--txT);text-align:right;width:20px'>"+(i+1)+"</td>"
+        +"<td style='padding:4px 6px;font-weight:600;white-space:nowrap;font-size:11px'>"+esc(r.ref)+"</td>"
+        +"<td style='padding:4px 6px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px' title='"+esc(productName)+"'>"+esc(productName.slice(0,22))+newTag(r.ref)+"</td>"
+        +"<td style='padding:4px 6px;font-size:10px;color:var(--txS);white-space:nowrap'>"+esc(canal)+"</td>"
+        +dayCells+totalCell
+        +"<td style='padding:4px 5px;text-align:center'>"+dealBadge(r.ref)+"</td>"
+        +(showSea?"<td style='padding:4px 5px;text-align:center'>"+sea+"</td>":"")
         +"</tr>";
     }).join("");
-    const leftTable = "<table style='width:100%;border-collapse:collapse;font-size:12px'>"
-      +"<thead><tr style='border-bottom:1px solid var(--border)'>"
-      +"<th style='padding:5px 8px;color:var(--txT);width:22px'>#</th>"
-      +"<th style='padding:5px 8px;text-align:left;color:var(--txS)'>Réf</th>"
-      +"<th style='padding:5px 8px;text-align:left;color:var(--txS)'>Produit</th>"
-      +"<th style='padding:5px 8px;text-align:right;color:var(--txS)'>Ventes</th>"
-      +"<th style='padding:5px 8px;text-align:right;color:var(--txS)'>PM TTC</th>"
-      +"<th style='padding:5px 8px;text-align:center;color:var(--txS)'>Opé.</th>"
-      +(showSea?"<th style='padding:5px 8px;text-align:center;color:var(--txS)'>SEA</th>":"")
-      +"</tr></thead><tbody>"+leftRows+"</tbody></table>";
 
-    // Droite : détail journalier PS pour le même top 10
-    let rightTable = "<div style='color:var(--txT);font-size:12px;padding:8px'>Données PS non disponibles</div>";
-    if (wDates) {
-      const rightRows = top10.map((r,i)=>{
-        let tot=0;
-        const days=wDates.map(d=>{const v=psDailyIdx[r.ref+"|"+d]||0;tot+=v;return v;});
+    const leftTable = "<div style='overflow-x:auto'><table style='width:100%;border-collapse:collapse;font-size:12px'>"
+      +"<thead><tr style='border-bottom:1px solid var(--border);background:var(--bg)'>"
+      +"<th style='padding:4px 6px;color:var(--txT);width:20px'>#</th>"
+      +"<th style='padding:4px 6px;text-align:left;font-size:10px;color:var(--txS)'>Réf</th>"
+      +"<th style='padding:4px 6px;text-align:left;font-size:10px;color:var(--txS)'>Produit</th>"
+      +"<th style='padding:4px 6px;text-align:left;font-size:10px;color:var(--txS)'>Canal</th>"
+      +(wDates?DAY_FR.map(l=>"<th style='padding:4px 5px;text-align:right;font-size:10px;color:var(--txS);width:32px'>"+l+"</th>").join(""):"")
+      +"<th style='padding:4px 8px;text-align:right;font-size:10px;font-weight:700;color:var(--ac);border-left:2px solid var(--border)'>Total</th>"
+      +"<th style='padding:4px 5px;text-align:center;font-size:10px;color:var(--txS)'>Opé.</th>"
+      +(showSea?"<th style='padding:4px 5px;text-align:center;font-size:10px;color:var(--txS)'>SEA</th>":"")
+      +"</tr></thead><tbody>"+leftRows+"</tbody></table></div>";
+
+    // ── Tableau droite : Top10 Nouveautés 2026 ────────────────────
+    const new2026Sales = wSales.filter(r=>NEW_2026_SET.has(r.ref)).sort((a,b)=>b.qty-a.qty).slice(0,10);
+    let rightTable;
+    if (!new2026Sales.length) {
+      rightTable = "<div style='color:var(--txT);font-size:12px;padding:12px;text-align:center'>Aucune nouveauté 2026 dans le top ventes de la semaine.</div>";
+    } else {
+      const rightRows = new2026Sales.map((r,i)=>{
         const bg=i%2?"background:var(--bg)":"";
+        const pName = r.name||psRefNames[r.ref]||r.ref;
+        const canal = skuCanal[r.ref]||'—';
+        const basket=(r.ca_ht&&r.qty)?Math.round(r.ca_ht/r.qty*1.2)+"€":"—";
         return "<tr style='"+bg+";border-bottom:1px solid var(--borderL)'>"
-          +"<td style='padding:5px 8px;font-weight:600'>"+esc(r.ref)+"</td>"
-          +days.map(v=>"<td style='padding:5px 7px;text-align:right;font-weight:"+(v>0?"600":"400")+";color:"+(v>0?"var(--tx)":"var(--txT)")+";width:38px'>"+(v>0?v:"—")+"</td>").join("")
-          +"<td style='padding:5px 10px;text-align:right;font-weight:700;color:"+(tot>0?"var(--ac)":"var(--txT)")+";border-left:1px solid var(--borderL);width:50px'>"+(tot>0?tot:"—")+"</td>"
+          +"<td style='padding:5px 6px;font-size:11px;color:var(--txT);text-align:right'>"+(i+1)+"</td>"
+          +"<td style='padding:5px 6px;font-weight:600;font-size:11px;white-space:nowrap'>"+esc(r.ref)+"</td>"
+          +"<td style='padding:5px 6px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px' title='"+esc(pName)+"'>"+esc(pName.slice(0,26))+"</td>"
+          +"<td style='padding:5px 6px;font-size:10px;color:var(--txS)'>"+esc(canal)+"</td>"
+          +"<td style='padding:5px 6px;text-align:right;font-weight:700;color:var(--gn)'>"+r.qty+"</td>"
+          +"<td style='padding:5px 6px;text-align:right;font-size:11px;color:var(--txS)'>"+basket+"</td>"
           +"</tr>";
       }).join("");
       rightTable = "<table style='width:100%;border-collapse:collapse;font-size:12px'>"
-        +"<thead><tr style='border-bottom:1px solid var(--border)'>"
-        +"<th style='padding:5px 8px;text-align:left;color:var(--txS)'>Réf</th>"
-        +DAY_FR.map(l=>"<th style='padding:5px 7px;text-align:right;color:var(--txS);width:38px'>"+l+"</th>").join("")
-        +"<th style='padding:5px 10px;text-align:right;font-weight:700;color:var(--ac);border-left:1px solid var(--borderL);width:50px'>Total</th>"
+        +"<thead><tr style='border-bottom:1px solid var(--border);background:var(--gnBg)'>"
+        +"<th style='padding:5px 6px;color:var(--txT);width:20px'>#</th>"
+        +"<th style='padding:5px 6px;text-align:left;font-size:10px;color:var(--gn)'>Réf</th>"
+        +"<th style='padding:5px 6px;text-align:left;font-size:10px;color:var(--gn)'>Produit</th>"
+        +"<th style='padding:5px 6px;text-align:left;font-size:10px;color:var(--gn)'>Canal</th>"
+        +"<th style='padding:5px 6px;text-align:right;font-size:10px;color:var(--gn)'>Ventes</th>"
+        +"<th style='padding:5px 6px;text-align:right;font-size:10px;color:var(--gn)'>PM TTC</th>"
         +"</tr></thead><tbody>"+rightRows+"</tbody></table>";
     }
 
-    return "<div style='display:grid;grid-template-columns:1fr 1fr;gap:16px'>"
-      +"<div><div style='font-size:10px;font-weight:600;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px'>🏆 Classement Odoo</div>"+leftTable+"</div>"
-      +"<div><div style='font-size:10px;font-weight:600;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px'>📅 Détail par jour (Prestashop)</div>"+rightTable+"</div>"
+    return "<div style='display:grid;grid-template-columns:3fr 2fr;gap:16px'>"
+      +"<div><div style='font-size:10px;font-weight:600;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px'>🏆 Top 10 — Odoo + détail PS</div>"+leftTable+"</div>"
+      +"<div><div style='font-size:10px;font-weight:600;color:var(--gn);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px'>🌱 Top 10 Nouveautés 2026</div>"+rightTable+"</div>"
       +"</div>";
   }
 
@@ -1621,58 +1655,76 @@ function renderProductSalesBlocks() {
       const op=(STATE.activeOps||[]).find(o=>o.id===match.operation_id);
       return op?op.nom:null;
     }
-    // Gauche : classement PS
+    // Gauche : classement PS + détail jour + nouveautés tag
     const showSeaPs = SEA_MP.has(MARKETPLACE);
+    function psDealBadge(ref) {
+      const d = getPsDeal(ref);
+      return d ? '<span style="padding:2px 5px;border-radius:99px;font-size:9px;font-weight:600;background:#fff3e0;color:#e65100">'+esc(d.length>16?d.slice(0,15)+'…':d)+'</span>'
+               : '<span style="font-size:10px;color:var(--txT)">—</span>';
+    }
+    function newTagPs(ref) { return NEW_2026_SET.has(ref)?'<span style="padding:1px 4px;border-radius:99px;font-size:9px;font-weight:700;background:#e8f5e9;color:#1a7a4c">new</span>':''; }
     const leftRows = top10.map((r,i)=>{
-      const basket = (r.ca_ht&&r.qty)?Math.round(r.ca_ht/r.qty*1.2)+"€":"—";
-      const bg = i%2?"background:var(--bg)":"";
-      const name = psRefNames[r.ref]||"";
-      const deal = getPsDeal(r.ref)
-        ?'<span style="padding:2px 6px;border-radius:99px;font-size:10px;font-weight:600;background:#fff3e0;color:#e65100">Deal</span>'
-        :'<span style="font-size:10px;color:var(--txT)">—</span>';
-      const sea = showSeaPs?(getSeaActive(r.ref, wDates[0])
-        ?'<span style="padding:2px 6px;border-radius:99px;font-size:10px;font-weight:600;background:#fff3e0;color:#e65100">⚡ SEA</span>'
-        :'<span style="font-size:10px;color:var(--txT)">—</span>'):"";
-      return "<tr style='"+bg+";border-bottom:1px solid var(--borderL)'>"
-        +"<td style='padding:5px 8px;font-size:11px;color:var(--txT);width:22px;text-align:right'>"+(i+1)+"</td>"
-        +"<td style='padding:5px 8px;font-weight:600;white-space:nowrap'>"+esc(r.ref)+"</td>"
-        +"<td style='padding:5px 8px;color:var(--txS);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px' title='"+esc(name)+"'>"+esc(name.slice(0,28))+"</td>"
-        +"<td style='padding:5px 8px;text-align:right;font-weight:700'>"+r.qty+"</td>"
-        +"<td style='padding:5px 8px;text-align:right;color:var(--txS)'>"+basket+"</td>"
-        +"<td style='padding:5px 8px;text-align:center'>"+deal+"</td>"
-        +(showSeaPs?"<td style='padding:5px 8px;text-align:center'>"+sea+"</td>":"")
-        +"</tr>";
-    }).join("");
-    const leftTable = "<table style='width:100%;border-collapse:collapse;font-size:12px'>"
-      +"<thead><tr style='border-bottom:1px solid var(--border)'>"
-      +"<th style='padding:5px 8px;color:var(--txT);width:22px'>#</th>"
-      +"<th style='padding:5px 8px;text-align:left;color:var(--txS)'>Réf</th>"
-      +"<th style='padding:5px 8px;text-align:left;color:var(--txS)'>Produit</th>"
-      +"<th style='padding:5px 8px;text-align:right;color:var(--txS)'>Ventes</th>"
-      +"<th style='padding:5px 8px;text-align:right;color:var(--txS)'>PM TTC</th>"
-      +"<th style='padding:5px 8px;text-align:center;color:var(--txS)'>Opé.</th>"
-      +(showSeaPs?"<th style='padding:5px 8px;text-align:center;color:var(--txS)'>SEA</th>":"")
-      +"</tr></thead><tbody>"+leftRows+"</tbody></table>";
-    // Droite : détail journalier
-    const rightRows = top10.map((r,i)=>{
+      const bg=i%2?"background:var(--bg)":"";
+      const name=psRefNames[r.ref]||"";
+      const canal=skuCanal[r.ref]||'—';
+      const sea=showSeaPs?(getSeaActive(r.ref,wDates[0])?'<span style="padding:2px 4px;border-radius:99px;font-size:9px;font-weight:700;background:#fff3e0;color:#e65100">⚡</span>':'<span style="font-size:10px;color:var(--txT)">—</span>'):"";
       let tot=0;
       const days=wDates.map(d=>{const v=psDailyIdx[r.ref+"|"+d]||0;tot+=v;return v;});
-      const bg=i%2?"background:var(--bg)":"";
       return "<tr style='"+bg+";border-bottom:1px solid var(--borderL)'>"
-        +"<td style='padding:5px 8px;font-weight:600'>"+esc(r.ref)+"</td>"
-        +days.map(v=>"<td style='padding:5px 7px;text-align:right;font-weight:"+(v>0?"600":"400")+";color:"+(v>0?"var(--tx)":"var(--txT)")+";width:38px'>"+(v>0?v:"—")+"</td>").join("")
-        +"<td style='padding:5px 10px;text-align:right;font-weight:700;color:"+(tot>0?"var(--ac)":"var(--txT)")+";border-left:1px solid var(--borderL);width:50px'>"+(tot>0?tot:"—")+"</td>"
+        +"<td style='padding:4px 5px;font-size:11px;color:var(--txT);text-align:right;width:20px'>"+(i+1)+"</td>"
+        +"<td style='padding:4px 5px;font-weight:600;font-size:11px;white-space:nowrap'>"+esc(r.ref)+"</td>"
+        +"<td style='padding:4px 5px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px' title='"+esc(name)+"'>"+esc(name.slice(0,20))+" "+newTagPs(r.ref)+"</td>"
+        +"<td style='padding:4px 5px;font-size:10px;color:var(--txS)'>"+esc(canal)+"</td>"
+        +days.map(v=>"<td style='padding:4px 4px;text-align:right;font-size:11px;font-weight:"+(v>0?"700":"400")+";color:"+(v>0?"var(--tx)":"var(--txT)")+";width:30px'>"+(v>0?v:"—")+"</td>").join("")
+        +"<td style='padding:4px 7px;text-align:right;font-weight:700;font-size:12px;color:"+(tot>0?"var(--ac)":"var(--txT)")+";border-left:2px solid var(--border);background:"+(tot>0?"var(--acBg)":"")+"'>"+(tot>0?tot:"—")+"</td>"
+        +"<td style='padding:4px 5px;text-align:center'>"+psDealBadge(r.ref)+"</td>"
+        +(showSeaPs?"<td style='padding:4px 5px;text-align:center'>"+sea+"</td>":"")
         +"</tr>";
     }).join("");
-    const rightTable = "<table style='width:100%;border-collapse:collapse;font-size:12px'>"
-      +"<thead><tr style='border-bottom:1px solid var(--border)'>"
-      +"<th style='padding:5px 8px;text-align:left;color:var(--txS)'>Réf</th>"
-      +DAY_FR.map(l=>"<th style='padding:5px 7px;text-align:right;color:var(--txS);width:38px'>"+l+"</th>").join("")
-      +"<th style='padding:5px 10px;text-align:right;font-weight:700;color:var(--ac);border-left:1px solid var(--borderL);width:50px'>Total</th>"
-      +"</tr></thead><tbody>"+rightRows+"</tbody></table>";
-    return "<div style='display:grid;grid-template-columns:1fr 1fr;gap:16px'>"
-      +"<div><div style='font-size:10px;font-weight:600;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px'>🏆 Classement Prestashop</div>"+leftTable+"</div>"
-      +"<div><div style='font-size:10px;font-weight:600;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px'>📅 Détail par jour</div>"+rightTable+"</div>"
+    const leftTable = "<div style='overflow-x:auto'><table style='width:100%;border-collapse:collapse;font-size:12px'>"
+      +"<thead><tr style='border-bottom:1px solid var(--border);background:var(--bg)'>"
+      +"<th style='padding:4px 5px;color:var(--txT);width:20px'>#</th>"
+      +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS)'>Réf</th>"
+      +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS)'>Produit</th>"
+      +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS)'>Canal</th>"
+      +DAY_FR.map(l=>"<th style='padding:4px 4px;text-align:right;font-size:10px;color:var(--txS);width:30px'>"+l+"</th>").join("")
+      +"<th style='padding:4px 7px;text-align:right;font-size:10px;font-weight:700;color:var(--ac);border-left:2px solid var(--border)'>Total</th>"
+      +"<th style='padding:4px 5px;text-align:center;font-size:10px;color:var(--txS)'>Opé.</th>"
+      +(showSeaPs?"<th style='padding:4px 5px;text-align:center;font-size:10px;color:var(--txS)'>SEA</th>":"")
+      +"</tr></thead><tbody>"+leftRows+"</tbody></table></div>";
+    // Droite : Top10 nouveautés 2026 de la semaine
+    const new2026Ps = top10.filter(r=>NEW_2026_SET.has(r.ref)).slice(0,10);
+    let rightTable2;
+    if (!new2026Ps.length) {
+      rightTable2 = "<div style='color:var(--txT);font-size:12px;padding:12px;text-align:center'>Aucune nouveauté 2026.</div>";
+    } else {
+      const rr = new2026Ps.map((r,i)=>{
+        const bg=i%2?"background:var(--bg)":"";
+        const nm=psRefNames[r.ref]||r.ref;
+        const canal=skuCanal[r.ref]||'—';
+        const basket=(r.ca_ht&&r.qty)?Math.round(r.ca_ht/r.qty*1.2)+"€":"—";
+        return "<tr style='"+bg+";border-bottom:1px solid var(--borderL)'>"
+          +"<td style='padding:5px 5px;font-size:11px;color:var(--txT);text-align:right'>"+(i+1)+"</td>"
+          +"<td style='padding:5px 5px;font-weight:600;font-size:11px;white-space:nowrap'>"+esc(r.ref)+"</td>"
+          +"<td style='padding:5px 5px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px' title='"+esc(nm)+"'>"+esc(nm.slice(0,22))+"</td>"
+          +"<td style='padding:5px 5px;font-size:10px;color:var(--txS)'>"+esc(canal)+"</td>"
+          +"<td style='padding:5px 5px;text-align:right;font-weight:700;color:var(--gn)'>"+r.qty+"</td>"
+          +"<td style='padding:5px 5px;text-align:right;font-size:11px;color:var(--txS)'>"+basket+"</td>"
+          +"</tr>";
+      }).join("");
+      rightTable2 = "<table style='width:100%;border-collapse:collapse;font-size:12px'>"
+        +"<thead><tr style='border-bottom:1px solid var(--border);background:var(--gnBg)'>"
+        +"<th style='padding:5px 5px;color:var(--txT);width:20px'>#</th>"
+        +"<th style='padding:5px 5px;text-align:left;font-size:10px;color:var(--gn)'>Réf</th>"
+        +"<th style='padding:5px 5px;text-align:left;font-size:10px;color:var(--gn)'>Produit</th>"
+        +"<th style='padding:5px 5px;text-align:left;font-size:10px;color:var(--gn)'>Canal</th>"
+        +"<th style='padding:5px 5px;text-align:right;font-size:10px;color:var(--gn)'>Ventes</th>"
+        +"<th style='padding:5px 5px;text-align:right;font-size:10px;color:var(--gn)'>PM TTC</th>"
+        +"</tr></thead><tbody>"+rr+"</tbody></table>";
+    }
+    return "<div style='display:grid;grid-template-columns:3fr 2fr;gap:16px'>"
+      +"<div><div style='font-size:10px;font-weight:600;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px'>🏆 Top 10 PS + détail jour</div>"+leftTable+"</div>"
+      +"<div><div style='font-size:10px;font-weight:600;color:var(--gn);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px'>🌱 Top 10 Nouveautés 2026</div>"+rightTable2+"</div>"
       +"</div>";
   }
 
@@ -1830,9 +1882,9 @@ function renderRevenueBlock() {
     for (let w = 1; w <= lastWkNum; w++) {
       const wStart = isoWeekStartFromNum(curYear, w);
       const wMo = wStart ? wStart.slice(0, 7) : null;
-      if (wMo && monthRevsHistory[wMo]) {
+      // Garde uniquement les mois de curYear (S1 peut commencer en décembre N-1)
+      if (wMo && wMo.startsWith(String(curYear)) && monthRevsHistory[wMo]) {
         if (!_ytdSeenMo.has(wMo)) { caYtdN += monthRevsHistory[wMo]; _ytdSeenMo.add(wMo); }
-        // mois déjà compté → on passe
       } else {
         caYtdN += getWeekCA(`S${w} ${curYear}`);
       }
@@ -2067,6 +2119,7 @@ let prodFilters={search:"",type:"all",avail:"all",page1:"all",tag:"all",canal:"a
 let exportSessions = 4;
 let filterOnlySales = false;
 let filterOnlyDeal = false;
+let filterNew2026 = false;
 function buildProduitsTableHTML() {
   const f=prodFilters; let list=[...STATE.products];
   if(f.search){const s=f.search.toLowerCase();list=list.filter(p=>p.name.toLowerCase().includes(s)||p.product_id.includes(s)||(p.sku||"").toLowerCase().includes(s));}
@@ -2080,6 +2133,7 @@ function buildProduitsTableHTML() {
   if(filterOnlySales)list=list.filter(p=>(STATE.productSalesWeekly||[]).some(r=>r.ref===p.sku&&r.qty>0));
   if(filterOnlyDeal)list=list.filter(p=>getActiveDeal(p.sku));
   if(f.canal!=="all")list=list.filter(p=>p.canal_attribue===f.canal);
+  if(filterNew2026)list=list.filter(p=>NEW_2026_SET.has(p.sku));
   list.sort((a,b)=>{let va,vb;switch(f.sort){case"price":va=a._price||0;vb=b._price||0;break;case"rating":va=a._rating||0;vb=b._rating||0;break;case"delivery":va=a._delivery||999;vb=b._delivery||999;break;default:va=a.name;vb=b.name;}return f.dir==="asc"?(va<vb?-1:1):(va>vb?-1:1);});
   const si=col=>f.sort===col?(f.dir==="asc"?" ↑":" ↓"):"";
   // Semaine de référence pour la colonne Ventes-SXX : semaine précédente ISO
@@ -2137,23 +2191,29 @@ function buildProduitsTableHTML() {
         <button onclick="openExportModal()" style="padding:6px 14px;border:.5px solid var(--ac);border-radius:6px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">⬇ Export</button>
       </div>
     </div>
-    <div class="card" style="padding:0;overflow:hidden"><div class="scroll-table"><table style="min-width:1200px">
-      <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)">
-        <th style="cursor:pointer" onclick="toggleProdSort('name')">Produit${si('name')}</th><th>Réfs</th><th style="text-align:center">Type</th><th style="text-align:center">Canal</th>
-        <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('price')">Prix${si('price')}</th>
-        <th style="text-align:center">Dispo</th>
-        <th style="text-align:right;white-space:nowrap">Stock ent.</th>
-        <th style="text-align:right;white-space:nowrap">Transit</th>
-        <th style="text-align:right;white-space:nowrap">Non exp.</th>
-        <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('rating')">Note${si('rating')}</th>
-        <th style="cursor:pointer;text-align:right" onclick="toggleProdSort('delivery')">Délai${si('delivery')}</th>
-        <th>Page 1</th><th>${_hasSalesData?"Ventes "+_latestWk:"Ventes"}</th><th>Deal</th><th>Variations</th>
-        <th>Lien</th>
+    <div class="card" style="padding:0;overflow:hidden"><div class="scroll-table" style="overflow-x:auto;overflow-y:auto;max-height:72vh"><table style="min-width:1200px">
+      <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg);position:sticky;top:0;z-index:2">
+        <th style="cursor:pointer;position:sticky;top:0;background:var(--bg)" onclick="toggleProdSort('name')">Produit${si('name')}</th><th style="position:sticky;top:0;background:var(--bg)">Réfs</th><th style="text-align:center;position:sticky;top:0;background:var(--bg)">Type</th>
+        <th style="text-align:center;position:sticky;top:0;background:var(--bg)">New 2026</th>
+        <th style="text-align:center;position:sticky;top:0;background:var(--bg)">Canal</th>
+        <th style="cursor:pointer;text-align:right;position:sticky;top:0;background:var(--bg)" onclick="toggleProdSort('price')">Prix${si('price')}</th>
+        <th style="text-align:center;position:sticky;top:0;background:var(--bg)">Dispo</th>
+        <th style="text-align:right;white-space:nowrap;position:sticky;top:0;background:var(--bg)">Stock ent.</th>
+        <th style="text-align:right;white-space:nowrap;position:sticky;top:0;background:var(--bg)">Transit</th>
+        <th style="text-align:right;white-space:nowrap;position:sticky;top:0;background:var(--bg)">Non exp.</th>
+        <th style="cursor:pointer;text-align:right;position:sticky;top:0;background:var(--bg)" onclick="toggleProdSort('rating')">Note${si('rating')}</th>
+        <th style="cursor:pointer;text-align:right;position:sticky;top:0;background:var(--bg)" onclick="toggleProdSort('delivery')">Délai${si('delivery')}</th>
+        <th style="position:sticky;top:0;background:var(--bg)">Page 1</th>
+        <th style="position:sticky;top:0;background:var(--bg)">${_hasSalesData?"Ventes "+_latestWk:"Ventes"}</th>
+        <th style="position:sticky;top:0;background:var(--bg)">Deal</th>
+        <th style="position:sticky;top:0;background:var(--bg)">Variations</th>
+        <th style="position:sticky;top:0;background:var(--bg)">Lien</th>
       </tr></thead><tbody>
       ${list.map((p,i)=>`<tr class="${i%2?'stripe':''}">
         <td style="font-weight:500;max-width:240px"><div style="line-height:1.3">${esc(p.name)}</div></td>
         <td style="font-size:11px;color:var(--txS);white-space:nowrap"><div>${esc(p.product_id)}</div><div>${esc(p.sku)}</div><div style="color:var(--txT)">${esc(p.sku_marketplace)}</div></td>
         <td style="text-align:center">${pill(p.type==="Nouveautés Q4+Q1"?"Nvtés":p.type==="Deals exclus"?"Deals":p.type,p.type==="Classe A"?"green":p.type==="Deals exclus"?"amber":"accent")}</td>
+        <td style="text-align:center">${NEW_2026_SET.has(p.sku)?'<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700;background:#e8f5e9;color:#1a7a4c">🌱 new 2026</span>':'<span style="color:var(--txT);font-size:11px">—</span>'}</td>
         <td style="text-align:center">${p.canal_attribue?pill(p.canal_attribue,'accent'):'<span style="color:var(--txT)">—</span>'}</td>
         <td style="text-align:right;font-weight:500">${p._price!=null?Math.round(p._price)+'€':'—'}</td>
         <td style="text-align:center">${p._available!=null?pill(p._available?'Dispo':'Indispo',p._available?'green':'red'):'—'}</td>
@@ -2179,7 +2239,9 @@ function renderProduits() {
       <select onchange="prodFilters.avail=this.value;renderProduitsTable()"><option value="all">Dispo + Indispo</option><option value="dispo" ${f.avail==='dispo'?'selected':''}>Disponible</option><option value="indispo" ${f.avail==='indispo'?'selected':''}>Indisponible</option><option value="pb_lien" ${f.avail==='pb_lien'?'selected':''}>Problème de liens</option></select>
       <select onchange="prodFilters.page1=this.value;renderProduitsTable()"><option value="all">Toutes positions</option><option value="yes" ${f.page1==='yes'?'selected':''}>En page 1</option><option value="no" ${f.page1==='no'?'selected':''}>Pas en page 1</option></select>
       <select onchange="prodFilters.tag=this.value;renderProduitsTable()"><option value="all">Toutes variations</option><option value="prix_up">Prix ↑</option><option value="prix_down">Prix ↓</option><option value="delai_up">Délai ↑</option><option value="delai_down">Délai ↓</option><option value="note_up">Note ↑</option><option value="note_down">Note ↓</option></select>
-      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--txS);cursor:pointer;white-space:nowrap"><input type="checkbox" ${filterOnlySales?"checked":""} onchange="filterOnlySales=this.checked;renderProduitsTable()" style="cursor:pointer"> Avec ventes uniquement</label> <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--txS);cursor:pointer;white-space:nowrap"><input type="checkbox" id="filter-deal-cb" ${filterOnlyDeal?"checked":""} onchange="filterOnlyDeal=this.checked;renderProduitsTable()" style="cursor:pointer"> Deal actif uniquement</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--txS);cursor:pointer;white-space:nowrap"><input type="checkbox" ${filterOnlySales?"checked":""} onchange="filterOnlySales=this.checked;renderProduitsTable()" style="cursor:pointer"> Avec ventes uniquement</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--txS);cursor:pointer;white-space:nowrap"><input type="checkbox" id="filter-deal-cb" ${filterOnlyDeal?"checked":""} onchange="filterOnlyDeal=this.checked;renderProduitsTable()" style="cursor:pointer"> Deal actif uniquement</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--gn);cursor:pointer;white-space:nowrap;font-weight:600"><input type="checkbox" ${filterNew2026?"checked":""} onchange="filterNew2026=this.checked;renderProduitsTable()" style="cursor:pointer"> 🌱 Nouveautés 2026</label>
     </div>
     <div id="produits-table-container">${buildProduitsTableHTML()}</div>`;
 }
@@ -2634,9 +2696,12 @@ function renderPositions() {
   const totalBM=Object.values(STATE.bmByKeyword).reduce((s,v)=>s+v,0);
   const withPresence=keywords.filter(k=>STATE.bmByKeyword[k]>0).length;
   return `
-    <div class="metrics">
-      <div class="metric"><div class="metric-label">Catégories avec présence</div><div class="metric-value" style="color:var(--ac)">${withPresence}</div><div class="metric-sub">sur ${keywords.length}</div></div>
-      <div class="metric"><div class="metric-label">Total apparitions P1</div><div class="metric-value" style="color:var(--gn)">${totalBM}</div></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+      <div class="metrics" style="margin:0;flex:1">
+        <div class="metric"><div class="metric-label">Catégories avec présence</div><div class="metric-value" style="color:var(--ac)">${withPresence}</div><div class="metric-sub">sur ${keywords.length}</div></div>
+        <div class="metric"><div class="metric-label">Total apparitions P1</div><div class="metric-value" style="color:var(--gn)">${totalBM}</div></div>
+      </div>
+      <button onclick="openPositionsHistorique()" style="padding:7px 14px;border:.5px solid var(--ac);border-radius:8px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit;white-space:nowrap">📈 Historique</button>
     </div>
     <div class="card"><div class="card-title">Présence BestMobilier par catégorie</div>
       <div class="cat-grid">${keywords.map(kw=>{const c=STATE.bmByKeyword[kw]||0;const BM_S=new Set(['BestMobilier','Best Mobilier','Lisa Design']);const BM_S_L=new Set(['bestmobilier','best mobilier','lisa design']);const spo=(STATE.keywordData[kw]||[]).filter(i=>{if(!i.is_sponsored)return false;if(BM_S.has(i.seller)||(i.seller&&BM_S_L.has(i.seller.toLowerCase())))return true;if(!STATE.bmScraperIds)return false;var pid=(i.product_id||'').toLowerCase();if(STATE.bmScraperIds.has(pid)||STATE.bmScraperIds.has(stripUrlParams(pid)))return true;var mr=(function(u){var m=String(u||'').match(/-(M\d+)\.htm/i);return m?m[1].toLowerCase():null;})(pid);if(mr&&STATE.bmScraperIds.has(mr))return true;var purl=(i.url||'').toLowerCase();if(purl){if(STATE.bmScraperIds.has(purl)||STATE.bmScraperIds.has(stripUrlParams(purl)))return true;var mru=(function(u){var m=String(u||'').match(/-(M\d+)\.htm/i);return m?m[1].toLowerCase():null;})(purl);if(mru&&STATE.bmScraperIds.has(mru))return true;}return false;}).length;const deal=(STATE.keywordData[kw]||[]).filter(i=>{var tr=lookupTrackedProduct(i.product_id);return tr&&!!getActiveDeal(tr.sku);}).length;return'<div class="cat-card '+(c===0?'cat-card-zero':'')+'" onclick="showPositionDetail(\''+esc(kw).replace(/'/g,"\\x27")+'\')">'+'<div class="cat-card-header"><span class="cat-card-name">'+esc(kw)+'</span><span class="cat-card-count">'+c+'</span></div>'+(spo>0?'<div style="font-size:10px;color:var(--am);margin-top:2px">dont '+spo+' sponsorisé'+(spo>1?'s':'')+'</div>':'')+(deal>0?'<div style="font-size:10px;color:var(--rd);margin-top:1px">dont '+deal+' dealé'+(deal>1?'s':'')+'</div>':'')+(c>0?'<div style="margin-top:5px;height:4px;background:var(--borderL);border-radius:2px;overflow:hidden"><div style="height:100%;width:'+Math.min(c/(maxBM+1)*100,100)+'%;background:var(--ac);border-radius:2px"></div></div>':'')+'</div>';}).join('')}</div>
@@ -2733,6 +2798,60 @@ function renderPositions() {
     </div>
   </div>`;
 }
+async function openPositionsHistorique() {
+  openModal('📈 Historique Positions — ' + ((MARKETPLACES.find(m=>m.id===MARKETPLACE)||{}).label||MARKETPLACE),
+    '<div style="padding:20px;text-align:center;color:var(--txS)">Chargement...</div>');
+  try {
+    // Récupérer toutes les sessions de positions pour cette marketplace
+    var sessions = await sb('positions',
+      'marketplace=eq.'+MARKETPLACE+'&select=date,product_id,seller,is_sponsored&order=date.desc&limit=50000'
+    );
+    // Grouper par date (session = jour de scraping)
+    var byDate = {};
+    sessions.forEach(function(r) {
+      var d = (r.date||'').slice(0,10);
+      if (!d) return;
+      if (!byDate[d]) byDate[d] = { total:new Set(), bm:new Set(), spo:new Set(), deal:new Set() };
+      if (r.product_id) byDate[d].total.add(r.product_id);
+      var tracked = lookupTrackedProduct(r.product_id);
+      if (tracked) {
+        byDate[d].bm.add(r.product_id);
+        if (r.is_sponsored) byDate[d].spo.add(r.product_id);
+        if (getActiveDeal(tracked.sku)) byDate[d].deal.add(r.product_id);
+      }
+    });
+    var dates = Object.keys(byDate).sort().reverse();
+    if (!dates.length) {
+      document.getElementById('modal-body').innerHTML = '<div style="padding:20px;text-align:center;color:var(--txT)">Aucune donnée de position.</div>';
+      return;
+    }
+    var TH = 'padding:7px 10px;font-size:11px;font-weight:600;color:var(--txS);background:var(--bg);border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;';
+    var TD = 'padding:6px 10px;font-size:12px;border-bottom:1px solid var(--borderL);text-align:right;';
+    var rows = dates.map(function(d, i) {
+      var s = byDate[d];
+      var fmtD = new Date(d+'T12:00:00Z').toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'});
+      return '<tr style="'+(i%2?'background:var(--bg)':'')+'">'
+        +'<td style="'+TD+'text-align:left;font-weight:600">'+fmtD+'</td>'
+        +'<td style="'+TD+'">' +s.bm.size+'</td>'
+        +'<td style="'+TD+'color:var(--am)">'+(s.spo.size>0?s.spo.size:'—')+'</td>'
+        +'<td style="'+TD+'color:var(--rd)">'+(s.deal.size>0?s.deal.size:'—')+'</td>'
+        +'<td style="'+TD+'color:var(--txS)">'+s.total.size+'</td>'
+        +'</tr>';
+    }).join('');
+    document.getElementById('modal-body').innerHTML =
+      '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'
+      +'<thead><tr>'
+      +'<th style="'+TH+'text-align:left">Date scraping</th>'
+      +'<th style="'+TH+'">BM en P1</th>'
+      +'<th style="'+TH+'color:var(--am)">Sponsorisés BM</th>'
+      +'<th style="'+TH+'color:var(--rd)">Dealés BM</th>'
+      +'<th style="'+TH+'">Total P1</th>'
+      +'</tr></thead><tbody>'+rows+'</tbody></table></div>';
+  } catch(e) {
+    document.getElementById('modal-body').innerHTML = '<div style="color:var(--rd);padding:16px">Erreur : '+esc(e.message)+'</div>';
+  }
+}
+
 // Helper global : résoudre un produit tracké depuis un product_id (avec/sans query params)
 function lookupTrackedProduct(pid) {
   if (!pid) return null;
@@ -2887,15 +3006,17 @@ async function showPositionDetail(kw) {
     function movementRow(item, badge) {
       var tracked = lookupTrackedProduct(item.pid);
       var name = tracked ? esc(tracked.name) : esc(item.seller ? item.seller + ' — ' + item.pid : item.pid);
+      var url = tracked ? tracked.url : '';
       var spoTag = item.is_sponsored
         ? ' <span style="display:inline-block;padding:1px 6px;border-radius:99px;font-size:10px;font-weight:600;background:#fff3e0;color:#e65100">⚡ Sponso</span>'
         : '';
       var untracked = !tracked
         ? ' <span style="display:inline-block;padding:1px 6px;border-radius:99px;font-size:10px;background:var(--amBg);color:var(--am)">non suivi</span>'
         : '';
-      return '<div style="padding:4px 0;border-bottom:1px solid rgba(0,0,0,.06);font-size:12px">'
+      var seeLink = url ? ' <a href="'+esc(url)+'" target="_blank" style="font-size:10px;color:var(--ac);text-decoration:none">voir ↗</a>' : '';
+      return '<div style="padding:4px 0;border-bottom:1px solid rgba(0,0,0,.06);font-size:12px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">'
         + '<span style="font-weight:500">' + name + '</span>'
-        + badge + spoTag + untracked
+        + badge + spoTag + untracked + seeLink
         + '</div>';
     }
 
@@ -4822,7 +4943,7 @@ function buildAuditHTML() {
   const html = synthese + filters +
     buildAuditColFilterTagsHTML() +
     '<div id="audit-scroll-top" style="position:sticky;top:0;z-index:10;overflow-x:auto;overflow-y:hidden;height:10px;background:var(--bg);border-bottom:1px solid var(--borderL)"><div id="audit-scroll-phantom" style="height:1px"></div></div>' +
-    '<div class="card" style="padding:0;overflow:hidden"><div class="scroll-table" id="audit-scroll-body">' +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="scroll-table" id="audit-scroll-body" style="overflow-x:auto;overflow-y:auto;max-height:72vh">' +
     '<table id="audit-table" style="min-width:'+totalW+'px;border-collapse:collapse;font-size:11px">' +
     thead +
     '<tbody id="audit-tbody">'+buildAuditRows(list)+'</tbody>' +
@@ -5124,8 +5245,8 @@ async function auditSaveAllPending() {
 function isAuditTabActive() {
   if (isMinimalMp()) return STATE.tab === 2;
   if (MARKETPLACE === 'laredoute') return STATE.tab === 4;
-  if (isLightMp()) return STATE.tab === 5;
-  return STATE.tab === 7;
+  if (isLightMp()) return STATE.tab === 4;
+  return STATE.tab === 6;
 }
 
 function showAuditUnsavedModal(onSave, onDiscard) {
@@ -6573,11 +6694,89 @@ async function renderAlertes() {
       + '</tbody></table></div>';
   }
 
+  // ── Alertes synchrones 3-5 ───────────────────────────────────────
+  // Alertes déjà validées cette session (pour masquage immédiat)
+  if (!STATE._validatedAlerts) STATE._validatedAlerts = new Set();
+  var validated = STATE._validatedAlerts;
+
+  // Alerte 3 — SEA actif + délai livraison > 30j
+  var seaDeliveryAlerts = [];
+  (STATE.seaActiveProducts||[]).forEach(function(a) {
+    if (a.period_start > today || a.period_end < today) return;
+    if (validated.has('sea_delivery|'+a.sku)) return;
+    var prod = (STATE.products||[]).find(function(p){ return p.sku === a.sku; });
+    if (!prod) return;
+    var delai = prod._delivery;
+    if (delai && delai > 30) seaDeliveryAlerts.push({ sku: a.sku, name: prod.name||a.sku, delai: delai });
+  });
+
+  // Alerte 4 — SEA actif + opé commerciale active (même marketplace)
+  var seaOpeDoublons = [];
+  var activeOpIds2 = new Set((STATE.activeOps||[]).filter(function(op){ return op.date_debut<=today&&op.date_fin>=today; }).map(function(op){ return op.id; }));
+  var activeOpByRef2 = {};
+  (STATE.activeOpProducts||[]).forEach(function(ap){
+    if (activeOpIds2.has(ap.operation_id)) {
+      if (!activeOpByRef2[ap.ref]) activeOpByRef2[ap.ref] = [];
+      var op2 = (STATE.activeOps||[]).find(function(o){ return o.id===ap.operation_id; });
+      if (op2) activeOpByRef2[ap.ref].push(op2.nom);
+    }
+  });
+  (STATE.seaActiveProducts||[]).forEach(function(a) {
+    if (a.period_start > today || a.period_end < today) return;
+    if (validated.has('sea_ope_doublon|'+a.sku)) return;
+    if (activeOpByRef2[a.sku]) {
+      var prod = (STATE.products||[]).find(function(p){ return p.sku===a.sku; });
+      seaOpeDoublons.push({ sku: a.sku, name: prod?prod.name:a.sku, opes: activeOpByRef2[a.sku] });
+    }
+  });
+
+  function buildSyncAlertSection(alerts, title, colorVar, renderRow) {
+    var badge = alerts.length ? ' <span style="padding:2px 8px;border-radius:99px;font-size:11px;background:var(--rdBg);color:var(--rd)">'+alerts.length+'</span>' : '';
+    var body = alerts.length
+      ? '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'
+        + renderRow(alerts)
+        + '</table></div>'
+      : '<div style="padding:12px;text-align:center;color:var(--gn);font-size:12px;font-weight:600">✓ Aucune alerte de ce type.</div>';
+    return '<div class="card" style="margin-top:14px">'
+      + '<div style="font-size:13px;font-weight:700;color:'+colorVar+';margin-bottom:10px">'+title+badge+'</div>'
+      + body + '</div>';
+  }
+
+  var deliverySection = buildSyncAlertSection(seaDeliveryAlerts,
+    '🚚 SEA actif + délai de livraison > 30 jours', 'var(--am)',
+    function(arr) {
+      return '<thead><tr><th style="'+TH+'">Réf</th><th style="'+TH+'">Produit</th><th style="'+TH+'text-align:right">Délai constaté</th><th style="'+TH+'"></th></tr></thead><tbody>'
+        + arr.map(function(a,i) {
+            return '<tr style="'+(i%2?'background:var(--bg)':'')+'">'
+              +'<td style="'+TD+'font-weight:600">'+esc(a.sku)+'</td>'
+              +'<td style="'+TD+'max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(a.name)+'</td>'
+              +'<td style="'+TD+'text-align:right;font-weight:700;color:var(--am)">'+a.delai+' j</td>'
+              +'<td style="'+TD+'"><button onclick="validerAlerte(\'sea_delivery\',\''+esc(a.sku)+'\',{})" style="padding:2px 10px;border:.5px solid var(--gn);border-radius:6px;font-size:11px;background:var(--gnBg);color:var(--gn);cursor:pointer;font-family:inherit">✓ Traité</button></td>'
+              +'</tr>';
+          }).join('')+'</tbody>';
+    });
+
+  var opeDoublonSection = buildSyncAlertSection(seaOpeDoublons,
+    '🔀 SEA actif + opération commerciale active (même marketplace)', 'var(--pu)',
+    function(arr) {
+      return '<thead><tr><th style="'+TH+'">Réf</th><th style="'+TH+'">Produit</th><th style="'+TH+'">Opération(s) active(s)</th><th style="'+TH+'"></th></tr></thead><tbody>'
+        + arr.map(function(a,i) {
+            return '<tr style="'+(i%2?'background:var(--bg)':'')+'">'
+              +'<td style="'+TD+'font-weight:600">'+esc(a.sku)+'</td>'
+              +'<td style="'+TD+'max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(a.name)+'</td>'
+              +'<td style="'+TD+'">'+a.opes.map(function(n){ return '<span style="padding:1px 7px;border-radius:99px;font-size:10px;font-weight:600;background:var(--puBg);color:var(--pu);margin:1px">'+esc(n)+'</span>'; }).join(' ')+'</td>'
+              +'<td style="'+TD+'"><button onclick="validerAlerte(\'sea_ope_doublon\',\''+esc(a.sku)+'\',{})" style="padding:2px 10px;border:.5px solid var(--gn);border-radius:6px;font-size:11px;background:var(--gnBg);color:var(--gn);cursor:pointer;font-family:inherit">✓ Traité</button></td>'
+              +'</tr>';
+          }).join('')+'</tbody>';
+    });
+
   el.innerHTML =
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">'
     + '<div style="font-size:15px;font-weight:700">Alertes — '+mpLabel+'</div>'
+    + '<div style="display:flex;gap:8px">'
+    + '<button onclick="openAlertesHistorique()" style="padding:6px 14px;border:.5px solid var(--ac);border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--acBg);color:var(--ac)">📋 Historique</button>'
     + '<button onclick="renderAlertes()" style="padding:6px 14px;border:.5px solid var(--border);border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--card)">↺ Actualiser</button>'
-    + '</div>'
+    + '</div></div>'
     + '<div class="card" id="alerte-price-card">'
     + '<div style="font-size:13px;font-weight:700;color:var(--rd);margin-bottom:10px">⚠ Écarts prix opération commerciale vs Prestashop (seuil 2%)</div>'
     + '<div style="font-size:11px;color:var(--txS);margin-bottom:10px">Prix constaté = <code>revenue_ttc / quantité</code> par commande individuelle, dans la plage de dates de l\'opération.</div>'
@@ -6589,6 +6788,13 @@ async function renderAlertes() {
     + '</div>'
     + '<div style="font-size:11px;color:var(--txS);margin-bottom:10px">Produits SEA actifs simultanément sur plusieurs marketplaces cette semaine.</div>'
     + buildSeaSection()
+    + '</div>'
+    + deliverySection
+    + opeDoublonSection
+    + '<div class="card" style="margin-top:14px" id="alerte-parent-card">'
+    + '<div style="font-size:13px;font-weight:700;color:var(--am);margin-bottom:10px">👨‍👧 Doublon SEA — deux déclinaisons du même modèle actives</div>'
+    + '<div style="font-size:11px;color:var(--txS);margin-bottom:10px">Deux réfs enfant d\'un même modèle (ex: 1366BEI + 1366V) actives en SEA sur la même marketplace.</div>'
+    + '<div id="alerte-parent-body"><div style="color:var(--txS);font-size:12px;padding:8px">Chargement...</div></div>'
     + '</div>';
 
   // ── Chargement async des alertes prix ───────────────────────────
@@ -6667,11 +6873,24 @@ async function renderAlertes() {
       updateAlertTabBadge(0);
       return;
     }
-    // Grouper par SKU pour compter les produits distincts en alerte
-    var distinctSkus = new Set(allBadOrders.map(function(o){return o.sku;}));
-    updateAlertTabBadge(distinctSkus.size);
-
     // Grouper par SKU
+    var bySku = {};
+    allBadOrders.forEach(function(o) {
+      if (!bySku[o.sku]) bySku[o.sku] = { name: o.name, opNom: o.opNom, opPrix: o.opPrix, orders: [] };
+      bySku[o.sku].orders.push(o);
+    });
+
+    // Filtrer les déjà validés
+    allBadOrders = allBadOrders.filter(function(o){ return !validated.has('price_ecart|'+o.sku); });
+    if (!allBadOrders.length) {
+      priceBodyEl.innerHTML = '<div style="padding:14px;text-align:center;color:var(--gn);font-size:12px;font-weight:600">✓ Aucune incohérence de prix sur les opérations actives.</div>';
+      updateAlertTabBadge(0);
+      return;
+    }
+    // Re-calculer les distinctSkus après filtrage
+    var distinctSkus2 = new Set(allBadOrders.map(function(o){return o.sku;}));
+    updateAlertTabBadge(distinctSkus2.size);
+
     var bySku = {};
     allBadOrders.forEach(function(o) {
       if (!bySku[o.sku]) bySku[o.sku] = { name: o.name, opNom: o.opNom, opPrix: o.opPrix, orders: [] };
@@ -6682,35 +6901,37 @@ async function renderAlertes() {
     var html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'
       + '<thead><tr>'
       + '<th style="'+TH+'">Réf / Date commande</th>'
-      + '<th style="'+TH+'">Produit / N° commande</th>'
+      + '<th style="'+TH+'">Produit</th>'
       + '<th style="'+TH+'">Opération</th>'
       + '<th style="'+TH+'text-align:right">Prix opé TTC</th>'
       + '<th style="'+TH+'text-align:right">Prix constaté TTC</th>'
       + '<th style="'+TH+'text-align:right">Écart</th>'
+      + '<th style="'+TH+'"></th>'
       + '</tr></thead><tbody>';
 
     skus.forEach(function(sku) {
       var g = bySku[sku];
-      var prod = prodBySku[sku];
-      // Ligne produit (header groupe)
       html += '<tr style="background:var(--rdBg)">'
         + '<td style="'+TD+'font-weight:700;color:var(--rd)">'+esc(sku)+'</td>'
-        + '<td style="'+TD+'font-weight:600;color:var(--rd);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" colspan="2">'+esc(g.name)+'</td>'
+        + '<td style="'+TD+'font-weight:600;color:var(--rd);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(g.name)+'</td>'
+        + '<td style="'+TD+'"><span style="padding:1px 7px;border-radius:99px;font-size:10px;font-weight:600;background:var(--rdBg);color:var(--rd);border:.5px solid var(--rd)">'+esc(g.opNom)+'</span></td>'
         + '<td style="'+TD+'text-align:right;font-weight:600">'+g.opPrix+' €</td>'
         + '<td style="'+TD+'"></td>'
-        + '<td style="'+TD+'"><span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:var(--rdBg);color:var(--rd)">'+g.orders.length+' commande'+(g.orders.length>1?'s':'')+'</span></td>'
+        + '<td style="'+TD+'"><span style="padding:2px 7px;border-radius:99px;font-size:10px;background:var(--rdBg);color:var(--rd)">'+g.orders.length+' cmd</span></td>'
+        + '<td style="'+TD+'"><button onclick="validerAlerte(\'price_ecart\',\''+esc(sku)+'\',{ope:\''+esc(g.opNom)+'\'})" style="padding:2px 10px;border:.5px solid var(--gn);border-radius:6px;font-size:11px;background:var(--gnBg);color:var(--gn);cursor:pointer;font-family:inherit">✓ Traité</button></td>'
         + '</tr>';
-      // Sous-lignes commandes
       g.orders.forEach(function(o) {
         var ecartColor = Math.abs(o.ecartPct) >= 10 ? 'var(--rd)' : 'var(--am)';
         var signe = o.ecartPct >= 0 ? '+' : '';
         var fmtDate = new Date(o.saleDate+'T12:00:00Z').toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'});
         html += '<tr style="background:var(--bg)">'
           + '<td style="'+TD+'padding-left:22px;color:var(--txS);font-size:11px">'+fmtDate+'</td>'
-          + '<td style="'+TD+'font-size:11px;color:var(--txT)" colspan="2">'+esc(o.orderRef)+'</td>'
+          + '<td style="'+TD+'font-size:11px;color:var(--txT)">'+esc(o.orderRef)+'</td>'
+          + '<td style="'+TD+'"></td>'
           + '<td style="'+TD+'text-align:right;color:var(--txS)">'+o.opPrix+' €</td>'
           + '<td style="'+TD+'text-align:right;font-weight:600">'+o.unitPriceTtc+' €</td>'
           + '<td style="'+TD+'text-align:right;font-weight:700;color:'+ecartColor+'">'+signe+o.ecartPct+'%</td>'
+          + '<td style="'+TD+'"></td>'
           + '</tr>';
       });
     });
@@ -6722,13 +6943,91 @@ async function renderAlertes() {
     if (priceBodyEl) priceBodyEl.innerHTML = '<div style="color:var(--rd);font-size:12px;padding:12px">Erreur : '+esc(e.message)+'</div>';
     updateAlertTabBadge(0);
   }
+
+  // ── Alerte 5 : doublon parent SEA (async) ───────────────────────
+  var parentBodyEl = document.getElementById('alerte-parent-body');
+  if (parentBodyEl) {
+    try {
+      var refs = await loadProductRefs();
+      var c2p = refs.child_to_parent || {};
+      var parentMap = {}; // parent → [skus actifs aujourd'hui]
+      (STATE.seaActiveProducts||[]).forEach(function(a) {
+        if (a.period_start > today || a.period_end < today) return;
+        var parent = c2p[a.sku];
+        if (!parent) return;
+        if (!parentMap[parent]) parentMap[parent] = [];
+        if (!parentMap[parent].includes(a.sku)) parentMap[parent].push(a.sku);
+      });
+      var parentAlerts = Object.keys(parentMap).filter(function(p){ return parentMap[p].length >= 2 && !validated.has('sea_parent_doublon|'+p); });
+      if (!parentAlerts.length) {
+        parentBodyEl.innerHTML = '<div style="padding:12px;text-align:center;color:var(--gn);font-size:12px;font-weight:600">✓ Aucun doublon de déclinaison SEA détecté.</div>';
+      } else {
+        var rows2 = parentAlerts.map(function(parent, i) {
+          var skusList = parentMap[parent];
+          var pills = skusList.map(function(s){
+            var prod = (STATE.products||[]).find(function(p){ return p.sku===s; });
+            return '<span style="padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600;background:var(--amBg);color:var(--am);margin:1px">'+esc(s)+(prod?' · '+esc((prod.name||'').slice(0,20)):'')+'</span>';
+          }).join(' ');
+          return '<tr style="'+(i%2?'background:var(--bg)':'')+'">'
+            +'<td style="'+TD+'font-weight:700">'+esc(parent)+'</td>'
+            +'<td style="'+TD+'">'+pills+'</td>'
+            +'<td style="'+TD+'"><button onclick="validerAlerte(\'sea_parent_doublon\',\''+esc(parent)+'\',{})" style="padding:2px 10px;border:.5px solid var(--gn);border-radius:6px;font-size:11px;background:var(--gnBg);color:var(--gn);cursor:pointer;font-family:inherit">✓ Traité</button></td>'
+            +'</tr>';
+        }).join('');
+        parentBodyEl.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'
+          +'<thead><tr><th style="'+TH+'">Modèle parent</th><th style="'+TH+'">Déclinaisons actives en SEA</th><th style="'+TH+'"></th></tr></thead>'
+          +'<tbody>'+rows2+'</tbody></table></div>';
+      }
+    } catch(e) {
+      if (parentBodyEl) parentBodyEl.innerHTML = '<div style="color:var(--txT);font-size:12px;padding:8px">Mapping parent/enfant non disponible.</div>';
+    }
+  }
+}
+
+async function validerAlerte(alertType, sku, detail) {
+  try {
+    await sbInsert('alert_history', { marketplace: MARKETPLACE, alert_type: alertType, sku: sku, detail: detail });
+    if (!STATE._validatedAlerts) STATE._validatedAlerts = new Set();
+    STATE._validatedAlerts.add(alertType + '|' + sku);
+    renderAlertes();
+  } catch(e) { alert('Erreur validation : ' + esc(e.message)); }
+}
+
+async function openAlertesHistorique() {
+  var mpLabel = (MARKETPLACES.find(function(m){return m.id===MARKETPLACE;})||{label:MARKETPLACE}).label;
+  openModal('📋 Historique alertes — '+mpLabel, '<div style="padding:20px;text-align:center;color:var(--txS)">Chargement...</div>');
+  try {
+    var hist = await sb('alert_history', 'marketplace=eq.'+MARKETPLACE+'&select=*&order=validated_at.desc&limit=200');
+    if (!hist.length) {
+      document.getElementById('modal-body').innerHTML = '<div style="padding:20px;text-align:center;color:var(--txT)">Aucune alerte validée.</div>';
+      return;
+    }
+    var TH2 = 'padding:7px 10px;font-size:11px;font-weight:600;color:var(--txS);background:var(--bg);border-bottom:1px solid var(--border);';
+    var TD2 = 'padding:6px 10px;font-size:12px;border-bottom:1px solid var(--borderL);';
+    var typeLabels = { price_ecart:'⚠ Prix', sea_multi_mp:'⚡ Multi-MP', sea_delivery:'🚚 Délai', sea_ope_doublon:'🔀 SEA+Opé', sea_parent_doublon:'👨‍👧 Doublon parent' };
+    var rows = hist.map(function(h, i) {
+      var dt = new Date(h.validated_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'});
+      return '<tr style="'+(i%2?'background:var(--bg)':'')+'">'
+        +'<td style="'+TD2+'">'+dt+'</td>'
+        +'<td style="'+TD2+'font-weight:600">'+esc(typeLabels[h.alert_type]||h.alert_type)+'</td>'
+        +'<td style="'+TD2+'font-weight:600">'+esc(h.sku)+'</td>'
+        +'<td style="'+TD2+'font-size:11px;color:var(--txS)">'+esc(JSON.stringify(h.detail||{}))+'</td>'
+        +'</tr>';
+    }).join('');
+    document.getElementById('modal-body').innerHTML =
+      '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'
+      +'<thead><tr><th style="'+TH2+'">Date</th><th style="'+TH2+'">Type</th><th style="'+TH2+'">Réf</th><th style="'+TH2+'">Détail</th></tr></thead>'
+      +'<tbody>'+rows+'</tbody></table></div>';
+  } catch(e) {
+    document.getElementById('modal-body').innerHTML = '<div style="color:var(--rd);padding:16px">Erreur : '+esc(e.message)+'</div>';
+  }
 }
 
 // TAB SEA — CAMPAGNES & PRODUITS SPONSORISÉS
 // =============================================
 let seaSortCol = 'impressions';
 let seaSortDir = 'desc';
-let seaFilter = { search: '', onlyWithData: false };
+let seaFilter = { search: '', onlyWithData: false, roasMin: '', months: [] };
 let _seaCorrespCache = null;
 
 // Note SEA : score CTR (0-3 pts) + score conv (0-3 pts) + bonus volume (1 pt)
@@ -6890,10 +7189,32 @@ function renderSEAProductsTable() {
   var curYear = new Date().getFullYear();
   var today = new Date().toISOString().slice(0,10);
 
-  // Aggrégation YTD par SKU catalogue
+  // Index prix HT moyen depuis ps_sales_daily (hors livraison)
+  var psPriceHtTotal = {}; var psQtyHtTotal = {};
+  (STATE.psSalesDaily||[]).forEach(function(s) {
+    if (!s.product_ref || !(s.revenue_ht > 0) || !(s.quantity > 0)) return;
+    if (!psPriceHtTotal[s.product_ref]) { psPriceHtTotal[s.product_ref] = 0; psQtyHtTotal[s.product_ref] = 0; }
+    psPriceHtTotal[s.product_ref] += (s.revenue_ht||0);
+    psQtyHtTotal[s.product_ref] += (s.quantity||0);
+  });
+  function avgPriceHt(ref) { var q=psQtyHtTotal[ref]||0; return q>0 ? psPriceHtTotal[ref]/q : null; }
+
+  // Mois disponibles dans les stats (YYYY-MM)
+  var f = seaFilter;
+  var availMonths = Array.from(new Set(stats.map(function(r){ return r.period_start?r.period_start.slice(0,7):null; }).filter(Boolean))).sort().filter(function(m){ return m.startsWith(String(curYear)); });
+
+  // Aggrégation par SKU — filtrée par mois si sélection active
   var seaMap = {};
-  stats.forEach(function(r) {
-    if (!r.period_start || String(r.period_start).slice(0,4) !== String(curYear)) return;
+  var filteredStats = stats.filter(function(r) {
+    if (!r.period_start) return false;
+    if (String(r.period_start).slice(0,4) !== String(curYear)) return false;
+    if (f.months && f.months.length > 0) {
+      var mo = r.period_start.slice(0,7);
+      return f.months.indexOf(mo) !== -1;
+    }
+    return true;
+  });
+  filteredStats.forEach(function(r) {
     if (!seaMap[r.ref]) seaMap[r.ref] = { impressions: 0, clics: 0, conversions: 0, budget: 0 };
     seaMap[r.ref].impressions += (r.impressions||0);
     seaMap[r.ref].clics += (r.clics||0);
@@ -6914,25 +7235,32 @@ function renderSEAProductsTable() {
     var isActive = (STATE.seaActiveProducts||[]).some(function(a) {
       return a.sku === p.sku && a.period_start <= today && a.period_end >= today;
     });
+    var avgHt = avgPriceHt(p.sku);
+    var roas = (conv > 0 && budget > 0 && avgHt != null) ? Math.round(conv * avgHt / budget * 10) / 10 : null;
     return {
       sku: p.sku||'', name: p.name||'', type: p.type||'', product_id: p.product_id||'',
       impressions: imp, clics: clics, conversions: conv, budget: budget,
-      ctr: ctr, tauxConv: tauxConv,
+      ctr: ctr, tauxConv: tauxConv, roas: roas,
       grade: hasData ? seaGrade(ctr, tauxConv, conv) : null,
       hasData: hasData, isActive: isActive
     };
   });
 
   // Filtres
-  var f = seaFilter;
   var rows = allRows;
   if (f.onlyWithData) rows = rows.filter(function(r) { return r.hasData; });
+  if (f.roasMin && parseFloat(f.roasMin) > 0) {
+    var rMin = parseFloat(f.roasMin);
+    rows = rows.filter(function(r) { return r.roas != null && r.roas >= rMin; });
+  }
   if (f.search) {
     var s = f.search.toLowerCase();
     rows = rows.filter(function(r) {
       return r.name.toLowerCase().indexOf(s) !== -1 || r.sku.toLowerCase().indexOf(s) !== -1;
     });
   }
+  // Si filtre mois actif → n'afficher que les produits avec données
+  if (f.months && f.months.length > 0) rows = rows.filter(function(r) { return r.hasData; });
 
   // Tri
   rows = rows.slice().sort(function(a, b) {
@@ -6958,6 +7286,8 @@ function renderSEAProductsTable() {
     var typeCol = r.type==="Classe A"?"green":r.type==="Deals exclus"?"amber":"accent";
     var rowStyle = (i%2?"background:var(--bg);":"")+(r.hasData?"":"opacity:0.42;")+"border-bottom:1px solid var(--borderL);cursor:pointer";
     var budgetFmt = r.budget > 0 ? Math.round(r.budget).toLocaleString('fr-FR')+' €' : '—';
+    var roasFmt = r.roas != null ? r.roas.toFixed(1)+'x' : '—';
+    var roasColor = r.roas != null ? (r.roas >= 6 ? 'var(--gn)' : r.roas >= 3 ? 'var(--am)' : 'var(--rd)') : 'var(--txT)';
     var activeTag = r.isActive
       ? '<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:var(--gnBg);color:var(--gn)">● Actif</span>'
       : '<span style="font-size:11px;color:var(--txT)">—</span>';
@@ -6972,6 +7302,7 @@ function renderSEAProductsTable() {
       + '<td style="padding:7px 10px;text-align:right;font-weight:500">'+ctrFmt+'</td>'
       + '<td style="padding:7px 10px;text-align:right;font-weight:500">'+convFmt+'</td>'
       + '<td style="padding:7px 10px;text-align:right;font-weight:600;color:'+(r.budget>0?'var(--tx)':'var(--txT)')+'">'+budgetFmt+'</td>'
+      + '<td style="padding:7px 10px;text-align:right;font-weight:700;color:'+roasColor+'">'+roasFmt+'</td>'
       + '<td style="padding:7px 10px;text-align:center">'+(r.grade?pill(r.grade,seaGradeColor(r.grade)):'<span style="color:var(--txT);font-size:11px">—</span>')+'</td>'
       + '</tr>';
   }).join('');
@@ -6994,6 +7325,7 @@ function renderSEAProductsTable() {
       + '<td style="padding:7px 10px;text-align:right;font-weight:500">'+aCtr+'</td>'
       + '<td style="padding:7px 10px;text-align:right;font-weight:500">'+aConvFmt+'</td>'
       + '<td style="padding:7px 10px;text-align:right;font-weight:600">'+(aBudget>0?Math.round(aBudget).toLocaleString('fr-FR')+' €':'—')+'</td>'
+      + '<td style="padding:7px 10px;text-align:right">—</td>'
       + '<td style="padding:7px 10px;text-align:center">—</td>'
       + '</tr>';
   }
@@ -7002,17 +7334,36 @@ function renderSEAProductsTable() {
     ? '<div style="background:var(--acBg);border-radius:8px;padding:12px 16px;font-size:12px;color:var(--ac);margin-bottom:12px">Aucune donnée SEA importée pour '+curYear+'. Importez un fichier brut via <strong>Import SEA</strong>.</div>'
     : '';
 
+  // Filtres mois en HTML
+  var monthNames = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
+  var monthCheckboxes = availMonths.map(function(mo) {
+    var parts = mo.split('-'); var mm = parts[1];
+    var label = monthNames[parseInt(mm)-1] + ' ' + parts[0];
+    var checked = (seaFilter.months||[]).indexOf(mo) !== -1;
+    return '<label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--txS);cursor:pointer;white-space:nowrap;padding:3px 6px;border-radius:6px;background:'+(checked?'var(--acBg)':'var(--bg)')+';border:.5px solid '+(checked?'var(--ac)':'var(--border)')+'">'
+      +'<input type="checkbox" '+(checked?'checked ':'')+' onchange="seaToggleMonth(\''+mo+'\',this.checked)" style="cursor:pointer">'+label+'</label>';
+  }).join('');
+  var filterMonthEl = availMonths.length
+    ? '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;margin-bottom:8px">'
+      + '<span style="font-size:11px;font-weight:600;color:var(--txS);white-space:nowrap">Mois :</span>'
+      + monthCheckboxes
+      + ((seaFilter.months&&seaFilter.months.length) ? '<button onclick="seaFilter.months=[];renderSeaProductsOnly()" style="padding:2px 8px;border:.5px solid var(--border);border-radius:6px;font-size:10px;cursor:pointer;font-family:inherit;background:var(--card)">✕ Reset</button>' : '')
+      + '</div>'
+    : '';
+
   return '<div style="margin-top:20px">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">'
     + '<div style="font-size:13px;font-weight:700">Produits sponsorisés — YTD '+curYear+'</div>'
     + '<div style="font-size:12px;color:var(--txS)">'+withDataCount+' / '+allRows.length+' produits avec données SEA</div>'
     + '</div>'
     + noDataBanner
-    + '<div class="filters" style="margin-bottom:12px">'
+    + '<div class="filters" style="margin-bottom:6px">'
     + '<input placeholder="Rechercher..." value="'+esc(seaFilter.search)+'" oninput="seaSearchChange(this.value)" style="flex:1;min-width:180px"/>'
     + '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--txS);cursor:pointer;white-space:nowrap"><input type="checkbox" '+(seaFilter.onlyWithData?'checked':'')+' onchange="seaFilter.onlyWithData=this.checked;renderSeaProductsOnly()" style="cursor:pointer"> Avec données uniquement</label>'
+    + '<div style="display:flex;align-items:center;gap:4px;white-space:nowrap"><span style="font-size:11px;color:var(--txS)">ROAS ≥</span><input type="number" min="0" step="0.5" value="'+esc(seaFilter.roasMin||'')+'" placeholder="ex: 4" oninput="seaFilter.roasMin=this.value;renderSeaProductsOnly()" style="width:60px;padding:4px 6px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
     + '</div>'
-    + '<div class="card" style="padding:0;overflow:hidden"><div class="scroll-table"><table style="min-width:1050px">'
+    + filterMonthEl
+    + '<div class="card" style="padding:0;overflow:hidden"><div class="scroll-table"><table style="min-width:1100px">'
     + '<thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)">'
     + '<th style="padding:8px 10px;font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;text-align:center">Statut</th>'
     + th('name','Produit','left')
@@ -7020,6 +7371,7 @@ function renderSEAProductsTable() {
     + '<th style="padding:8px 10px;font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;text-align:center">Type</th>'
     + th('impressions','Impressions')+th('clics','Clics')+th('conversions','Conversions')
     + th('ctr','CTR%')+th('tauxConv','Conv%')+th('budget','Budget €')
+    + th('roas','ROAS')
     + '<th style="padding:8px 10px;font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;text-align:center">Note</th>'
     + '</tr></thead><tbody>'+tbody+'</tbody></table></div></div></div>';
 }
@@ -7030,15 +7382,37 @@ function toggleSeaSort(col) {
   renderSeaProductsOnly();
 }
 
+function seaToggleMonth(mo, checked) {
+  if (!seaFilter.months) seaFilter.months = [];
+  if (checked) { if (seaFilter.months.indexOf(mo)===-1) seaFilter.months.push(mo); }
+  else { seaFilter.months = seaFilter.months.filter(function(m){ return m!==mo; }); }
+  renderSeaProductsOnly();
+}
+
 async function openSEAProductDetail(ref) {
   var stats = (STATE.seaProductStats||[]).filter(function(r) { return r.ref === ref; });
   if (!stats.length) { openModal("Detail SEA — "+ref, '<div style="padding:20px;text-align:center;color:var(--txT)">Aucune donnee disponible.</div>'); return; }
   var months = stats.filter(function(r) { return r.period_type === 'month'; }).sort(function(a,b) { return a.period_start > b.period_start ? 1 : -1; });
   var weeks = stats.filter(function(r) { return r.period_type === 'week'; }).sort(function(a,b) { return a.period_start > b.period_start ? 1 : -1; });
+
+  // Calcul prix HT moyen depuis ps_sales_daily (hors livraison)
+  var psTotal = 0, psQty = 0;
+  (STATE.psSalesDaily||[]).forEach(function(s) {
+    if (s.product_ref !== ref || !(s.revenue_ht>0) || !(s.quantity>0)) return;
+    psTotal += (s.revenue_ht||0); psQty += (s.quantity||0);
+  });
+  var avgHtGlobal = psQty > 0 ? psTotal / psQty : null;
+
   function fmtNum(v) { return v != null ? Number(v).toLocaleString("fr-FR") : "—"; }
+  function calcRoas(r) {
+    if (!(r.budget>0) || !(r.conversions>0) || avgHtGlobal==null) return null;
+    return Math.round(r.conversions * avgHtGlobal / r.budget * 10) / 10;
+  }
   function rowHtml(r, indent) {
     var ctr = r.impressions > 0 ? (r.clics/r.impressions*100).toFixed(2)+"%" : "—";
     var conv = r.impressions > 0 ? (r.conversions/r.impressions*100).toFixed(2)+"%" : "—";
+    var roas = calcRoas(r);
+    var roasColor = roas!=null?(roas>=6?'var(--gn)':roas>=3?'var(--am)':'var(--rd)'):'var(--txT)';
     return '<tr style="'+(indent?"background:var(--bg)":"")+';border-bottom:1px solid var(--borderL)">'
       + '<td style="padding:5px 10px;font-size:11px;color:var(--txS);padding-left:'+(indent?20:10)+'px">'+esc(r.period_label||r.period_start)+'</td>'
       + '<td style="padding:5px 10px;text-align:right;font-weight:'+(indent?400:600)+'">'+(r.budget?Math.round(r.budget).toLocaleString("fr-FR")+"€":"—")+'</td>'
@@ -7047,6 +7421,7 @@ async function openSEAProductDetail(ref) {
       + '<td style="padding:5px 10px;text-align:right">'+fmtNum(r.conversions)+'</td>'
       + '<td style="padding:5px 10px;text-align:right">'+ctr+'</td>'
       + '<td style="padding:5px 10px;text-align:right">'+conv+'</td>'
+      + '<td style="padding:5px 10px;text-align:right;font-weight:700;color:'+roasColor+'">'+(roas!=null?roas.toFixed(1)+'x':'—')+'</td>'
       + '</tr>';
   }
   var html = '<div class="scroll-table"><table style="width:100%;border-collapse:collapse;font-size:12px">'
@@ -7058,6 +7433,7 @@ async function openSEAProductDetail(ref) {
     + '<th style="padding:6px 10px;text-align:right;font-weight:600;color:var(--txS)">Conversions</th>'
     + '<th style="padding:6px 10px;text-align:right;font-weight:600;color:var(--txS)">CTR%</th>'
     + '<th style="padding:6px 10px;text-align:right;font-weight:600;color:var(--txS)">Conv%</th>'
+    + '<th style="padding:6px 10px;text-align:right;font-weight:600;color:var(--txS)">ROAS'+(avgHtGlobal?'<br><span style="font-size:9px;font-weight:400;color:var(--txT)">PM HT: '+Math.round(avgHtGlobal)+'€</span>':'')+'</th>'
     + '</tr></thead><tbody>';
   if (months.length) {
     months.forEach(function(m) {
