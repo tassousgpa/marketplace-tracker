@@ -6675,7 +6675,7 @@ function openSEAImport() {
   var mpLabel = (MARKETPLACES.find(function(m){return m.id===MARKETPLACE;})||{label:MARKETPLACE}).label;
   var fmtInfo = {
     cdiscount:      'col A = réf SEA (BES...) · col C = Imp · col D = Clics · col F = Budget · col H = Conv',
-    maisonsdumonde: 'col B = réf SEA · col G = Imp · col H = Clics · col I = Budget · col J = Conv',
+    maisonsdumonde: 'col C = réf SEA (Product SKU) · col G = Imp · col H = Clics · col I = Budget · col J = Conv',
     but:            'col J = réf SEA (préfixe 2177_ supprimé auto.) · col M = Imp · col N = Clics · col S = CA TTC → conv auto.',
     manomano:       'col C = SKU BestMobilier (rapprochement auto.) · col F = Dépenses · col R = Impressions · col S = Clics · col T = Achats',
     conforama:      'col J = réf SEA (V_X_REF → REF, nettoyage auto.) · col R = Vues · col S = Clics · col V = Budget · col W = CA → conversions = CA ÷ prix produit'
@@ -6902,9 +6902,9 @@ async function parseSEAXLS(file) {
             handleRow(String(r[0]||'').trim(), parseNum(r[2]), parseNum(r[3]), parseNum(r[7]), parseNum(r[5]));
           });
         } else if (mp === 'maisonsdumonde') {
-          // col B(1)=ref SEA . col G(6)=Imp . col H(7)=Clics . col I(8)=Budget . col J(9)=Conv
+          // col C(2)=Product SKU (ref SEA) . col G(6)=Imp . col H(7)=Clics . col I(8)=Budget . col J(9)=Conv
           dataRows.forEach(function(r) {
-            handleRow(String(r[1]||'').trim(), parseNum(r[6]), parseNum(r[7]), parseNum(r[9]), parseNum(r[8]));
+            handleRow(String(r[2]||'').trim(), parseNum(r[6]), parseNum(r[7]), parseNum(r[9]), parseNum(r[8]));
           });
         } else if (mp === 'but') {
           // col J(9)=ref SEA (prefixe 2177_ supprime) . col M(12)=Imp . col N(13)=Clics . col S(18)=CA TTC
