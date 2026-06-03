@@ -757,7 +757,7 @@ async function loadData() {
 function renderTabs() {
   const names = getTabNames();
   const alertIdx = names.indexOf("Alertes");
-  const alertN = STATE.alertData ? STATE.alertData.seaMultiMp.length : 0;
+  const alertN = (STATE.alertData ? STATE.alertData.seaMultiMp.length : 0) + (STATE._priceAlertCount || 0);
   document.getElementById("tabs").innerHTML = names.map((t,i) => {
     const isAlert = i === alertIdx;
     const label = isAlert && alertN > 0 ? `Alertes (${alertN})` : t;
@@ -768,9 +768,25 @@ function renderTabs() {
   if (STATE._alertsJustLoaded) {
     STATE._alertsJustLoaded = false;
     setTimeout(() => {
-      const tabs = document.querySelectorAll('.tab-alert-blink');
-      tabs.forEach(t => t.classList.remove('tab-alert-blink'));
+      document.querySelectorAll('.tab-alert-blink').forEach(t => t.classList.remove('tab-alert-blink'));
     }, 8000);
+  }
+}
+
+// Appelé après chargement async des alertes prix pour mettre à jour le badge sans re-rendre toute la barre
+function updateAlertTabBadge(priceAlertCount) {
+  STATE._priceAlertCount = priceAlertCount;
+  const names = getTabNames();
+  const alertIdx = names.indexOf("Alertes");
+  if (alertIdx === -1) return;
+  const alertN = (STATE.alertData ? STATE.alertData.seaMultiMp.length : 0) + priceAlertCount;
+  const btn = document.querySelectorAll('#tabs .tab')[alertIdx];
+  if (!btn) return;
+  btn.textContent = alertN > 0 ? `Alertes (${alertN})` : 'Alertes';
+  btn.classList.toggle('tab-alert', alertN > 0);
+  if (alertN > 0 && !btn.classList.contains('tab-alert-blink')) {
+    btn.classList.add('tab-alert-blink');
+    setTimeout(() => btn.classList.remove('tab-alert-blink'), 8000);
   }
 }
 function switchTab(i) {
@@ -6587,6 +6603,7 @@ async function renderAlertes() {
 
     if (!activeOps.length) {
       priceBodyEl.innerHTML = '<div style="padding:14px;text-align:center;color:var(--txT);font-size:12px">Aucune opération commerciale active aujourd\'hui.</div>';
+      updateAlertTabBadge(0);
       return;
     }
 
@@ -6647,8 +6664,12 @@ async function renderAlertes() {
 
     if (!allBadOrders.length) {
       priceBodyEl.innerHTML = '<div style="padding:14px;text-align:center;color:var(--gn);font-size:12px;font-weight:600">✓ Aucune incohérence de prix sur les opérations actives.</div>';
+      updateAlertTabBadge(0);
       return;
     }
+    // Grouper par SKU pour compter les produits distincts en alerte
+    var distinctSkus = new Set(allBadOrders.map(function(o){return o.sku;}));
+    updateAlertTabBadge(distinctSkus.size);
 
     // Grouper par SKU
     var bySku = {};
@@ -6699,6 +6720,7 @@ async function renderAlertes() {
 
   } catch(e) {
     if (priceBodyEl) priceBodyEl.innerHTML = '<div style="color:var(--rd);font-size:12px;padding:12px">Erreur : '+esc(e.message)+'</div>';
+    updateAlertTabBadge(0);
   }
 }
 
