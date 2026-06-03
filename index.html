@@ -6676,7 +6676,7 @@ function openSEAImport() {
   var fmtInfo = {
     cdiscount:      'col A = réf SEA (BES...) · col C = Imp · col D = Clics · col F = Budget · col H = Conv',
     maisonsdumonde: 'col C = réf SEA (Product SKU) · col G = Imp · col H = Clics · col I = Budget · col J = Conv',
-    but:            'col J = réf SEA (préfixe 2177_ supprimé auto.) · col M = Imp · col N = Clics · col S = CA TTC → conv auto.',
+    but:            'col J = réf SEA (préfixe 2177_ supprimé auto.) · col M = Vues · col N = Clics · col Q = Dépense · col R = CA → conv auto.',
     manomano:       'col C = SKU BestMobilier (rapprochement auto.) · col F = Dépenses · col R = Impressions · col S = Clics · col T = Achats',
     conforama:      'col J = réf SEA (V_X_REF → REF, nettoyage auto.) · col R = Vues · col S = Clics · col V = Budget · col W = CA → conversions = CA ÷ prix produit'
   }[MARKETPLACE] || 'Fichier brut SEA spécifique à la marketplace';
@@ -6907,14 +6907,23 @@ async function parseSEAXLS(file) {
             handleRow(String(r[2]||'').trim(), parseNum(r[6]), parseNum(r[7]), parseNum(r[9]), parseNum(r[8]));
           });
         } else if (mp === 'but') {
-          // col J(9)=ref SEA (prefixe 2177_ supprime) . col M(12)=Imp . col N(13)=Clics . col S(18)=CA TTC
+          // col J(9)=ref SEA (prefixe 2177_ supprime) . col M(12)=Vues . col N(13)=Clics . col Q(16)=Dépense . col R(17)=CA → conv
+          // Conversions = CA total par SKU / prix (même logique que Conforama)
+          var butCABySku = {};
           dataRows.forEach(function(r) {
             var seaRef = String(r[9]||'').trim().replace(/^2177_/,'');
-            var caTtc = parseNum(r[18]);
             var sku = refMap[seaRef];
-            var price = sku ? priceMap[sku] : null;
-            var conv = (price && price > 0) ? Math.round(caTtc / price) : 0;
-            handleRow(seaRef, parseNum(r[12]), parseNum(r[13]), conv, caTtc);
+            handleRow(seaRef, parseNum(r[12]), parseNum(r[13]), 0, parseNum(r[16]));
+            if (sku && trackedSkus.has(sku)) {
+              var ca = parseNum(r[17]);
+              if (ca > 0) butCABySku[sku] = (butCABySku[sku]||0) + ca;
+            }
+          });
+          Object.keys(butCABySku).forEach(function(sku) {
+            var price = priceMap[sku];
+            if (aggMap[sku] && price && price > 0) {
+              aggMap[sku].conversions = Math.round(butCABySku[sku] / price);
+            }
           });
         } else if (mp === 'manomano') {
           // col C(2)=SKU BestMobilier (ex: "836_5565") → rapprochement via col B (id) du fichier corresp → 100% match
