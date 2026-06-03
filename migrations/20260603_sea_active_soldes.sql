@@ -21,10 +21,6 @@ CREATE INDEX IF NOT EXISTS idx_sea_active_mp_sku
 CREATE INDEX IF NOT EXISTS idx_sea_active_mp_period
   ON sea_active_products(marketplace, period_start, period_end);
 
--- Index partiel pour requêtes "actif aujourd'hui"
-CREATE INDEX IF NOT EXISTS idx_sea_active_current
-  ON sea_active_products(marketplace, sku)
-  WHERE period_end >= CURRENT_DATE;
 
 -- ── 2. soldes_editions ──────────────────────────────────────────
 -- Paramètres de chaque édition de soldes (une ligne par an).
