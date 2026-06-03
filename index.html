@@ -913,16 +913,13 @@ function getActiveDealForWeek(sku, weekLabel) {
 }
 
 // Helper SEA actif — vérifie sea_active_products pour la date donnée (défaut : aujourd'hui)
+// Pas de fallback : si aucun import produits actifs n'a été fait, retourne false.
 function getSeaActive(sku, dateStr) {
-  if (!sku) return false;
+  if (!sku || !STATE.seaActiveProducts) return false;
   const d = dateStr || new Date().toISOString().slice(0,10);
-  if (STATE.seaActiveProducts && STATE.seaActiveProducts.length > 0) {
-    return STATE.seaActiveProducts.some(function(r) {
-      return r.sku === sku && r.period_start <= d && r.period_end >= d;
-    });
-  }
-  // Fallback : données historiques d'import SEA (si table sea_active_products vide)
-  return (STATE.seaProductStats||[]).some(function(r) { return r.ref === sku && (r.budget||0) > 0; });
+  return STATE.seaActiveProducts.some(function(r) {
+    return r.sku === sku && r.period_start <= d && r.period_end >= d;
+  });
 }
 
 // Calcule les alertes au chargement des données
@@ -1578,7 +1575,8 @@ function renderProductSalesBlocks() {
       const deal=getActiveDealForWeek(r.ref,weekLabel)
         ?'<span style="padding:2px 6px;border-radius:99px;font-size:10px;font-weight:600;background:#fff3e0;color:#e65100">Deal</span>'
         :'<span style="font-size:10px;color:var(--txT)">—</span>';
-      const sea=showSea?(getSeaActive(r.ref)
+      const seaDate = wDates ? wDates[0] : null;
+      const sea=showSea?(getSeaActive(r.ref, seaDate)
         ?'<span style="padding:2px 6px;border-radius:99px;font-size:10px;font-weight:600;background:#fff3e0;color:#e65100">⚡ SEA</span>'
         :'<span style="font-size:10px;color:var(--txT)">—</span>'):"";
       return "<tr style='"+bg+";border-bottom:1px solid var(--borderL)'>"
@@ -1660,7 +1658,7 @@ function renderProductSalesBlocks() {
       const deal = getPsDeal(r.ref)
         ?'<span style="padding:2px 6px;border-radius:99px;font-size:10px;font-weight:600;background:#fff3e0;color:#e65100">Deal</span>'
         :'<span style="font-size:10px;color:var(--txT)">—</span>';
-      const sea = showSeaPs?(getSeaActive(r.ref)
+      const sea = showSeaPs?(getSeaActive(r.ref, wDates[0])
         ?'<span style="padding:2px 6px;border-radius:99px;font-size:10px;font-weight:600;background:#fff3e0;color:#e65100">⚡ SEA</span>'
         :'<span style="font-size:10px;color:var(--txT)">—</span>'):"";
       return "<tr style='"+bg+";border-bottom:1px solid var(--borderL)'>"
@@ -6651,7 +6649,7 @@ function renderAlertes() {
     + '<div style="font-size:13px;font-weight:700;color:var(--rd);margin-bottom:12px">⚠ Écarts prix opération commerciale vs Prestashop (seuil 2%)'
     + (ad.priceAlerts.length > 0 ? ' <span style="padding:2px 8px;border-radius:99px;font-size:11px;background:var(--rdBg);color:var(--rd)">'+ad.priceAlerts.length+'</span>' : '')
     + '</div>'
-    + '<div style="font-size:11px;color:var(--txS);margin-bottom:10px">Comparaison entre le prix renseigné dans l\'opé commerciale et le prix moyen constaté sur Prestashop (YTD).</div>'
+    + '<div style="font-size:11px;color:var(--txS);margin-bottom:10px">Prix constaté = moyenne <code>CA HT / quantité</code> sur les ventes Prestashop depuis le 1er janvier (YTD). Un écart peut refléter des remises ponctuelles antérieures.</div>'
     + priceSection
     + '</div>'
     + '<div class="card" style="margin-top:14px">'
