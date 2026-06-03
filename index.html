@@ -394,10 +394,11 @@ function normalizeKeyword(kw) {
 
 const TAB_NAMES = ["Synthèse","Produits","Historique","Positions","Concurrents","Anomalies","Audit","Opé. Commerciales","Gestion"];
 const TAB_NAMES_LIGHT = ["Synthèse","Produits","Historique","Anomalies","Audit","Opé. Commerciales","Gestion"];
+const TAB_NAMES_LIGHT_SEA = ["Synthèse","Produits","Historique","Anomalies","Audit","Opé. Commerciales","Gestion","SEA"];
 const TAB_NAMES_MINIMAL = ["Synthèse","Audit","Opé. Commerciales","Gestion"];
 const TAB_NAMES_MINIMAL_SEA = ["Synthèse","Audit","Opé. Commerciales","Gestion","SEA"];
 const LAREDOUTE_TABS = ["Synthèse","Positions","Concurrents","Audit","Opé. Commerciales","Gestion"];
-const MINIMAL_MP = new Set(["leroymerlin","manomano"]);
+const MINIMAL_MP = new Set(["leroymerlin"]);
 const SEA_MP = new Set(["cdiscount","but","maisonsdumonde","conforama","manomano"]);
 const TAB_NAMES_SEA = ["Synthèse","Produits","Historique","Positions","Concurrents","Anomalies","Audit","Opé. Commerciales","Gestion","SEA"];
 
@@ -416,7 +417,7 @@ function stripUrlParams(s) {
 function getTabNames() {
   if (isMinimalMp()) return SEA_MP.has(MARKETPLACE) ? TAB_NAMES_MINIMAL_SEA : TAB_NAMES_MINIMAL;
   if (MARKETPLACE === "laredoute") return LAREDOUTE_TABS;
-  if (isLightMp()) return TAB_NAMES_LIGHT;
+  if (isLightMp()) return SEA_MP.has(MARKETPLACE) ? TAB_NAMES_LIGHT_SEA : TAB_NAMES_LIGHT;
   if (SEA_MP.has(MARKETPLACE)) return TAB_NAMES_SEA;
   return TAB_NAMES;
 }
@@ -800,6 +801,7 @@ function renderContent() {
       case 4: renderAudit(); break;
       case 5: renderOpeCommerciales(); break;
       case 6: el.innerHTML = renderGestion(); break;
+      case 7: if (SEA_MP.has(MARKETPLACE)) renderSEA(); break;
       default: el.innerHTML = '';
     }
     return;
