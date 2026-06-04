@@ -765,6 +765,7 @@ async function loadData() {
     const sessionDisplay = latestDate ? new Date(latestDate + "T12:00:00Z").toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}) : "N/A";
     document.getElementById("header-subtitle").textContent = `${products.length} produits · Relevé du ${sessionDisplay}`;
     renderTabs(); renderContent();
+    loadPriceAlertCountBg();
   } catch(e) {
     document.getElementById("content").innerHTML = `<div class="loading" style="color:var(--rd)"><div style="font-size:16px;font-weight:600;margin-bottom:8px">Erreur de chargement</div><div style="font-size:13px">${e.message}</div></div>`;
     console.error(e);
@@ -788,6 +789,44 @@ function renderTabs() {
       document.querySelectorAll('.tab-alert-blink').forEach(t => t.classList.remove('tab-alert-blink'));
     }, 8000);
   }
+}
+
+// Charge le compteur d'alertes prix en arrière-plan dès le chargement initial
+async function loadPriceAlertCountBg() {
+  try {
+    var today = new Date().toISOString().slice(0,10);
+    var activeOps = (STATE.activeOps||[]).filter(function(op){ return op.date_debut<=today && op.date_fin>=today; });
+    if (!activeOps.length) { updateAlertTabBadge(0); return; }
+    var prodBySku = {};
+    (STATE.products||[]).forEach(function(p){ if(p.sku) prodBySku[p.sku]=p; });
+    var validated = STATE._validatedAlerts || new Set();
+    var badSkus = new Set();
+    for (var oi = 0; oi < activeOps.length; oi++) {
+      var op = activeOps[oi];
+      var opProds = (STATE.activeOpProducts||[]).filter(function(ap){ return ap.operation_id===op.id && ap.prix && ap.prix>0; });
+      if (!opProds.length) continue;
+      var opPrixBySku = {};
+      opProds.forEach(function(ap){ opPrixBySku[ap.ref]=ap.prix; });
+      var sales = [];
+      try {
+        sales = await sb('ps_sales_daily',
+          'marketplace=eq.'+MARKETPLACE
+          +'&sale_date=gte.'+op.date_debut
+          +'&sale_date=lte.'+op.date_fin
+          +'&select=product_ref,quantity,revenue_ttc'
+        );
+      } catch(e) { continue; }
+      sales.forEach(function(s) {
+        var opPrix = opPrixBySku[s.product_ref];
+        if (!opPrix || validated.has('price_ecart|'+s.product_ref)) return;
+        var qty = s.quantity||1, revTtc = parseFloat(s.revenue_ttc)||0;
+        if (revTtc<=0) return;
+        var ecart = (revTtc/qty - opPrix) / opPrix;
+        if (Math.abs(ecart) >= 0.02) badSkus.add(s.product_ref);
+      });
+    }
+    updateAlertTabBadge(badSkus.size);
+  } catch(e) { /* silencieux */ }
 }
 
 // Appelé après chargement async des alertes prix pour mettre à jour le badge sans re-rendre toute la barre
@@ -1442,7 +1481,7 @@ function renderProductSalesBlocks() {
   });
   (STATE.allProducts||STATE.products||[]).forEach(p => {
     if (p.sku && p.name && !psRefNames[p.sku]) psRefNames[p.sku] = p.name;
-    if (p.sku && p.canal) skuCanal[p.sku] = p.canal;
+    if (p.sku && p.canal_attribue) skuCanal[p.sku] = p.canal_attribue;
   });
   const DAY_FR = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
   const today = new Date().toISOString().slice(0,10);
@@ -1571,8 +1610,8 @@ function renderProductSalesBlocks() {
         :'<span style="font-size:10px;color:var(--txT)">—</span>'):"";
       let tot=0;
       const days = wDates ? wDates.map(d=>{const v=psDailyIdx[r.ref+"|"+d]||0;tot+=v;return v;}) : [];
-      const dayCells = days.map(v=>"<td style='padding:4px 5px;text-align:right;font-size:11px;font-weight:"+(v>0?"700":"400")+";color:"+(v>0?"var(--tx)":"var(--txT)")+";width:32px'>"+(v>0?v:"—")+"</td>").join("");
-      const totalCell = "<td style='padding:4px 8px;text-align:right;font-weight:700;font-size:12px;color:"+(tot>0?"var(--ac)":"var(--txT)")+";border-left:2px solid var(--border);background:"+(tot>0?"var(--acBg)":"")+"'>"+( tot>0?tot:"—")+"</td>";
+      const dayCells = days.map(v=>"<td style='padding:4px 5px;text-align:right;font-size:11px;font-weight:"+(v>0?"700":"400")+";color:"+(v>0?"var(--tx)":"var(--txT)")+";width:30px'>"+(v>0?v:"—")+"</td>").join("");
+      const totalCell = "<td style='padding:4px 6px;text-align:right;font-weight:700;font-size:12px;color:"+(tot>0?"var(--ac)":"var(--txT)")+";border-left:2px solid var(--border);background:"+(tot>0?"var(--acBg)":"")+"'>"+( tot>0?tot:"—")+"</td>";
       return "<tr style='"+bg+";border-bottom:1px solid var(--borderL)'>"
         +"<td style='padding:4px 6px;font-size:11px;color:var(--txT);text-align:right;width:20px'>"+(i+1)+"</td>"
         +"<td style='padding:4px 6px;font-weight:600;white-space:nowrap;font-size:11px'>"+esc(r.ref)+"</td>"
@@ -1584,15 +1623,15 @@ function renderProductSalesBlocks() {
         +"</tr>";
     }).join("");
 
-    const leftTable = "<div style='overflow-x:auto'><table style='width:100%;border-collapse:collapse;font-size:12px'>"
+    const leftTable = "<div style='overflow-x:auto'><table style='width:auto;border-collapse:collapse;font-size:12px'>"
       +"<thead><tr style='border-bottom:1px solid var(--border);background:var(--bg)'>"
-      +"<th style='padding:4px 6px;color:var(--txT);width:20px'>#</th>"
-      +"<th style='padding:4px 6px;text-align:left;font-size:10px;color:var(--txS)'>Réf</th>"
-      +"<th style='padding:4px 6px;text-align:left;font-size:10px;color:var(--txS)'>Produit</th>"
-      +"<th style='padding:4px 6px;text-align:left;font-size:10px;color:var(--txS)'>Canal</th>"
-      +(wDates?DAY_FR.map(l=>"<th style='padding:4px 5px;text-align:right;font-size:10px;color:var(--txS);width:32px'>"+l+"</th>").join(""):"")
-      +"<th style='padding:4px 8px;text-align:right;font-size:10px;font-weight:700;color:var(--ac);border-left:2px solid var(--border)'>Total</th>"
-      +"<th style='padding:4px 5px;text-align:center;font-size:10px;color:var(--txS)'>Opé.</th>"
+      +"<th style='padding:4px 5px;color:var(--txT);width:18px'>#</th>"
+      +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS);white-space:nowrap'>Réf</th>"
+      +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS)'>Produit</th>"
+      +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS);white-space:nowrap'>Canal</th>"
+      +(wDates?DAY_FR.map(l=>"<th style='padding:4px 5px;text-align:right;font-size:10px;color:var(--txS);width:30px'>"+l+"</th>").join(""):"")
+      +"<th style='padding:4px 6px;text-align:right;font-size:10px;font-weight:700;color:var(--ac);border-left:2px solid var(--border);width:38px'>Tot.</th>"
+      +"<th style='padding:4px 5px;text-align:center;font-size:10px;color:var(--txS);white-space:nowrap'>Opé.</th>"
       +(showSea?"<th style='padding:4px 5px;text-align:center;font-size:10px;color:var(--txS)'>SEA</th>":"")
       +"</tr></thead><tbody>"+leftRows+"</tbody></table></div>";
 
@@ -1676,20 +1715,20 @@ function renderProductSalesBlocks() {
         +"<td style='padding:4px 5px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px' title='"+esc(name)+"'>"+esc(name.slice(0,20))+" "+newTagPs(r.ref)+"</td>"
         +"<td style='padding:4px 5px;font-size:10px;color:var(--txS)'>"+esc(canal)+"</td>"
         +days.map(v=>"<td style='padding:4px 4px;text-align:right;font-size:11px;font-weight:"+(v>0?"700":"400")+";color:"+(v>0?"var(--tx)":"var(--txT)")+";width:30px'>"+(v>0?v:"—")+"</td>").join("")
-        +"<td style='padding:4px 7px;text-align:right;font-weight:700;font-size:12px;color:"+(tot>0?"var(--ac)":"var(--txT)")+";border-left:2px solid var(--border);background:"+(tot>0?"var(--acBg)":"")+"'>"+(tot>0?tot:"—")+"</td>"
+        +"<td style='padding:4px 6px;text-align:right;font-weight:700;font-size:12px;color:"+(tot>0?"var(--ac)":"var(--txT)")+";border-left:2px solid var(--border);background:"+(tot>0?"var(--acBg)":"")+"'>"+(tot>0?tot:"—")+"</td>"
         +"<td style='padding:4px 5px;text-align:center'>"+psDealBadge(r.ref)+"</td>"
         +(showSeaPs?"<td style='padding:4px 5px;text-align:center'>"+sea+"</td>":"")
         +"</tr>";
     }).join("");
-    const leftTable = "<div style='overflow-x:auto'><table style='width:100%;border-collapse:collapse;font-size:12px'>"
+    const leftTable = "<div style='overflow-x:auto'><table style='width:auto;border-collapse:collapse;font-size:12px'>"
       +"<thead><tr style='border-bottom:1px solid var(--border);background:var(--bg)'>"
-      +"<th style='padding:4px 5px;color:var(--txT);width:20px'>#</th>"
-      +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS)'>Réf</th>"
+      +"<th style='padding:4px 5px;color:var(--txT);width:18px'>#</th>"
+      +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS);white-space:nowrap'>Réf</th>"
       +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS)'>Produit</th>"
-      +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS)'>Canal</th>"
+      +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS);white-space:nowrap'>Canal</th>"
       +DAY_FR.map(l=>"<th style='padding:4px 4px;text-align:right;font-size:10px;color:var(--txS);width:30px'>"+l+"</th>").join("")
-      +"<th style='padding:4px 7px;text-align:right;font-size:10px;font-weight:700;color:var(--ac);border-left:2px solid var(--border)'>Total</th>"
-      +"<th style='padding:4px 5px;text-align:center;font-size:10px;color:var(--txS)'>Opé.</th>"
+      +"<th style='padding:4px 6px;text-align:right;font-size:10px;font-weight:700;color:var(--ac);border-left:2px solid var(--border);width:38px'>Tot.</th>"
+      +"<th style='padding:4px 5px;text-align:center;font-size:10px;color:var(--txS);white-space:nowrap'>Opé.</th>"
       +(showSeaPs?"<th style='padding:4px 5px;text-align:center;font-size:10px;color:var(--txS)'>SEA</th>":"")
       +"</tr></thead><tbody>"+leftRows+"</tbody></table></div>";
     // Droite : Top10 nouveautés 2026 de la semaine
@@ -1878,17 +1917,8 @@ function renderRevenueBlock() {
   // YTD N : utilise l'historique mensuel comme source de vérité pour les mois complets,
   // puis les données hebdo pour le mois en cours (évite la sous-estimation frais de livraison)
   let caYtdN = 0;
-  { const _ytdSeenMo = new Set();
-    for (let w = 1; w <= lastWkNum; w++) {
-      const wStart = isoWeekStartFromNum(curYear, w);
-      const wMo = wStart ? wStart.slice(0, 7) : null;
-      // Garde uniquement les mois de curYear (S1 peut commencer en décembre N-1)
-      if (wMo && wMo.startsWith(String(curYear)) && monthRevsHistory[wMo]) {
-        if (!_ytdSeenMo.has(wMo)) { caYtdN += monthRevsHistory[wMo]; _ytdSeenMo.add(wMo); }
-      } else {
-        caYtdN += getWeekCA(`S${w} ${curYear}`);
-      }
-    }
+  for (let w = 1; w <= lastWkNum; w++) {
+    caYtdN += getWeekCA(`S${w} ${curYear}`);
   }
   let caYtdN1=0, caYtdN2=0, caYtdN3=0;
   for (let w=1; w<=lastWkNum; w++) {
@@ -6797,7 +6827,8 @@ async function renderAlertes() {
     + '<div id="alerte-parent-body"><div style="color:var(--txS);font-size:12px;padding:8px">Chargement...</div></div>'
     + '</div>';
 
-  // ── Chargement async des alertes prix ───────────────────────────
+  // ── Chargement async alertes prix (parallèle avec doublon parent) ─
+  (async function() {
   var priceBodyEl = document.getElementById('alerte-price-body');
   if (!priceBodyEl) return;
 
@@ -6918,7 +6949,7 @@ async function renderAlertes() {
         + '<td style="'+TD+'text-align:right;font-weight:600">'+g.opPrix+' €</td>'
         + '<td style="'+TD+'"></td>'
         + '<td style="'+TD+'"><span style="padding:2px 7px;border-radius:99px;font-size:10px;background:var(--rdBg);color:var(--rd)">'+g.orders.length+' cmd</span></td>'
-        + '<td style="'+TD+'"><button onclick="validerAlerte(\'price_ecart\',\''+esc(sku)+'\',{ope:\''+esc(g.opNom)+'\'})" style="padding:2px 10px;border:.5px solid var(--gn);border-radius:6px;font-size:11px;background:var(--gnBg);color:var(--gn);cursor:pointer;font-family:inherit">✓ Traité</button></td>'
+        + '<td style="'+TD+'"></td>'
         + '</tr>';
       g.orders.forEach(function(o) {
         var ecartColor = Math.abs(o.ecartPct) >= 10 ? 'var(--rd)' : 'var(--am)';
@@ -6931,7 +6962,7 @@ async function renderAlertes() {
           + '<td style="'+TD+'text-align:right;color:var(--txS)">'+o.opPrix+' €</td>'
           + '<td style="'+TD+'text-align:right;font-weight:600">'+o.unitPriceTtc+' €</td>'
           + '<td style="'+TD+'text-align:right;font-weight:700;color:'+ecartColor+'">'+signe+o.ecartPct+'%</td>'
-          + '<td style="'+TD+'"></td>'
+          + '<td style="'+TD+'"><button onclick="validerAlerte(\'price_ecart\',\''+esc(sku)+'\',{ope:\''+esc(g.opNom)+'\'})" style="padding:2px 10px;border:.5px solid var(--gn);border-radius:6px;font-size:11px;background:var(--gnBg);color:var(--gn);cursor:pointer;font-family:inherit">✓ Traité</button></td>'
           + '</tr>';
       });
     });
@@ -6943,8 +6974,10 @@ async function renderAlertes() {
     if (priceBodyEl) priceBodyEl.innerHTML = '<div style="color:var(--rd);font-size:12px;padding:12px">Erreur : '+esc(e.message)+'</div>';
     updateAlertTabBadge(0);
   }
+  })();
 
-  // ── Alerte 5 : doublon parent SEA (async) ───────────────────────
+  // ── Alerte 5 : doublon parent SEA (async, indépendant) ──────────
+  (async function() {
   var parentBodyEl = document.getElementById('alerte-parent-body');
   if (parentBodyEl) {
     try {
@@ -6982,6 +7015,7 @@ async function renderAlertes() {
       if (parentBodyEl) parentBodyEl.innerHTML = '<div style="color:var(--txT);font-size:12px;padding:8px">Mapping parent/enfant non disponible.</div>';
     }
   }
+  })();
 }
 
 async function validerAlerte(alertType, sku, detail) {
