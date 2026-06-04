@@ -759,8 +759,9 @@ async function loadData() {
       }
     });
 
-    const alertData = computeAlertData(activeOps||[], activeOpProducts||[], psSalesDaily||[], products||[], seaActiveAllMp||[]);
-    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, leaderCounts, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], revenueImports: revenueImports||[], monthlyHistory: monthlyHistory||[], activeOps: activeOps||[], activeOpProducts: activeOpProducts||[], productSalesWeekly: productSalesWeekly||[], seaCampaigns: seaCampaigns||[], seaProductStats: seaProductStats||[], supplyByRef, psSalesDaily: psSalesDaily||[], seaActiveProducts: seaActiveProducts||[], seaActiveAllMp: seaActiveAllMp||[], alertData, _alertsJustLoaded: alertData.seaMultiMp.length > 0, tab:STATE.tab||0 };
+    const alertData = computeAlertData(activeOps||[], activeOpProducts||[], psSalesDaily||[], products||[], seaActiveAllMp||[], seaActiveProducts||[]);
+    const _syncAlertCount = alertData.seaMultiMp.length + alertData.seaDelivery.length + alertData.seaOpeDoublons.length;
+    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, leaderCounts, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], revenueImports: revenueImports||[], monthlyHistory: monthlyHistory||[], activeOps: activeOps||[], activeOpProducts: activeOpProducts||[], productSalesWeekly: productSalesWeekly||[], seaCampaigns: seaCampaigns||[], seaProductStats: seaProductStats||[], supplyByRef, psSalesDaily: psSalesDaily||[], seaActiveProducts: seaActiveProducts||[], seaActiveAllMp: seaActiveAllMp||[], alertData, _alertsJustLoaded: _syncAlertCount > 0, tab:STATE.tab||0 };
 
     const sessionDisplay = latestDate ? new Date(latestDate + "T12:00:00Z").toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}) : "N/A";
     document.getElementById("header-subtitle").textContent = `${products.length} produits · Relevé du ${sessionDisplay}`;
@@ -775,7 +776,7 @@ async function loadData() {
 function renderTabs() {
   const names = getTabNames();
   const alertIdx = names.indexOf("Alertes");
-  const alertN = (STATE.alertData ? STATE.alertData.seaMultiMp.length : 0) + (STATE._priceAlertCount || 0);
+  const alertN = (STATE.alertData ? (STATE.alertData.seaMultiMp.length + (STATE.alertData.seaDelivery||[]).length + (STATE.alertData.seaOpeDoublons||[]).length) : 0) + (STATE._priceAlertCount || 0);
   document.getElementById("tabs").innerHTML = names.map((t,i) => {
     const isAlert = i === alertIdx;
     const label = isAlert && alertN > 0 ? `Alertes (${alertN})` : t;
@@ -791,41 +792,59 @@ function renderTabs() {
   }
 }
 
-// Charge le compteur d'alertes prix en arrière-plan dès le chargement initial
+// Charge le compteur d'alertes async (prix + doublon parent) en arrière-plan dès le chargement initial
 async function loadPriceAlertCountBg() {
   try {
     var today = new Date().toISOString().slice(0,10);
-    var activeOps = (STATE.activeOps||[]).filter(function(op){ return op.date_debut<=today && op.date_fin>=today; });
-    if (!activeOps.length) { updateAlertTabBadge(0); return; }
-    var prodBySku = {};
-    (STATE.products||[]).forEach(function(p){ if(p.sku) prodBySku[p.sku]=p; });
     var validated = STATE._validatedAlerts || new Set();
+
+    // ── Alertes prix (async Supabase) ──
     var badSkus = new Set();
-    for (var oi = 0; oi < activeOps.length; oi++) {
-      var op = activeOps[oi];
-      var opProds = (STATE.activeOpProducts||[]).filter(function(ap){ return ap.operation_id===op.id && ap.prix && ap.prix>0; });
-      if (!opProds.length) continue;
-      var opPrixBySku = {};
-      opProds.forEach(function(ap){ opPrixBySku[ap.ref]=ap.prix; });
-      var sales = [];
-      try {
-        sales = await sb('ps_sales_daily',
-          'marketplace=eq.'+MARKETPLACE
-          +'&sale_date=gte.'+op.date_debut
-          +'&sale_date=lte.'+op.date_fin
-          +'&select=product_ref,quantity,revenue_ttc'
-        );
-      } catch(e) { continue; }
-      sales.forEach(function(s) {
-        var opPrix = opPrixBySku[s.product_ref];
-        if (!opPrix || validated.has('price_ecart|'+s.product_ref)) return;
-        var qty = s.quantity||1, revTtc = parseFloat(s.revenue_ttc)||0;
-        if (revTtc<=0) return;
-        var ecart = (revTtc/qty - opPrix) / opPrix;
-        if (Math.abs(ecart) >= 0.02) badSkus.add(s.product_ref);
-      });
+    var activeOps = (STATE.activeOps||[]).filter(function(op){ return op.date_debut<=today && op.date_fin>=today; });
+    if (activeOps.length) {
+      for (var oi = 0; oi < activeOps.length; oi++) {
+        var op = activeOps[oi];
+        var opProds = (STATE.activeOpProducts||[]).filter(function(ap){ return ap.operation_id===op.id && ap.prix && ap.prix>0; });
+        if (!opProds.length) continue;
+        var opPrixBySku = {};
+        opProds.forEach(function(ap){ opPrixBySku[ap.ref]=ap.prix; });
+        var sales = [];
+        try {
+          sales = await sb('ps_sales_daily',
+            'marketplace=eq.'+MARKETPLACE
+            +'&sale_date=gte.'+op.date_debut
+            +'&sale_date=lte.'+op.date_fin
+            +'&select=product_ref,quantity,revenue_ttc'
+          );
+        } catch(e) { continue; }
+        sales.forEach(function(s) {
+          var opPrix = opPrixBySku[s.product_ref];
+          if (!opPrix || validated.has('price_ecart|'+s.product_ref)) return;
+          var qty = s.quantity||1, revTtc = parseFloat(s.revenue_ttc)||0;
+          if (revTtc<=0) return;
+          var ecart = (revTtc/qty - opPrix) / opPrix;
+          if (Math.abs(ecart) >= 0.02) badSkus.add(s.product_ref);
+        });
+      }
     }
-    updateAlertTabBadge(badSkus.size);
+
+    // ── Doublon parent (async fichier JSON) ──
+    var parentCount = 0;
+    try {
+      var refs = await loadProductRefs();
+      var c2p = refs.child_to_parent || {};
+      var parentMap = {};
+      (STATE.seaActiveProducts||[]).forEach(function(a) {
+        if (a.period_start > today || a.period_end < today) return;
+        var parent = c2p[a.sku];
+        if (!parent) return;
+        if (!parentMap[parent]) parentMap[parent] = [];
+        if (!parentMap[parent].includes(a.sku)) parentMap[parent].push(a.sku);
+      });
+      parentCount = Object.keys(parentMap).filter(function(p){ return parentMap[p].length >= 2 && !validated.has('sea_parent_doublon|'+p); }).length;
+    } catch(e) { /* product_refs.json optionnel */ }
+
+    updateAlertTabBadge(badSkus.size + parentCount);
   } catch(e) { /* silencieux */ }
 }
 
@@ -835,7 +854,7 @@ function updateAlertTabBadge(priceAlertCount) {
   const names = getTabNames();
   const alertIdx = names.indexOf("Alertes");
   if (alertIdx === -1) return;
-  const alertN = (STATE.alertData ? STATE.alertData.seaMultiMp.length : 0) + priceAlertCount;
+  const alertN = (STATE.alertData ? (STATE.alertData.seaMultiMp.length + (STATE.alertData.seaDelivery||[]).length + (STATE.alertData.seaOpeDoublons||[]).length) : 0) + priceAlertCount;
   const btn = document.querySelectorAll('#tabs .tab')[alertIdx];
   if (!btn) return;
   btn.textContent = alertN > 0 ? `Alertes (${alertN})` : 'Alertes';
@@ -989,7 +1008,7 @@ function getSeaActive(sku, dateStr) {
 }
 
 // Calcule les alertes au chargement des données
-function computeAlertData(activeOps, activeOpProducts, psSalesDaily, products, seaActiveAllMp) {
+function computeAlertData(activeOps, activeOpProducts, psSalesDaily, products, seaActiveAllMp, seaActiveProducts) {
   const today = new Date().toISOString().slice(0,10);
 
   // Index produits par SKU pour lookups rapides
@@ -1001,7 +1020,6 @@ function computeAlertData(activeOps, activeOpProducts, psSalesDaily, products, s
 
   // --- Alertes 2 : doublons SEA multi-marketplace ---
   const seaMultiMp = [];
-  // Grouper sea_active_products actifs par SKU → liste des marketplaces
   const skuMps = {};
   (seaActiveAllMp||[]).forEach(function(r) {
     if (r.period_start <= today && r.period_end >= today) {
@@ -1013,15 +1031,39 @@ function computeAlertData(activeOps, activeOpProducts, psSalesDaily, products, s
     const mps = skuMps[sku];
     if (mps.length > 1) {
       const prod = prodBySku[sku];
-      seaMultiMp.push({
-        sku: sku,
-        name: prod ? prod.name : sku,
-        marketplaces: mps
-      });
+      seaMultiMp.push({ sku, name: prod ? prod.name : sku, marketplaces: mps });
     }
   });
 
-  return { seaMultiMp };
+  // --- Alerte 3 : SEA actif + délai livraison > 30j ---
+  const seaDelivery = [];
+  (seaActiveProducts||[]).forEach(function(a) {
+    if (a.period_start > today || a.period_end < today) return;
+    const prod = prodBySku[a.sku];
+    if (!prod) return;
+    const delai = prod._delivery;
+    if (delai && delai > 30) seaDelivery.push({ sku: a.sku, name: prod.name||a.sku, delai });
+  });
+
+  // --- Alerte 4 : SEA actif + opération commerciale active ---
+  const seaOpeDoublons = [];
+  const activeOpIds = new Set((activeOps||[]).filter(function(op){ return op.date_debut<=today && op.date_fin>=today; }).map(function(op){ return op.id; }));
+  const activeOpByRef = {};
+  (activeOpProducts||[]).forEach(function(ap) {
+    if (!activeOpIds.has(ap.operation_id)) return;
+    if (!activeOpByRef[ap.ref]) activeOpByRef[ap.ref] = [];
+    const op = (activeOps||[]).find(function(o){ return o.id===ap.operation_id; });
+    if (op) activeOpByRef[ap.ref].push(op.nom);
+  });
+  (seaActiveProducts||[]).forEach(function(a) {
+    if (a.period_start > today || a.period_end < today) return;
+    if (activeOpByRef[a.sku]) {
+      const prod = prodBySku[a.sku];
+      seaOpeDoublons.push({ sku: a.sku, name: prod ? prod.name : a.sku, opes: activeOpByRef[a.sku] });
+    }
+  });
+
+  return { seaMultiMp, seaDelivery, seaOpeDoublons };
 }
 
 // ══════════════════════════════════════════════════════════════════
