@@ -1604,11 +1604,15 @@ function renderProductSalesBlocks() {
         const isToday=curDates[di]===today, isFut=curDates[di]>today;
         return "<td style='padding:5px 7px;text-align:right;font-weight:"+(v>0?"600":"400")+";color:"+(isFut?"transparent":v>0?(isToday?"var(--ac)":"var(--tx)"):"var(--txT)")+";background:"+(isToday?"rgba(44,94,160,.05)":"")+";width:38px'>"+(isFut?"":v>0?v:"—")+"</td>";
       }).join("");
+      const newCellLive = NEW_2026_SET.has(ref)
+        ? "<td style='padding:5px 4px;text-align:center'><span style='padding:1px 5px;border-radius:99px;font-size:9px;font-weight:700;background:#e8f5e9;color:#1a7a4c'>new</span></td>"
+        : "<td></td>";
       return "<tr style='"+bg+";border-bottom:1px solid var(--borderL)'>"
-        +"<td style='padding:5px 10px;font-weight:600;white-space:nowrap;width:90px'>"+esc(ref)+"</td>"
+        +"<td style='padding:5px 8px;font-weight:600;white-space:nowrap;font-size:11px'>"+esc(ref)+"</td>"
         +"<td style='padding:5px 8px;color:var(--txS);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px' title='"+esc(name)+"'>"+esc(name.slice(0,28))+"</td>"
+        +newCellLive
         +cells
-        +"<td style='padding:5px 10px;text-align:right;font-weight:700;color:var(--ac);border-left:1px solid var(--borderL);width:50px'>"+data.total+"</td>"
+        +"<td style='padding:5px 8px;text-align:right;font-weight:700;color:var(--ac);border-left:1px solid var(--borderL);width:42px'>"+data.total+"</td>"
         +"</tr>";
     }).join("");
     return "<div class='card' style='padding:14px;margin-bottom:14px'>"
@@ -1618,10 +1622,11 @@ function renderProductSalesBlocks() {
       +"</div>"
       +"<div style='overflow-x:auto'><table style='width:auto;border-collapse:collapse;font-size:12px'>"
       +"<thead><tr style='border-bottom:1px solid var(--border)'>"
-      +"<th style='padding:5px 10px;text-align:left;font-weight:600;color:var(--txS);width:90px'>Réf</th>"
+      +"<th style='padding:5px 8px;text-align:left;font-weight:600;color:var(--txS)'>Réf</th>"
       +"<th style='padding:5px 8px;text-align:left;color:var(--txS)'>Produit</th>"
+      +"<th style='padding:5px 4px;text-align:center;font-size:10px;color:#1a7a4c'>🌱</th>"
       +dayHeaders
-      +"<th style='padding:5px 10px;text-align:right;font-weight:700;color:var(--ac);border-left:1px solid var(--borderL);width:50px'>Total</th>"
+      +"<th style='padding:5px 8px;text-align:right;font-weight:700;color:var(--ac);border-left:1px solid var(--borderL);width:42px'>Tot.</th>"
       +"</tr></thead><tbody>"+rows+"</tbody></table></div>"
       +"</div>";
   }
@@ -1654,11 +1659,15 @@ function renderProductSalesBlocks() {
       const dayCells = days.map(v=>"<td style='padding:4px 5px;text-align:right;font-size:11px;font-weight:"+(v>0?"700":"400")+";color:"+(v>0?"var(--tx)":"var(--txT)")+";width:30px'>"+(v>0?v:"—")+"</td>").join("");
       const odooTot = r.qty || 0;
       const totalCell = "<td style='padding:4px 6px;text-align:right;font-weight:700;font-size:12px;color:"+(odooTot>0?"var(--ac)":"var(--txT)")+";border-left:2px solid var(--border);background:"+(odooTot>0?"var(--acBg)":"")+"'>"+(odooTot>0?odooTot:"—")+"</td>";
+      const newCell = NEW_2026_SET.has(r.ref)
+        ? "<td style='padding:4px 4px;text-align:center'><span style='padding:1px 5px;border-radius:99px;font-size:9px;font-weight:700;background:#e8f5e9;color:#1a7a4c'>new</span></td>"
+        : "<td></td>";
       return "<tr style='"+bg+";border-bottom:1px solid var(--borderL)'>"
-        +"<td style='padding:4px 6px;font-size:11px;color:var(--txT);text-align:right;width:20px'>"+(i+1)+"</td>"
-        +"<td style='padding:4px 6px;font-weight:600;white-space:nowrap;font-size:11px'>"+esc(r.ref)+"</td>"
-        +"<td style='padding:4px 6px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px' title='"+esc(productName)+"'>"+esc(productName.slice(0,22))+newTag(r.ref)+"</td>"
-        +"<td style='padding:4px 6px;font-size:10px;color:var(--txS);white-space:nowrap'>"+esc(canal)+"</td>"
+        +"<td style='padding:4px 5px;font-size:11px;color:var(--txT);text-align:right;width:18px'>"+(i+1)+"</td>"
+        +"<td style='padding:4px 5px;font-weight:600;white-space:nowrap;font-size:11px'>"+esc(r.ref)+"</td>"
+        +"<td style='padding:4px 5px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px' title='"+esc(productName)+"'>"+esc(productName.slice(0,22))+"</td>"
+        +newCell
+        +"<td style='padding:4px 5px;font-size:10px;color:var(--txS);white-space:nowrap'>"+esc(canal)+"</td>"
         +dayCells+totalCell
         +"<td style='padding:4px 5px;text-align:center'>"+dealBadge(r.ref)+"</td>"
         +(showSea?"<td style='padding:4px 5px;text-align:center'>"+sea+"</td>":"")
@@ -1670,6 +1679,7 @@ function renderProductSalesBlocks() {
       +"<th style='padding:4px 5px;color:var(--txT);width:18px'>#</th>"
       +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS);white-space:nowrap'>Réf</th>"
       +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS)'>Produit</th>"
+      +"<th style='padding:4px 4px;text-align:center;font-size:10px;color:#1a7a4c;white-space:nowrap'>🌱</th>"
       +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS);white-space:nowrap'>Canal</th>"
       +(wDates?DAY_FR.map(l=>"<th style='padding:4px 5px;text-align:right;font-size:10px;color:var(--txS);width:30px'>"+l+"</th>").join(""):"")
       +"<th style='padding:4px 6px;text-align:right;font-size:10px;font-weight:700;color:var(--ac);border-left:2px solid var(--border);width:38px'>Tot.</th>"
@@ -1751,10 +1761,14 @@ function renderProductSalesBlocks() {
       const sea=showSeaPs?(getSeaActive(r.ref,wDates[0])?'<span style="padding:2px 4px;border-radius:99px;font-size:9px;font-weight:700;background:#fff3e0;color:#e65100">⚡</span>':'<span style="font-size:10px;color:var(--txT)">—</span>'):"";
       let tot=0;
       const days=wDates.map(d=>{const v=psDailyIdx[r.ref+"|"+d]||0;tot+=v;return v;});
+      const newCellPs = NEW_2026_SET.has(r.ref)
+        ? "<td style='padding:4px 4px;text-align:center'><span style='padding:1px 5px;border-radius:99px;font-size:9px;font-weight:700;background:#e8f5e9;color:#1a7a4c'>new</span></td>"
+        : "<td></td>";
       return "<tr style='"+bg+";border-bottom:1px solid var(--borderL)'>"
-        +"<td style='padding:4px 5px;font-size:11px;color:var(--txT);text-align:right;width:20px'>"+(i+1)+"</td>"
+        +"<td style='padding:4px 5px;font-size:11px;color:var(--txT);text-align:right;width:18px'>"+(i+1)+"</td>"
         +"<td style='padding:4px 5px;font-weight:600;font-size:11px;white-space:nowrap'>"+esc(r.ref)+"</td>"
-        +"<td style='padding:4px 5px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px' title='"+esc(name)+"'>"+esc(name.slice(0,20))+" "+newTagPs(r.ref)+"</td>"
+        +"<td style='padding:4px 5px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px' title='"+esc(name)+"'>"+esc(name.slice(0,20))+"</td>"
+        +newCellPs
         +"<td style='padding:4px 5px;font-size:10px;color:var(--txS)'>"+esc(canal)+"</td>"
         +days.map(v=>"<td style='padding:4px 4px;text-align:right;font-size:11px;font-weight:"+(v>0?"700":"400")+";color:"+(v>0?"var(--tx)":"var(--txT)")+";width:30px'>"+(v>0?v:"—")+"</td>").join("")
         +"<td style='padding:4px 6px;text-align:right;font-weight:700;font-size:12px;color:"+(tot>0?"var(--ac)":"var(--txT)")+";border-left:2px solid var(--border);background:"+(tot>0?"var(--acBg)":"")+"'>"+(tot>0?tot:"—")+"</td>"
@@ -1767,6 +1781,7 @@ function renderProductSalesBlocks() {
       +"<th style='padding:4px 5px;color:var(--txT);width:18px'>#</th>"
       +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS);white-space:nowrap'>Réf</th>"
       +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS)'>Produit</th>"
+      +"<th style='padding:4px 4px;text-align:center;font-size:10px;color:#1a7a4c;white-space:nowrap'>🌱</th>"
       +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS);white-space:nowrap'>Canal</th>"
       +DAY_FR.map(l=>"<th style='padding:4px 4px;text-align:right;font-size:10px;color:var(--txS);width:30px'>"+l+"</th>").join("")
       +"<th style='padding:4px 6px;text-align:right;font-size:10px;font-weight:700;color:var(--ac);border-left:2px solid var(--border);width:38px'>Tot.</th>"
