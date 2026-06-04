@@ -1650,10 +1650,10 @@ function renderProductSalesBlocks() {
       const sea = showSea?(getSeaActive(r.ref,seaDate)
         ?'<span style="padding:2px 5px;border-radius:99px;font-size:9px;font-weight:700;background:#fff3e0;color:#e65100">⚡</span>'
         :'<span style="font-size:10px;color:var(--txT)">—</span>'):"";
-      let tot=0;
-      const days = wDates ? wDates.map(d=>{const v=psDailyIdx[r.ref+"|"+d]||0;tot+=v;return v;}) : [];
+      const days = wDates ? wDates.map(d=>psDailyIdx[r.ref+"|"+d]||0) : [];
       const dayCells = days.map(v=>"<td style='padding:4px 5px;text-align:right;font-size:11px;font-weight:"+(v>0?"700":"400")+";color:"+(v>0?"var(--tx)":"var(--txT)")+";width:30px'>"+(v>0?v:"—")+"</td>").join("");
-      const totalCell = "<td style='padding:4px 6px;text-align:right;font-weight:700;font-size:12px;color:"+(tot>0?"var(--ac)":"var(--txT)")+";border-left:2px solid var(--border);background:"+(tot>0?"var(--acBg)":"")+"'>"+( tot>0?tot:"—")+"</td>";
+      const odooTot = r.qty || 0;
+      const totalCell = "<td style='padding:4px 6px;text-align:right;font-weight:700;font-size:12px;color:"+(odooTot>0?"var(--ac)":"var(--txT)")+";border-left:2px solid var(--border);background:"+(odooTot>0?"var(--acBg)":"")+"'>"+(odooTot>0?odooTot:"—")+"</td>";
       return "<tr style='"+bg+";border-bottom:1px solid var(--borderL)'>"
         +"<td style='padding:4px 6px;font-size:11px;color:var(--txT);text-align:right;width:20px'>"+(i+1)+"</td>"
         +"<td style='padding:4px 6px;font-weight:600;white-space:nowrap;font-size:11px'>"+esc(r.ref)+"</td>"
