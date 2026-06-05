@@ -764,7 +764,12 @@ async function loadData() {
     });
 
     const alertData = computeAlertData(activeOps||[], activeOpProducts||[], psSalesDaily||[], products||[], seaActiveAllMp||[], seaActiveProducts||[]);
-    const _syncAlertCount = alertData.seaMultiMp.length + alertData.seaDelivery.length + alertData.seaOpeDoublons.length;
+    // opeDelivery count (Opé commerciale + délai > 30j)
+    const _today0 = new Date().toISOString().slice(0,10);
+    const _activeOpIds0 = new Set((activeOps||[]).filter(op=>op.date_debut<=_today0&&op.date_fin>=_today0).map(op=>op.id));
+    const _activeOpRefs0 = new Set(); (activeOpProducts||[]).forEach(ap=>{if(_activeOpIds0.has(ap.operation_id))_activeOpRefs0.add(ap.ref);});
+    const _opeDelCount0 = (products||[]).filter(p=>p.sku&&(p._delivery||0)>30&&_activeOpRefs0.has(p.sku)).length;
+    const _syncAlertCount = alertData.seaMultiMp.length + alertData.seaDelivery.length + alertData.seaOpeDoublons.length + _opeDelCount0;
     STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, leaderCounts, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], revenueImports: revenueImports||[], monthlyHistory: monthlyHistory||[], activeOps: activeOps||[], activeOpProducts: activeOpProducts||[], productSalesWeekly: productSalesWeekly||[], seaCampaigns: seaCampaigns||[], seaProductStats: seaProductStats||[], supplyByRef, psSalesDaily: psSalesDaily||[], seaActiveProducts: seaActiveProducts||[], seaActiveAllMp: seaActiveAllMp||[], alertData, _alertsJustLoaded: _syncAlertCount > 0, tab:STATE.tab||0 };
 
     const sessionDisplay = latestDate ? new Date(latestDate + "T12:00:00Z").toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}) : "N/A";
@@ -780,7 +785,16 @@ async function loadData() {
 function renderTabs() {
   const names = getTabNames();
   const alertIdx = names.indexOf("Alertes");
-  const alertN = (STATE.alertData ? (STATE.alertData.seaMultiMp.length + (STATE.alertData.seaDelivery||[]).length + (STATE.alertData.seaOpeDoublons||[]).length) : 0) + (STATE._priceAlertCount || 0);
+  const today = new Date().toISOString().slice(0,10);
+  const _validated = STATE._validatedAlerts || new Set();
+  const _ad = STATE.alertData || {};
+  const _seaMpN  = (_ad.seaMultiMp||[]).filter(r => r.marketplaces.includes(MARKETPLACE) && !_validated.has('sea_multi_mp|'+r.sku)).length;
+  const _seaDelN = (_ad.seaDelivery||[]).filter(r => !_validated.has('sea_delivery|'+r.sku)).length;
+  const _seaOpeN = (_ad.seaOpeDoublons||[]).filter(r => !_validated.has('sea_ope_doublon|'+r.sku)).length;
+  const _activeOpIds = new Set((STATE.activeOps||[]).filter(op=>op.date_debut<=today&&op.date_fin>=today).map(op=>op.id));
+  const _activeOpRefs = new Set(); (STATE.activeOpProducts||[]).forEach(ap=>{if(_activeOpIds.has(ap.operation_id))_activeOpRefs.add(ap.ref);});
+  const _opeDelN = (STATE.products||[]).filter(p=>p.sku&&!_validated.has('ope_delivery|'+p.sku)&&(p._delivery||0)>30&&_activeOpRefs.has(p.sku)).length;
+  const alertN = _seaMpN + _seaDelN + _seaOpeN + _opeDelN + (STATE._priceAlertCount || 0);
   document.getElementById("tabs").innerHTML = names.map((t,i) => {
     const isAlert = i === alertIdx;
     const label = isAlert && alertN > 0 ? `Alertes (${alertN})` : t;
@@ -858,7 +872,30 @@ function updateAlertTabBadge(priceAlertCount) {
   const names = getTabNames();
   const alertIdx = names.indexOf("Alertes");
   if (alertIdx === -1) return;
-  const alertN = (STATE.alertData ? (STATE.alertData.seaMultiMp.length + (STATE.alertData.seaDelivery||[]).length + (STATE.alertData.seaOpeDoublons||[]).length) : 0) + priceAlertCount;
+
+  const today = new Date().toISOString().slice(0,10);
+  const validated = STATE._validatedAlerts || new Set();
+  const ad = STATE.alertData || {};
+
+  // 1. SEA multi-marketplace (filtré sur la MP courante)
+  const seaMultiMpCount = (ad.seaMultiMp||[]).filter(function(r){ return r.marketplaces.includes(MARKETPLACE) && !validated.has('sea_multi_mp|'+r.sku); }).length;
+
+  // 2. SEA actif + délai > 30j
+  const seaDeliveryCount = (ad.seaDelivery||[]).filter(function(r){ return !validated.has('sea_delivery|'+r.sku); }).length;
+
+  // 3. SEA actif + opé commerciale active
+  const seaOpeCount = (ad.seaOpeDoublons||[]).filter(function(r){ return !validated.has('sea_ope_doublon|'+r.sku); }).length;
+
+  // 4. Opé commerciale active + délai > 30j (nouveau type)
+  var activeOpIds4 = new Set((STATE.activeOps||[]).filter(function(op){ return op.date_debut<=today&&op.date_fin>=today; }).map(function(op){ return op.id; }));
+  var activeOpRefs4 = new Set();
+  (STATE.activeOpProducts||[]).forEach(function(ap){ if (activeOpIds4.has(ap.operation_id)) activeOpRefs4.add(ap.ref); });
+  const opeDeliveryCount = (STATE.products||[]).filter(function(p){
+    return p.sku && !validated.has('ope_delivery|'+p.sku) && (p._delivery||0) > 30 && activeOpRefs4.has(p.sku);
+  }).length;
+
+  const alertN = seaMultiMpCount + seaDeliveryCount + seaOpeCount + opeDeliveryCount + priceAlertCount;
+
   const btn = document.querySelectorAll('#tabs .tab')[alertIdx];
   if (!btn) return;
   btn.textContent = alertN > 0 ? `Alertes (${alertN})` : 'Alertes';
