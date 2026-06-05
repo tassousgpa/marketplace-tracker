@@ -127,6 +127,10 @@ tr.stripe{background:var(--bg)}
 </head>
 <body>
 
+<div id="maint-banner" style="background:#fff8e1;border-bottom:1px solid #ffe082;padding:8px 24px;font-size:12px;color:#7a5e00;display:flex;align-items:center;justify-content:space-between;gap:12px;font-family:'DM Sans',sans-serif;z-index:50;position:relative">
+  <span>⚙️ <strong>Mise à jour en cours</strong> — Des améliorations sont actuellement en cours de déploiement. Certaines fonctionnalités peuvent être temporairement indisponibles.</span>
+  <button onclick="document.getElementById('maint-banner').remove()" style="background:none;border:none;cursor:pointer;color:#7a5e00;font-size:18px;line-height:1;padding:0 4px;font-family:inherit;flex-shrink:0" title="Fermer">×</button>
+</div>
 <div class="header">
   <div class="header-top" style="display:flex;justify-content:space-between;align-items:center;">
     <div class="header-left">
@@ -1680,7 +1684,7 @@ function renderProductSalesBlocks() {
       +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS);white-space:nowrap'>Réf</th>"
       +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS)'>Produit</th>"
       +"<th style='padding:4px 4px;text-align:center;font-size:10px;color:#1a7a4c;white-space:nowrap'>🌱</th>"
-      +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS);white-space:nowrap'>Canal</th>"
+      +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS);white-space:nowrap'>Attribution</th>"
       +(wDates?DAY_FR.map(l=>"<th style='padding:4px 5px;text-align:right;font-size:10px;color:var(--txS);width:30px'>"+l+"</th>").join(""):"")
       +"<th style='padding:4px 6px;text-align:right;font-size:10px;font-weight:700;color:var(--ac);border-left:2px solid var(--border);width:38px'>Tot.</th>"
       +"<th style='padding:4px 5px;text-align:center;font-size:10px;color:var(--txS);white-space:nowrap'>Opé.</th>"
@@ -1712,7 +1716,7 @@ function renderProductSalesBlocks() {
         +"<th style='padding:5px 6px;color:var(--txT);width:20px'>#</th>"
         +"<th style='padding:5px 6px;text-align:left;font-size:10px;color:var(--gn)'>Réf</th>"
         +"<th style='padding:5px 6px;text-align:left;font-size:10px;color:var(--gn)'>Produit</th>"
-        +"<th style='padding:5px 6px;text-align:left;font-size:10px;color:var(--gn)'>Canal</th>"
+        +"<th style='padding:5px 6px;text-align:left;font-size:10px;color:var(--gn)'>Attribution</th>"
         +"<th style='padding:5px 6px;text-align:right;font-size:10px;color:var(--gn)'>Ventes</th>"
         +"<th style='padding:5px 6px;text-align:right;font-size:10px;color:var(--gn)'>PM TTC</th>"
         +"</tr></thead><tbody>"+rightRows+"</tbody></table>";
@@ -1782,7 +1786,7 @@ function renderProductSalesBlocks() {
       +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS);white-space:nowrap'>Réf</th>"
       +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS)'>Produit</th>"
       +"<th style='padding:4px 4px;text-align:center;font-size:10px;color:#1a7a4c;white-space:nowrap'>🌱</th>"
-      +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS);white-space:nowrap'>Canal</th>"
+      +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS);white-space:nowrap'>Attribution</th>"
       +DAY_FR.map(l=>"<th style='padding:4px 4px;text-align:right;font-size:10px;color:var(--txS);width:30px'>"+l+"</th>").join("")
       +"<th style='padding:4px 6px;text-align:right;font-size:10px;font-weight:700;color:var(--ac);border-left:2px solid var(--border);width:38px'>Tot.</th>"
       +"<th style='padding:4px 5px;text-align:center;font-size:10px;color:var(--txS);white-space:nowrap'>Opé.</th>"
@@ -1813,7 +1817,7 @@ function renderProductSalesBlocks() {
         +"<th style='padding:5px 5px;color:var(--txT);width:20px'>#</th>"
         +"<th style='padding:5px 5px;text-align:left;font-size:10px;color:var(--gn)'>Réf</th>"
         +"<th style='padding:5px 5px;text-align:left;font-size:10px;color:var(--gn)'>Produit</th>"
-        +"<th style='padding:5px 5px;text-align:left;font-size:10px;color:var(--gn)'>Canal</th>"
+        +"<th style='padding:5px 5px;text-align:left;font-size:10px;color:var(--gn)'>Attribution</th>"
         +"<th style='padding:5px 5px;text-align:right;font-size:10px;color:var(--gn)'>Ventes</th>"
         +"<th style='padding:5px 5px;text-align:right;font-size:10px;color:var(--gn)'>PM TTC</th>"
         +"</tr></thead><tbody>"+rr+"</tbody></table>";
@@ -2282,7 +2286,7 @@ function buildProduitsTableHTML() {
       <thead><tr style="border-bottom:1px solid var(--border);background:var(--bg);position:sticky;top:0;z-index:2">
         <th style="cursor:pointer;position:sticky;top:0;background:var(--bg)" onclick="toggleProdSort('name')">Produit${si('name')}</th><th style="position:sticky;top:0;background:var(--bg)">Réfs</th><th style="text-align:center;position:sticky;top:0;background:var(--bg)">Type</th>
         <th style="text-align:center;position:sticky;top:0;background:var(--bg)">New 2026</th>
-        <th style="text-align:center;position:sticky;top:0;background:var(--bg)">Canal</th>
+        <th style="text-align:center;position:sticky;top:0;background:var(--bg)">Attribution</th>
         <th style="cursor:pointer;text-align:right;position:sticky;top:0;background:var(--bg)" onclick="toggleProdSort('price')">Prix${si('price')}</th>
         <th style="text-align:center;position:sticky;top:0;background:var(--bg)">Dispo</th>
         <th style="text-align:right;white-space:nowrap;position:sticky;top:0;background:var(--bg)">Stock ent.</th>
@@ -2322,7 +2326,7 @@ function renderProduits() {
     <div class="filters">
       <input placeholder="Rechercher..." value="${esc(f.search)}" oninput="prodFilters.search=this.value;renderProduitsTable()"/>
       <select onchange="prodFilters.type=this.value;renderProduitsTable()"><option value="all">Tous types</option><option value="Classe A" ${f.type==='Classe A'?'selected':''}>Classe A</option><option value="Nouveautés Q4+Q1" ${f.type==='Nouveautés Q4+Q1'?'selected':''}>Nouveautés</option><option value="Deals exclus" ${f.type==='Deals exclus'?'selected':''}>Deals exclus</option></select>
-      <select onchange="prodFilters.canal=this.value;renderProduitsTable()"><option value="all">Tous canaux</option>${canaux.map(c=>'<option value="'+esc(c)+'"'+(f.canal===c?' selected':'')+'>'+esc(c)+'</option>').join('')}</select>
+      <select onchange="prodFilters.canal=this.value;renderProduitsTable()"><option value="all">Toutes attributions</option>${canaux.map(c=>'<option value="'+esc(c)+'"'+(f.canal===c?' selected':'')+'>'+esc(c)+'</option>').join('')}</select>
       <select onchange="prodFilters.avail=this.value;renderProduitsTable()"><option value="all">Dispo + Indispo</option><option value="dispo" ${f.avail==='dispo'?'selected':''}>Disponible</option><option value="indispo" ${f.avail==='indispo'?'selected':''}>Indisponible</option><option value="pb_lien" ${f.avail==='pb_lien'?'selected':''}>Problème de liens</option></select>
       <select onchange="prodFilters.page1=this.value;renderProduitsTable()"><option value="all">Toutes positions</option><option value="yes" ${f.page1==='yes'?'selected':''}>En page 1</option><option value="no" ${f.page1==='no'?'selected':''}>Pas en page 1</option></select>
       <select onchange="prodFilters.tag=this.value;renderProduitsTable()"><option value="all">Toutes variations</option><option value="prix_up">Prix ↑</option><option value="prix_down">Prix ↓</option><option value="delai_up">Délai ↑</option><option value="delai_down">Délai ↓</option><option value="note_up">Note ↑</option><option value="note_down">Note ↓</option></select>
@@ -2501,7 +2505,7 @@ function openExportModal() {
   const baseCols = [
     {id:'name',label:'Produit',def:true},{id:'product_id',label:'ID produit',def:true},
     {id:'sku',label:'SKU',def:true},{id:'sku_marketplace',label:'SKU Marketplace',def:true},
-    {id:'type',label:'Type',def:false},{id:'canal',label:'Canal',def:false},{id:'url',label:'Lien',def:true}
+    {id:'type',label:'Type',def:false},{id:'canal',label:'Attribution',def:false},{id:'url',label:'Lien',def:true}
   ];
   const metrics = [
     {id:'dispo',label:'Dispo',def:true},{id:'prix',label:'Prix',def:true},
@@ -2652,7 +2656,7 @@ function buildExportSheetData(mpData, baseCols, metrics, sessionsCount, filters)
   const dealMap = {};
   (activeOpProducts||[]).forEach(r => { if (activeOpIds.has(r.operation_id)) dealMap[r.ref] = true; });
   const hasDeal = sku => sku && !!dealMap[sku];
-  const colLabels = {name:'Produit',product_id:'ID produit',sku:'SKU',sku_marketplace:'SKU Marketplace',type:'Type',canal:'Canal',url:'Lien'};
+  const colLabels = {name:'Produit',product_id:'ID produit',sku:'SKU',sku_marketplace:'SKU Marketplace',type:'Type',canal:'Attribution',url:'Lien'};
   const metricLabels = {dispo:'Dispo',prix:'Prix',note:'Note',delai:'Délai'};
   const headers = [
     ...baseCols.map(c=>colLabels[c]),
@@ -4062,7 +4066,7 @@ function exportGestionCSV(){
   let list=STATE.allProducts||STATE.products;
   if(gestionSearch){const s=gestionSearch.toLowerCase();list=list.filter(p=>p.name.toLowerCase().includes(s)||p.product_id.includes(s)||(p.sku||"").toLowerCase().includes(s));}
   if(gestionNoUrl)list=list.filter(p=>!p.url);
-  const headers=["ID produit","Nom","SKU","EAN","Marketplace","Type","Canal attribué","URL","Statut"];
+  const headers=["ID produit","Nom","SKU","EAN","Marketplace","Type","Attribution","URL","Statut"];
   const csvCell=function(v){const s=String(v!=null?v:"");return(s.indexOf(";")!==-1||s.indexOf('"')!==-1||s.indexOf("\n")!==-1)?'"'+s.replace(/"/g,'""')+'"':s;};
   const rows=list.map(function(p){return[p.product_id||"",p.name||"",p.sku||"",p.ean||"",p.marketplace||MARKETPLACE,p.type||"",p.canal_attribue||"",p.url||"",p.active!==false?"Actif":"Inactif"];});
   const csv=[headers].concat(rows).map(function(row){return row.map(csvCell).join(";");}).join("\n");
@@ -4911,7 +4915,7 @@ function buildAuditHTML() {
       ${categories.map(c=>`<option value="${esc(c)}" ${auditFilters.categorie===c?"selected":""}>${esc(c)}</option>`).join("")}
     </select>
     <select onchange="auditFilters.canal=this.value;document.getElementById('content').innerHTML=buildAuditHTML()">
-      <option value="all">Tous canaux</option>
+      <option value="all">Toutes attributions</option>
       ${canaux.map(c=>`<option value="${esc(c)}" ${auditFilters.canal===c?"selected":""}>${esc(c)}</option>`).join("")}
     </select>
     <select onchange="auditFilters.niveau=this.value;document.getElementById('content').innerHTML=buildAuditHTML()">
@@ -4936,7 +4940,7 @@ function buildAuditHTML() {
       {key:"lien_mkp",label:"Lien",w:60,editable:true,isLink:true},
       {key:"categorie",label:"Catég.",w:80,editable:true},
       {key:"type_ref",label:"Type",w:90,editable:true},
-      {key:"_canal",label:"Canal",w:90,editable:false,isCanal:true},
+      {key:"_canal",label:"Attribution",w:90,editable:false,isCanal:true},
     ]},
     { label:"TITRE (8 pts)", cols:[
       {key:"titre_longueur",label:"Long. (0-2)",w:60,editable:true,max:2},
@@ -6122,9 +6126,10 @@ function buildOpeHTML() {
 
   svg += '</svg>';
 
-  // Bouton import + créer
-  const actions = '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">'
+  const actions = '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">'
     + '<button onclick="openOpeCreate(null)" style="padding:7px 16px;border:.5px solid var(--ac);border-radius:8px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">+ Nouvelle opération</button>'
+    + '<button onclick="openMarronnierGlobal()" style="padding:7px 16px;border:.5px solid var(--pu);border-radius:8px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">📅 Marronnier global (toutes marketplaces)</button>'
+    + '<button onclick="openOpeExportModal()" style="padding:7px 16px;border:.5px solid var(--gn);border-radius:8px;font-size:12px;background:var(--gnBg);color:var(--gn);cursor:pointer;font-weight:600;font-family:inherit">⬇ Export</button>'
     + '</div>';
 
   return kpis + actions
@@ -6166,6 +6171,188 @@ function renderOpeCards() {
       + '<div style="display:flex;gap:10px;flex-wrap:wrap">'+future.map(opeCard).join("")+'</div></div>';
   }
   return html;
+}
+
+async function openMarronnierGlobal() {
+  // Ouvre un volet pleine page avec le calendrier de toutes les opérations de toutes les marketplaces
+  var overlay = document.getElementById('marronnier-overlay');
+  if (overlay) { overlay.remove(); }
+  overlay = document.createElement('div');
+  overlay.id = 'marronnier-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:500;overflow:auto;font-family:DM Sans,sans-serif';
+  overlay.innerHTML = '<div style="padding:20px 28px;border-bottom:.5px solid var(--border);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:var(--bg);z-index:10">'
+    +'<div style="font-size:16px;font-weight:700">📅 Marronnier global — Toutes marketplaces</div>'
+    +'<div style="display:flex;gap:8px;align-items:center">'
+    +'<div id="marronnier-mp-filter" style="display:flex;gap:4px;flex-wrap:wrap"></div>'
+    +'<button onclick="document.getElementById(\'marronnier-overlay\').remove()" style="padding:6px 14px;border:.5px solid var(--border);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;background:var(--card);font-family:inherit">✕ Fermer</button>'
+    +'</div></div>'
+    +'<div id="marronnier-body" style="padding:20px 28px"><div style="text-align:center;padding:40px;color:var(--txS)">Chargement...</div></div>';
+  document.body.appendChild(overlay);
+
+  try {
+    // Charger toutes les opérations de toutes les marketplaces
+    var allOps = await sb('commercial_operations', 'select=*&order=date_debut.desc');
+    var allOpProds = await sb('operation_products', 'select=operation_id,ref,taux_commission,cofinancement,marketplace');
+
+    // Filtres marketplace
+    var mpFilter = new Set(MARKETPLACES.map(function(m){ return m.id; }));
+    var filterEl = document.getElementById('marronnier-mp-filter');
+    if (filterEl) {
+      filterEl.innerHTML = MARKETPLACES.map(function(m){
+        return '<button onclick="toggleMarronnierMp(\''+m.id+'\')" id="mmp-btn-'+m.id+'" style="padding:3px 10px;border:.5px solid var(--border);border-radius:6px;font-size:11px;cursor:pointer;background:var(--acBg);color:var(--ac);font-family:inherit;font-weight:600">'+m.label+'</button>';
+      }).join('');
+    }
+
+    window._marronnierOps = allOps;
+    window._marronnierMpFilter = new Set(MARKETPLACES.map(function(m){ return m.id; }));
+    window._marronnierOpProds = allOpProds;
+    renderMarronnierContent();
+  } catch(e) {
+    var body = document.getElementById('marronnier-body');
+    if (body) body.innerHTML = '<div style="color:var(--rd);padding:20px">Erreur : '+esc(e.message)+'</div>';
+  }
+}
+
+function toggleMarronnierMp(mpId) {
+  if (!window._marronnierMpFilter) return;
+  if (window._marronnierMpFilter.has(mpId)) window._marronnierMpFilter.delete(mpId);
+  else window._marronnierMpFilter.add(mpId);
+  var btn = document.getElementById('mmp-btn-'+mpId);
+  if (btn) {
+    var active = window._marronnierMpFilter.has(mpId);
+    btn.style.background = active ? 'var(--acBg)' : 'var(--bg)';
+    btn.style.color = active ? 'var(--ac)' : 'var(--txT)';
+  }
+  renderMarronnierContent();
+}
+
+function renderMarronnierContent() {
+  var body = document.getElementById('marronnier-body');
+  if (!body) return;
+  var ops = (window._marronnierOps||[]).filter(function(op){
+    return window._marronnierMpFilter && window._marronnierMpFilter.has(op.marketplace);
+  });
+  if (!ops.length) { body.innerHTML = '<div style="text-align:center;padding:40px;color:var(--txS)">Aucune opération pour les marketplaces sélectionnées.</div>'; return; }
+
+  var now = new Date();
+  var TH = 'padding:7px 10px;font-size:11px;font-weight:600;color:var(--txS);background:var(--bg);border-bottom:1px solid var(--border);white-space:nowrap;text-align:left';
+  var TD = 'padding:6px 10px;font-size:12px;border-bottom:1px solid var(--borderL);';
+  var fmtD = function(d){ return d ? new Date(d).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '—'; };
+  var rows = ops.map(function(op,i){
+    var isAct = op.date_debut<=now.toISOString().slice(0,10) && op.date_fin>=now.toISOString().slice(0,10);
+    var mpObj = MARKETPLACES.find(function(m){ return m.id===op.marketplace; })||{label:op.marketplace};
+    return '<tr style="'+(i%2?'background:var(--bg);':'')+'border-bottom:1px solid var(--borderL)">'
+      +'<td style="'+TD+'font-weight:600">'+esc(op.nom||'—')+'</td>'
+      +'<td style="'+TD+'"><span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:var(--acBg);color:var(--ac)">'+esc(mpObj.label)+'</span></td>'
+      +'<td style="'+TD+'">'+(op.type_ope?esc(op.type_ope):'—')+'</td>'
+      +'<td style="'+TD+'">'+fmtD(op.date_debut)+'</td>'
+      +'<td style="'+TD+'">'+fmtD(op.date_fin)+'</td>'
+      +'<td style="'+TD+'"><span style="padding:2px 7px;border-radius:99px;font-size:10px;font-weight:600;background:'+(isAct?'var(--gnBg)':'var(--bg)')+';color:'+(isAct?'var(--gn)':'var(--txT)')+'">'+( isAct?'● Actif':'—' )+'</span></td>'
+      +'</tr>';
+  }).join('');
+  body.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+    +'<thead><tr><th style="'+TH+'">Opération</th><th style="'+TH+'">Marketplace</th><th style="'+TH+'">Type</th>'
+    +'<th style="'+TH+'">Début</th><th style="'+TH+'">Fin</th><th style="'+TH+'">Statut</th></tr></thead>'
+    +'<tbody>'+rows+'</tbody></table></div>';
+}
+
+async function openOpeExportModal() {
+  var sCb = 'cursor:pointer;accent-color:var(--ac)';
+  var sLabel = 'display:flex;align-items:center;gap:6px;font-size:12px;color:var(--tx);margin-bottom:6px;cursor:pointer';
+
+  // Charger toutes les ops + produits si besoin
+  var allOps, allOpProds;
+  try {
+    allOps = await sb('commercial_operations', 'select=*&order=date_debut.desc');
+    allOpProds = await sb('operation_products', 'select=*');
+  } catch(e) { alert('Erreur chargement : '+esc(e.message)); return; }
+
+  window._opeExportAllOps = allOps;
+  window._opeExportAllOpProds = allOpProds;
+
+  var mpOptions = MARKETPLACES.map(function(m){
+    return '<label style="'+sLabel+'"><input type="checkbox" class="ope-exp-mp" value="'+m.id+'" checked style="'+sCb+'"> '+m.label+'</label>';
+  }).join('');
+  var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">'
+    +'<div>'
+    +'<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--txS);margin-bottom:8px">Marketplaces</div>'
+    +mpOptions
+    +'<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--txS);margin-top:14px;margin-bottom:8px">Période</div>'
+    +'<label style="'+sLabel+'"><input type="radio" name="ope-exp-date" value="all" checked style="'+sCb+'"> Toutes les dates</label>'
+    +'<label style="'+sLabel+'"><input type="radio" name="ope-exp-date" value="active" style="'+sCb+'"> Opérations actives uniquement</label>'
+    +'<label style="'+sLabel+'"><input type="radio" name="ope-exp-date" value="custom" style="'+sCb+'"> Période personnalisée</label>'
+    +'<div id="ope-exp-date-range" style="margin-top:8px;display:none;flex-direction:column;gap:6px">'
+    +'<input type="date" id="ope-exp-from" style="padding:6px 10px;border:.5px solid var(--border);border-radius:7px;font-size:12px;font-family:inherit">'
+    +'<input type="date" id="ope-exp-to" style="padding:6px 10px;border:.5px solid var(--border);border-radius:7px;font-size:12px;font-family:inherit">'
+    +'</div>'
+    +'</div>'
+    +'<div>'
+    +'<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--txS);margin-bottom:8px">Format</div>'
+    +'<label style="'+sLabel+'"><input type="radio" name="ope-exp-fmt" value="csv" checked style="'+sCb+'"> CSV</label>'
+    +'<label style="'+sLabel+'"><input type="radio" name="ope-exp-fmt" value="xlsx" style="'+sCb+'"> Excel (XLSX)</label>'
+    +'<div style="font-size:11px;color:var(--txS);margin-top:12px">Colonnes exportées : Référence produit, Marketplace, Taux de commission (ou co-financement pour ManoMano), Prix.</div>'
+    +'</div>'
+    +'</div>'
+    +'<div style="margin-top:20px;text-align:right">'
+    +'<button onclick="executeOpeExport()" style="padding:8px 20px;background:var(--ac);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">⬇ Télécharger</button>'
+    +'</div>';
+  openModal('Export Opérations Commerciales', html);
+  // Toggle date range
+  document.querySelectorAll('input[name="ope-exp-date"]').forEach(function(r){
+    r.addEventListener('change', function(){
+      var dr = document.getElementById('ope-exp-date-range');
+      if (dr) dr.style.display = this.value==='custom' ? 'flex' : 'none';
+    });
+  });
+}
+
+function executeOpeExport() {
+  var allOps = window._opeExportAllOps || [];
+  var allOpProds = window._opeExportAllOpProds || [];
+  var selectedMps = Array.from(document.querySelectorAll('.ope-exp-mp:checked')).map(function(c){ return c.value; });
+  var dateMode = (document.querySelector('input[name="ope-exp-date"]:checked')||{}).value || 'all';
+  var fmt = (document.querySelector('input[name="ope-exp-fmt"]:checked')||{}).value || 'csv';
+  var today = new Date().toISOString().slice(0,10);
+  var fromDate = document.getElementById('ope-exp-from') ? document.getElementById('ope-exp-from').value : '';
+  var toDate = document.getElementById('ope-exp-to') ? document.getElementById('ope-exp-to').value : '';
+
+  // Filtrer ops
+  var ops = allOps.filter(function(op){
+    if (!selectedMps.includes(op.marketplace)) return false;
+    if (dateMode === 'active') return op.date_debut<=today && op.date_fin>=today;
+    if (dateMode === 'custom' && fromDate && toDate) return op.date_fin >= fromDate && op.date_debut <= toDate;
+    return true;
+  });
+
+  var opIds = new Set(ops.map(function(o){ return o.id; }));
+  var rows = allOpProds.filter(function(p){ return opIds.has(p.operation_id); }).map(function(p){
+    var op = ops.find(function(o){ return o.id===p.operation_id; })||{};
+    var isMano = op.marketplace === 'manomano';
+    return {
+      'Référence produit': p.ref||'',
+      'Marketplace': op.marketplace||'',
+      'Opération': op.nom||'',
+      'Date début': op.date_debut||'',
+      'Date fin': op.date_fin||'',
+      'Taux de commission / Co-financement': isMano ? (p.cofinancement!=null?p.cofinancement:'') : (p.taux_commission!=null?p.taux_commission+'%':''),
+      'Prix': p.prix!=null ? p.prix : ''
+    };
+  });
+
+  if (!rows.length) { alert('Aucune donnée à exporter pour les critères sélectionnés.'); return; }
+
+  if (fmt === 'xlsx' && typeof XLSX !== 'undefined') {
+    var ws = XLSX.utils.json_to_sheet(rows);
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Operations');
+    XLSX.writeFile(wb, 'ope_commerciales_export.xlsx');
+  } else {
+    var headers = Object.keys(rows[0]);
+    var csv = headers.join(';')+'\n'+rows.map(function(r){ return headers.map(function(h){ return '"'+(r[h]||'').toString().replace(/"/g,'""')+'"'; }).join(';'); }).join('\n');
+    var blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8'});
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ope_commerciales_export.csv'; a.click();
+  }
+  closeModal();
 }
 
 async function openOpeDetail(id) {
@@ -6749,6 +6936,64 @@ async function confirmOpeEdit(id) {
 // ══════════════════════════════════════════════════════════════════
 // TAB ALERTES
 // ══════════════════════════════════════════════════════════════════
+
+function showAlertToast(msg) {
+  var t = document.getElementById('alert-toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'alert-toast';
+    t.style.cssText = 'position:fixed;top:16px;right:20px;z-index:9999;background:#1a7a4c;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;font-family:DM Sans,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.18);transition:opacity .4s;opacity:0;pointer-events:none';
+    document.body.appendChild(t);
+  }
+  t.textContent = msg;
+  t.style.opacity = '1';
+  clearTimeout(t._to);
+  t._to = setTimeout(function(){ t.style.opacity='0'; }, 3500);
+}
+
+function alertProductLink(sku) {
+  var prod = (STATE.products||[]).find(function(p){ return p.sku===sku; });
+  var url = prod && prod.url && prod.url.startsWith('http') ? prod.url : null;
+  return url ? '<a href="'+esc(url)+'" target="_blank" style="color:var(--ac);text-decoration:none;font-size:11px;white-space:nowrap">↗ Voir</a>' : '<span style="color:var(--txT);font-size:11px">—</span>';
+}
+
+function markAlerteTreated(alertType, sku) {
+  if (!STATE._treatedAlerts) STATE._treatedAlerts = new Set();
+  STATE._treatedAlerts.add(alertType+'|'+sku);
+  renderAlertes();
+}
+
+function unmarkAlerteTreated(alertType, sku) {
+  if (STATE._treatedAlerts) STATE._treatedAlerts.delete(alertType+'|'+sku);
+  renderAlertes();
+}
+
+function getDeliveryTracked(alertType) {
+  try { return JSON.parse(localStorage.getItem('mkp_tracked_'+alertType+'_'+MARKETPLACE)||'[]'); } catch(e){ return []; }
+}
+function setDeliveryTracked(alertType, list) {
+  try { localStorage.setItem('mkp_tracked_'+alertType+'_'+MARKETPLACE, JSON.stringify(list)); } catch(e){}
+}
+function toggleDeliveryTracking(alertType, sku) {
+  var list = getDeliveryTracked(alertType);
+  var idx = list.indexOf(sku);
+  if (idx === -1) { list.push(sku); showAlertToast('Suivi activé pour '+sku); }
+  else { list.splice(idx,1); showAlertToast('Suivi désactivé pour '+sku); }
+  setDeliveryTracked(alertType, list);
+  renderAlertes();
+}
+
+async function archiveAlerte(alertType, sku, detail, displayMsg) {
+  try {
+    await sbInsert('alert_history', { marketplace: MARKETPLACE, alert_type: alertType, sku: sku, detail: detail||{} });
+    if (!STATE._validatedAlerts) STATE._validatedAlerts = new Set();
+    STATE._validatedAlerts.add(alertType+'|'+sku);
+    if (STATE._treatedAlerts) STATE._treatedAlerts.delete(alertType+'|'+sku);
+    showAlertToast(displayMsg || '✓ Alerte archivée et historisée');
+    renderAlertes();
+  } catch(e) { alert('Erreur archivage : '+esc(e.message)); }
+}
+
 async function renderAlertes() {
   var el = document.getElementById("content");
   var ad = STATE.alertData || { seaMultiMp: [] };
@@ -6758,47 +7003,55 @@ async function renderAlertes() {
   var TH = 'padding:7px 10px;text-align:left;font-size:11px;font-weight:600;color:var(--txS);background:var(--bg);border-bottom:1px solid var(--border);white-space:nowrap;';
   var TD = 'padding:6px 10px;font-size:12px;border-bottom:1px solid var(--borderL);vertical-align:top;';
 
-  // Squelette initial — on affiche le SEA multi-MP tout de suite + loading pour les prix
-  var seaForThisMp = (ad.seaMultiMp||[]).filter(function(r) { return r.marketplaces.includes(MARKETPLACE); });
+  // ── État alertes ─────────────────────────────────────────────────
+  if (!STATE._validatedAlerts) STATE._validatedAlerts = new Set();
+  if (!STATE._treatedAlerts) STATE._treatedAlerts = new Set();
+  var validated = STATE._validatedAlerts;
+  var treated = STATE._treatedAlerts;
 
-  function buildSeaSection() {
-    if (!seaForThisMp.length) return '<div style="padding:16px;text-align:center;color:var(--txT);font-size:12px">Aucun doublon SEA multi-marketplace pour '+mpLabel+'.</div>';
-    return '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'
-      + '<thead><tr>'
-      + '<th style="'+TH+'">Réf</th><th style="'+TH+'">Produit</th>'
-      + '<th style="'+TH+'">Marketplace actuelle</th><th style="'+TH+'">Autres marketplaces actives</th>'
-      + '</tr></thead><tbody>'
-      + seaForThisMp.map(function(r,i) {
-          var others = r.marketplaces.filter(function(m){return m!==MARKETPLACE;});
-          var pills = others.map(function(m){ return '<span style="display:inline-block;padding:1px 7px;border-radius:99px;font-size:10px;font-weight:600;background:var(--acBg);color:var(--ac);margin:1px">'+esc(m)+'</span>'; }).join('');
-          return '<tr style="'+(i%2?'background:var(--bg)':'')+'">'
-            + '<td style="'+TD+'font-weight:600">'+esc(r.sku)+'</td>'
-            + '<td style="'+TD+'max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r.name)+'</td>'
-            + '<td style="'+TD+'"><span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:var(--amBg);color:var(--am)">'+esc(MARKETPLACE)+'</span></td>'
-            + '<td style="'+TD+'">'+pills+'</td>'
-            + '</tr>';
-        }).join('')
-      + '</tbody></table></div>';
+  // ── Helpers ───────────────────────────────────────────────────────
+  function okBtn(type, sku) {
+    return '<button onclick="markAlerteTreated(\''+type+'\',\''+esc(sku)+'\')" style="padding:2px 9px;border:.5px solid var(--am);border-radius:6px;font-size:11px;background:var(--amBg);color:var(--am);cursor:pointer;font-family:inherit;white-space:nowrap">OK ?</button>';
+  }
+  function xBtn(type, sku, detail) {
+    var d = detail ? JSON.stringify(detail).replace(/'/g,"\\'") : '{}';
+    var msg = 'Alerte archivée et historisée';
+    return '<button onclick="archiveAlerte(\''+type+'\',\''+esc(sku)+'\','+d+',\''+msg+'\')" style="padding:2px 9px;border:.5px solid var(--rd);border-radius:6px;font-size:11px;background:var(--rdBg);color:var(--rd);cursor:pointer;font-family:inherit" title="Archiver définitivement">✕</button>';
+  }
+  function revBtn(type, sku) {
+    return '<button onclick="unmarkAlerteTreated(\''+type+'\',\''+esc(sku)+'\')" style="padding:2px 6px;border:.5px solid var(--border);border-radius:6px;font-size:10px;background:var(--bg);color:var(--txS);cursor:pointer;font-family:inherit;margin-right:4px" title="Réouvrir">↩</button>';
+  }
+  function trackBtn(trackType, sku) {
+    var tracked = getDeliveryTracked(trackType);
+    var isTracked = tracked.indexOf(sku) !== -1;
+    var col = isTracked ? 'var(--gn)' : 'var(--ac)';
+    var bg = isTracked ? 'var(--gnBg)' : 'var(--acBg)';
+    var lbl = isTracked ? '✓ Suivi actif' : '+ Suivre le délai';
+    return '<button onclick="toggleDeliveryTracking(\''+trackType+'\',\''+esc(sku)+'\')" style="padding:2px 9px;border:.5px solid '+col+';border-radius:6px;font-size:11px;background:'+bg+';color:'+col+';cursor:pointer;font-family:inherit;white-space:nowrap">'+lbl+'</button>';
+  }
+  function treatedBlock(arr, title, colorVar, buildRow, archiveType) {
+    if (!arr.length) return '';
+    return '<details style="margin-top:10px"><summary style="font-size:11px;font-weight:600;color:var(--txS);cursor:pointer;padding:6px 10px;background:var(--bg);border-radius:6px;list-style:none">▸ Alertes traitées ('+arr.length+')</summary>'
+      + '<div style="overflow-x:auto;margin-top:6px;opacity:.65"><table style="width:100%;border-collapse:collapse">'
+      + buildRow(arr, true)
+      + '</table></div></details>';
   }
 
-  // ── Alertes synchrones 3-5 ───────────────────────────────────────
-  // Alertes déjà validées cette session (pour masquage immédiat)
-  if (!STATE._validatedAlerts) STATE._validatedAlerts = new Set();
-  var validated = STATE._validatedAlerts;
+  // ── Alertes synchrones — calcul des données ───────────────────────
+  var seaForThisMp = (ad.seaMultiMp||[]).filter(function(r) { return r.marketplaces.includes(MARKETPLACE); });
 
-  // Alerte 3 — SEA actif + délai livraison > 30j
-  var seaDeliveryAlerts = [];
+  var seaDeliveryAll = [];
   (STATE.seaActiveProducts||[]).forEach(function(a) {
     if (a.period_start > today || a.period_end < today) return;
     if (validated.has('sea_delivery|'+a.sku)) return;
     var prod = (STATE.products||[]).find(function(p){ return p.sku === a.sku; });
     if (!prod) return;
     var delai = prod._delivery;
-    if (delai && delai > 30) seaDeliveryAlerts.push({ sku: a.sku, name: prod.name||a.sku, delai: delai });
+    if (delai && delai > 30) seaDeliveryAll.push({ sku: a.sku, name: prod.name||a.sku, delai: delai });
   });
+  var seaDeliveryActive = seaDeliveryAll.filter(function(a){ return !treated.has('sea_delivery|'+a.sku); });
+  var seaDeliveryTreated = seaDeliveryAll.filter(function(a){ return treated.has('sea_delivery|'+a.sku); });
 
-  // Alerte 4 — SEA actif + opé commerciale active (même marketplace)
-  var seaOpeDoublons = [];
   var activeOpIds2 = new Set((STATE.activeOps||[]).filter(function(op){ return op.date_debut<=today&&op.date_fin>=today; }).map(function(op){ return op.id; }));
   var activeOpByRef2 = {};
   (STATE.activeOpProducts||[]).forEach(function(ap){
@@ -6808,55 +7061,133 @@ async function renderAlertes() {
       if (op2) activeOpByRef2[ap.ref].push(op2.nom);
     }
   });
+
+  var seaOpeAll = [];
   (STATE.seaActiveProducts||[]).forEach(function(a) {
     if (a.period_start > today || a.period_end < today) return;
     if (validated.has('sea_ope_doublon|'+a.sku)) return;
     if (activeOpByRef2[a.sku]) {
       var prod = (STATE.products||[]).find(function(p){ return p.sku===a.sku; });
-      seaOpeDoublons.push({ sku: a.sku, name: prod?prod.name:a.sku, opes: activeOpByRef2[a.sku] });
+      seaOpeAll.push({ sku: a.sku, name: prod?prod.name:a.sku, opes: activeOpByRef2[a.sku] });
     }
   });
+  var seaOpeActive = seaOpeAll.filter(function(a){ return !treated.has('sea_ope_doublon|'+a.sku); });
+  var seaOpeTreated = seaOpeAll.filter(function(a){ return treated.has('sea_ope_doublon|'+a.sku); });
 
-  function buildSyncAlertSection(alerts, title, colorVar, renderRow) {
-    var badge = alerts.length ? ' <span style="padding:2px 8px;border-radius:99px;font-size:11px;background:var(--rdBg);color:var(--rd)">'+alerts.length+'</span>' : '';
-    var body = alerts.length
-      ? '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'
-        + renderRow(alerts)
-        + '</table></div>'
-      : '<div style="padding:12px;text-align:center;color:var(--gn);font-size:12px;font-weight:600">✓ Aucune alerte de ce type.</div>';
-    return '<div class="card" style="margin-top:14px">'
-      + '<div style="font-size:13px;font-weight:700;color:'+colorVar+';margin-bottom:10px">'+title+badge+'</div>'
-      + body + '</div>';
+  // ── Alerte : Opé Commerciale active + Délai > 30j ─────────────────
+  var opeDeliveryAll = [];
+  (STATE.products||[]).forEach(function(prod) {
+    if (!prod.sku) return;
+    if (validated.has('ope_delivery|'+prod.sku)) return;
+    var delai = prod._delivery;
+    if (!delai || delai <= 30) return;
+    if (!activeOpByRef2[prod.sku]) return;
+    opeDeliveryAll.push({ sku: prod.sku, name: prod.name||prod.sku, delai: delai, opes: activeOpByRef2[prod.sku] });
+  });
+  var opeDeliveryActive = opeDeliveryAll.filter(function(a){ return !treated.has('ope_delivery|'+a.sku); });
+  var opeDeliveryTreated = opeDeliveryAll.filter(function(a){ return treated.has('ope_delivery|'+a.sku); });
+
+  // ── SEA multi-MP section ──────────────────────────────────────────
+  var seaMpActive = seaForThisMp.filter(function(r){ return !treated.has('sea_multi_mp|'+r.sku) && !validated.has('sea_multi_mp|'+r.sku); });
+  var seaMpTreated = seaForThisMp.filter(function(r){ return treated.has('sea_multi_mp|'+r.sku) && !validated.has('sea_multi_mp|'+r.sku); });
+  function buildSeaMpRows(arr, isTreated) {
+    if (!arr.length) return '<tbody></tbody>';
+    var thead = '<thead><tr><th style="'+TH+'">Réf</th><th style="'+TH+'">Produit</th><th style="'+TH+'">Autres MP actives</th><th style="'+TH+'">Lien</th><th style="'+TH+'"></th></tr></thead>';
+    return thead+'<tbody>'+arr.map(function(r,i) {
+      var others = r.marketplaces.filter(function(m){return m!==MARKETPLACE;});
+      var pills = others.map(function(m){ return '<span style="padding:1px 7px;border-radius:99px;font-size:10px;font-weight:600;background:var(--acBg);color:var(--ac);margin:1px">'+esc(m)+'</span>'; }).join('');
+      var rowBg = isTreated ? 'background:#f9f9f9;' : (i%2?'background:var(--bg);':'');
+      return '<tr style="'+rowBg+'border-bottom:1px solid var(--borderL)">'
+        +'<td style="'+TD+'font-weight:600">'+esc(r.sku)+'</td>'
+        +'<td style="'+TD+'max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r.name)+'</td>'
+        +'<td style="'+TD+'">'+pills+'</td>'
+        +'<td style="'+TD+'">'+alertProductLink(r.sku)+'</td>'
+        +'<td style="'+TD+'text-align:right;white-space:nowrap">'+(isTreated ? revBtn('sea_multi_mp',r.sku)+xBtn('sea_multi_mp',r.sku,{}) : okBtn('sea_multi_mp',r.sku))+'</td>'
+        +'</tr>';
+    }).join('')+'</tbody>';
   }
 
-  var deliverySection = buildSyncAlertSection(seaDeliveryAlerts,
-    '🚚 SEA actif + délai de livraison > 30 jours', 'var(--am)',
-    function(arr) {
-      return '<thead><tr><th style="'+TH+'">Réf</th><th style="'+TH+'">Produit</th><th style="'+TH+'text-align:right">Délai constaté</th><th style="'+TH+'"></th></tr></thead><tbody>'
-        + arr.map(function(a,i) {
-            return '<tr style="'+(i%2?'background:var(--bg)':'')+'">'
-              +'<td style="'+TD+'font-weight:600">'+esc(a.sku)+'</td>'
-              +'<td style="'+TD+'max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(a.name)+'</td>'
-              +'<td style="'+TD+'text-align:right;font-weight:700;color:var(--am)">'+a.delai+' j</td>'
-              +'<td style="'+TD+'"><button onclick="validerAlerte(\'sea_delivery\',\''+esc(a.sku)+'\',{})" style="padding:2px 10px;border:.5px solid var(--gn);border-radius:6px;font-size:11px;background:var(--gnBg);color:var(--gn);cursor:pointer;font-family:inherit">✓ Traité</button></td>'
-              +'</tr>';
-          }).join('')+'</tbody>';
-    });
+  // ── SEA delivery rows ─────────────────────────────────────────────
+  function buildDeliveryRows(arr, alertType, isTreated) {
+    if (!arr.length) return '<tbody></tbody>';
+    var thead = '<thead><tr><th style="'+TH+'">Réf</th><th style="'+TH+'">Produit</th><th style="'+TH+'text-align:right">Délai</th><th style="'+TH+'">Lien</th><th style="'+TH+'"></th></tr></thead>';
+    return thead+'<tbody>'+arr.map(function(a,i) {
+      var rowBg = isTreated ? 'background:#f9f9f9;' : (i%2?'background:var(--bg);':'');
+      return '<tr style="'+rowBg+'border-bottom:1px solid var(--borderL)">'
+        +'<td style="'+TD+'font-weight:600">'+esc(a.sku)+'</td>'
+        +'<td style="'+TD+'max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(a.name)+'</td>'
+        +'<td style="'+TD+'text-align:right;font-weight:700;color:var(--am)">'+a.delai+' j</td>'
+        +'<td style="'+TD+'">'+alertProductLink(a.sku)+'</td>'
+        +'<td style="'+TD+'text-align:right;white-space:nowrap">'+(isTreated ? revBtn(alertType,a.sku)+xBtn(alertType,a.sku,{}) : okBtn(alertType,a.sku)+' '+trackBtn(alertType,a.sku))+'</td>'
+        +'</tr>';
+    }).join('')+'</tbody>';
+  }
 
-  var opeDoublonSection = buildSyncAlertSection(seaOpeDoublons,
-    '🔀 SEA actif + opération commerciale active (même marketplace)', 'var(--pu)',
-    function(arr) {
-      return '<thead><tr><th style="'+TH+'">Réf</th><th style="'+TH+'">Produit</th><th style="'+TH+'">Opération(s) active(s)</th><th style="'+TH+'"></th></tr></thead><tbody>'
-        + arr.map(function(a,i) {
-            return '<tr style="'+(i%2?'background:var(--bg)':'')+'">'
-              +'<td style="'+TD+'font-weight:600">'+esc(a.sku)+'</td>'
-              +'<td style="'+TD+'max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(a.name)+'</td>'
-              +'<td style="'+TD+'">'+a.opes.map(function(n){ return '<span style="padding:1px 7px;border-radius:99px;font-size:10px;font-weight:600;background:var(--puBg);color:var(--pu);margin:1px">'+esc(n)+'</span>'; }).join(' ')+'</td>'
-              +'<td style="'+TD+'"><button onclick="validerAlerte(\'sea_ope_doublon\',\''+esc(a.sku)+'\',{})" style="padding:2px 10px;border:.5px solid var(--gn);border-radius:6px;font-size:11px;background:var(--gnBg);color:var(--gn);cursor:pointer;font-family:inherit">✓ Traité</button></td>'
-              +'</tr>';
-          }).join('')+'</tbody>';
-    });
+  // ── SEA+Opé doublon rows ──────────────────────────────────────────
+  function buildOpeDoublonRows(arr, isTreated) {
+    if (!arr.length) return '<tbody></tbody>';
+    var thead = '<thead><tr><th style="'+TH+'">Réf</th><th style="'+TH+'">Produit</th><th style="'+TH+'">Opération(s)</th><th style="'+TH+'">Lien</th><th style="'+TH+'"></th></tr></thead>';
+    return thead+'<tbody>'+arr.map(function(a,i) {
+      var rowBg = isTreated ? 'background:#f9f9f9;' : (i%2?'background:var(--bg);':'');
+      return '<tr style="'+rowBg+'border-bottom:1px solid var(--borderL)">'
+        +'<td style="'+TD+'font-weight:600">'+esc(a.sku)+'</td>'
+        +'<td style="'+TD+'max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(a.name)+'</td>'
+        +'<td style="'+TD+'">'+a.opes.map(function(n){ return '<span style="padding:1px 7px;border-radius:99px;font-size:10px;font-weight:600;background:var(--puBg);color:var(--pu);margin:1px">'+esc(n)+'</span>'; }).join(' ')+'</td>'
+        +'<td style="'+TD+'">'+alertProductLink(a.sku)+'</td>'
+        +'<td style="'+TD+'text-align:right;white-space:nowrap">'+(isTreated ? revBtn('sea_ope_doublon',a.sku)+xBtn('sea_ope_doublon',a.sku,{}) : okBtn('sea_ope_doublon',a.sku))+'</td>'
+        +'</tr>';
+    }).join('')+'</tbody>';
+  }
 
+  // ── Opé+Délai doublon rows ────────────────────────────────────────
+  function buildOpeDeliveryRows(arr, isTreated) {
+    if (!arr.length) return '<tbody></tbody>';
+    var thead = '<thead><tr><th style="'+TH+'">Réf</th><th style="'+TH+'">Produit</th><th style="'+TH+'text-align:right">Délai</th><th style="'+TH+'">Opération(s)</th><th style="'+TH+'">Lien</th><th style="'+TH+'"></th></tr></thead>';
+    return thead+'<tbody>'+arr.map(function(a,i) {
+      var rowBg = isTreated ? 'background:#f9f9f9;' : (i%2?'background:var(--bg);':'');
+      return '<tr style="'+rowBg+'border-bottom:1px solid var(--borderL)">'
+        +'<td style="'+TD+'font-weight:600">'+esc(a.sku)+'</td>'
+        +'<td style="'+TD+'max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(a.name)+'</td>'
+        +'<td style="'+TD+'text-align:right;font-weight:700;color:var(--am)">'+a.delai+' j</td>'
+        +'<td style="'+TD+'">'+a.opes.map(function(n){ return '<span style="padding:1px 7px;border-radius:99px;font-size:10px;font-weight:600;background:var(--puBg);color:var(--pu);margin:1px">'+esc(n)+'</span>'; }).join(' ')+'</td>'
+        +'<td style="'+TD+'">'+alertProductLink(a.sku)+'</td>'
+        +'<td style="'+TD+'text-align:right;white-space:nowrap">'+(isTreated ? revBtn('ope_delivery',a.sku)+xBtn('ope_delivery',a.sku,{}) : okBtn('ope_delivery',a.sku)+' '+trackBtn('ope_delivery',a.sku))+'</td>'
+        +'</tr>';
+    }).join('')+'</tbody>';
+  }
+
+  function alertSection(title, colorVar, count, body, treatedHtml) {
+    var badge = count > 0 ? ' <span style="padding:2px 8px;border-radius:99px;font-size:11px;background:var(--rdBg);color:var(--rd)">'+count+'</span>' : '';
+    return '<div class="card" style="margin-top:14px">'
+      +'<div style="font-size:13px;font-weight:700;color:'+colorVar+';margin-bottom:10px">'+title+badge+'</div>'
+      +body
+      +(treatedHtml||'')
+      +'</div>';
+  }
+  function noAlertMsg() { return '<div style="padding:12px;text-align:center;color:var(--gn);font-size:12px;font-weight:600">✓ Aucune alerte de ce type.</div>'; }
+  function alertTable(rows) { return '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'+rows+'</table></div>'; }
+
+  // ── Section SEA Reactivation ──────────────────────────────────────
+  var seaTracked = getDeliveryTracked('sea_delivery');
+  var seaReactivate = seaTracked.map(function(sku) {
+    var prod = (STATE.products||[]).find(function(p){ return p.sku===sku; });
+    if (!prod) return null;
+    var delai = prod._delivery;
+    if (delai == null || delai > 30) return null;
+    return { sku: sku, name: prod.name||sku, delai: delai };
+  }).filter(Boolean);
+
+  // ── Section Opé Reactivation ──────────────────────────────────────
+  var opeTracked = getDeliveryTracked('ope_delivery');
+  var opeReactivate = opeTracked.map(function(sku) {
+    var prod = (STATE.products||[]).find(function(p){ return p.sku===sku; });
+    if (!prod) return null;
+    var delai = prod._delivery;
+    if (delai == null || delai > 30) return null;
+    return { sku: sku, name: prod.name||sku, delai: delai };
+  }).filter(Boolean);
+
+  // ── Build page ────────────────────────────────────────────────────
   el.innerHTML =
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">'
     + '<div style="font-size:15px;font-weight:700">Alertes — '+mpLabel+'</div>'
@@ -6864,33 +7195,73 @@ async function renderAlertes() {
     + '<button onclick="openAlertesHistorique()" style="padding:6px 14px;border:.5px solid var(--ac);border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--acBg);color:var(--ac)">📋 Historique</button>'
     + '<button onclick="renderAlertes()" style="padding:6px 14px;border:.5px solid var(--border);border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;background:var(--card)">↺ Actualiser</button>'
     + '</div></div>'
+
+    // ── Prix écart (chargé async) ────
     + '<div class="card" id="alerte-price-card">'
     + '<div style="font-size:13px;font-weight:700;color:var(--rd);margin-bottom:10px">⚠ Écarts prix opération commerciale vs Prestashop (seuil 2%)</div>'
-    + '<div style="font-size:11px;color:var(--txS);margin-bottom:10px">Prix constaté = <code>revenue_ttc / quantité</code> par commande individuelle, dans la plage de dates de l\'opération.</div>'
+    + '<div style="font-size:11px;color:var(--txS);margin-bottom:10px">Prix constaté = <code>revenue_ttc / quantité</code> par commande individuelle — trié par date (plus récentes en haut).</div>'
     + '<div id="alerte-price-body"><div style="color:var(--txS);font-size:12px;text-align:center;padding:12px">Chargement des commandes…</div></div>'
     + '</div>'
-    + '<div class="card" style="margin-top:14px">'
-    + '<div style="font-size:13px;font-weight:700;color:var(--ac);margin-bottom:10px">⚡ Doublons SEA multi-marketplace'
-    + (seaForThisMp.length ? ' <span style="padding:2px 8px;border-radius:99px;font-size:11px;background:var(--acBg);color:var(--ac)">'+seaForThisMp.length+'</span>' : '')
-    + '</div>'
-    + '<div style="font-size:11px;color:var(--txS);margin-bottom:10px">Produits SEA actifs simultanément sur plusieurs marketplaces cette semaine.</div>'
-    + buildSeaSection()
-    + '</div>'
-    + deliverySection
-    + opeDoublonSection
+
+    // ── SEA multi-MP ────
+    + alertSection('⚡ Doublons SEA multi-marketplace', 'var(--ac)', seaMpActive.length,
+        seaMpActive.length ? alertTable(buildSeaMpRows(seaMpActive,false)) : noAlertMsg(),
+        seaMpTreated.length ? '<details style="margin-top:10px"><summary style="font-size:11px;font-weight:600;color:var(--txS);cursor:pointer;padding:6px 10px;background:var(--bg);border-radius:6px;list-style:none">▸ Alertes traitées ('+seaMpTreated.length+')</summary><div style="overflow-x:auto;margin-top:6px;opacity:.7">'+alertTable(buildSeaMpRows(seaMpTreated,true))+'</div></details>' : '')
+
+    // ── SEA délai > 30j ────
+    + alertSection('🚚 SEA actif + délai de livraison > 30 jours', 'var(--am)', seaDeliveryActive.length,
+        seaDeliveryActive.length ? alertTable(buildDeliveryRows(seaDeliveryActive,'sea_delivery',false)) : noAlertMsg(),
+        seaDeliveryTreated.length ? '<details style="margin-top:10px"><summary style="font-size:11px;font-weight:600;color:var(--txS);cursor:pointer;padding:6px 10px;background:var(--bg);border-radius:6px;list-style:none">▸ Alertes traitées ('+seaDeliveryTreated.length+')</summary><div style="overflow-x:auto;margin-top:6px;opacity:.7">'+alertTable(buildDeliveryRows(seaDeliveryTreated,'sea_delivery',true))+'</div></details>' : '')
+
+    // ── SEA Réactivation ────
+    + (seaReactivate.length ? alertSection('🟢 SEA – Produits à réactiver (délai repassé sous 30 jours)', 'var(--gn)', seaReactivate.length,
+        '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="'+TH+'">Réf</th><th style="'+TH+'">Produit</th><th style="'+TH+'text-align:right">Délai actuel</th><th style="'+TH+'">Lien</th><th style="'+TH+'"></th></tr></thead><tbody>'
+        +seaReactivate.map(function(a,i){
+          return '<tr style="'+(i%2?'background:var(--bg);':'')+'border-bottom:1px solid var(--borderL)">'
+            +'<td style="'+TD+'font-weight:600">'+esc(a.sku)+'</td>'
+            +'<td style="'+TD+'">'+esc(a.name)+'</td>'
+            +'<td style="'+TD+'text-align:right;font-weight:700;color:var(--gn)">'+a.delai+' j</td>'
+            +'<td style="'+TD+'">'+alertProductLink(a.sku)+'</td>'
+            +'<td style="'+TD+'"><button onclick="toggleDeliveryTracking(\'sea_delivery\',\''+esc(a.sku)+'\')" style="padding:2px 9px;border:.5px solid var(--gn);border-radius:6px;font-size:11px;background:var(--gnBg);color:var(--gn);cursor:pointer;font-family:inherit">✓ Réactivé</button></td>'
+            +'</tr>';
+        }).join('')+'</tbody></table></div>', '') : '')
+
+    // ── SEA + Opé doublon ────
+    + alertSection('🔀 SEA actif + opération commerciale active', 'var(--pu)', seaOpeActive.length,
+        seaOpeActive.length ? alertTable(buildOpeDoublonRows(seaOpeActive,false)) : noAlertMsg(),
+        seaOpeTreated.length ? '<details style="margin-top:10px"><summary style="font-size:11px;font-weight:600;color:var(--txS);cursor:pointer;padding:6px 10px;background:var(--bg);border-radius:6px;list-style:none">▸ Alertes traitées ('+seaOpeTreated.length+')</summary><div style="overflow-x:auto;margin-top:6px;opacity:.7">'+alertTable(buildOpeDoublonRows(seaOpeTreated,true))+'</div></details>' : '')
+
+    // ── Opé Commerciale + Délai > 30j ────
+    + alertSection('🔀 Opération commerciale active + délai de livraison > 30 jours', 'var(--pu)', opeDeliveryActive.length,
+        opeDeliveryActive.length ? alertTable(buildOpeDeliveryRows(opeDeliveryActive,false)) : noAlertMsg(),
+        opeDeliveryTreated.length ? '<details style="margin-top:10px"><summary style="font-size:11px;font-weight:600;color:var(--txS);cursor:pointer;padding:6px 10px;background:var(--bg);border-radius:6px;list-style:none">▸ Alertes traitées ('+opeDeliveryTreated.length+')</summary><div style="overflow-x:auto;margin-top:6px;opacity:.7">'+alertTable(buildOpeDeliveryRows(opeDeliveryTreated,true))+'</div></details>' : '')
+
+    // ── Opé Réactivation ────
+    + (opeReactivate.length ? alertSection('🟢 Opérations Commerciales – Produits à réactiver (délai repassé sous 30 jours)', 'var(--gn)', opeReactivate.length,
+        '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="'+TH+'">Réf</th><th style="'+TH+'">Produit</th><th style="'+TH+'text-align:right">Délai actuel</th><th style="'+TH+'">Lien</th><th style="'+TH+'"></th></tr></thead><tbody>'
+        +opeReactivate.map(function(a,i){
+          return '<tr style="'+(i%2?'background:var(--bg);':'')+'border-bottom:1px solid var(--borderL)">'
+            +'<td style="'+TD+'font-weight:600">'+esc(a.sku)+'</td>'
+            +'<td style="'+TD+'">'+esc(a.name)+'</td>'
+            +'<td style="'+TD+'text-align:right;font-weight:700;color:var(--gn)">'+a.delai+' j</td>'
+            +'<td style="'+TD+'">'+alertProductLink(a.sku)+'</td>'
+            +'<td style="'+TD+'"><button onclick="toggleDeliveryTracking(\'ope_delivery\',\''+esc(a.sku)+'\')" style="padding:2px 9px;border:.5px solid var(--gn);border-radius:6px;font-size:11px;background:var(--gnBg);color:var(--gn);cursor:pointer;font-family:inherit">✓ Réactivé</button></td>'
+            +'</tr>';
+        }).join('')+'</tbody></table></div>', '') : '')
+
+    // ── Parent doublon SEA (chargé async) ────
     + '<div class="card" style="margin-top:14px" id="alerte-parent-card">'
     + '<div style="font-size:13px;font-weight:700;color:var(--am);margin-bottom:10px">👨‍👧 Doublon SEA — deux déclinaisons du même modèle actives</div>'
     + '<div style="font-size:11px;color:var(--txS);margin-bottom:10px">Deux réfs enfant d\'un même modèle (ex: 1366BEI + 1366V) actives en SEA sur la même marketplace.</div>'
     + '<div id="alerte-parent-body"><div style="color:var(--txS);font-size:12px;padding:8px">Chargement...</div></div>'
     + '</div>';
 
-  // ── Chargement async alertes prix (parallèle avec doublon parent) ─
+  // ── Chargement async alertes prix ────────────────────────────────
   (async function() {
   var priceBodyEl = document.getElementById('alerte-price-body');
   if (!priceBodyEl) return;
 
   try {
-    // Opérations actives aujourd'hui pour cette marketplace
     var activeOps = (STATE.activeOps||[]).filter(function(op) {
       return op.date_debut <= today && op.date_fin >= today;
     });
@@ -6901,27 +7272,19 @@ async function renderAlertes() {
       return;
     }
 
-    // Index produits par SKU
     var prodBySku = {};
     (STATE.products||[]).forEach(function(p){ if(p.sku) prodBySku[p.sku]=p; });
 
-    // Pour chaque opé active : une seule requête sur ps_sales_daily
-    var allBadOrders = []; // { sku, name, opNom, opPrix, orderRef, saleDate, unitPriceTtc, ecartPct }
+    var allBadOrders = [];
 
     for (var oi = 0; oi < activeOps.length; oi++) {
       var op = activeOps[oi];
-
-      // Produits de cette opé qui ont un prix renseigné
       var opProds = (STATE.activeOpProducts||[]).filter(function(ap) {
         return ap.operation_id === op.id && ap.prix && ap.prix > 0;
       });
       if (!opProds.length) continue;
-
       var opPrixBySku = {};
       opProds.forEach(function(ap){ opPrixBySku[ap.ref] = ap.prix; });
-      var refList = opProds.map(function(ap){ return ap.ref; });
-
-      // Une requête pour toutes les ventes de cette opé sur cette marketplace
       var sales = [];
       try {
         sales = await sb('ps_sales_daily',
@@ -6931,11 +7294,9 @@ async function renderAlertes() {
           +'&select=order_reference,sale_date,product_ref,quantity,revenue_ttc'
         );
       } catch(e) { continue; }
-
-      // Filtrer sur les refs de l'opé + vérifier l'écart
       sales.forEach(function(s) {
         var opPrix = opPrixBySku[s.product_ref];
-        if (!opPrix) return; // produit pas dans cette opé
+        if (!opPrix) return;
         var qty = s.quantity || 1;
         var revTtc = parseFloat(s.revenue_ttc) || 0;
         if (revTtc <= 0) return;
@@ -6961,70 +7322,61 @@ async function renderAlertes() {
       updateAlertTabBadge(0);
       return;
     }
-    // Grouper par SKU
-    var bySku = {};
-    allBadOrders.forEach(function(o) {
-      if (!bySku[o.sku]) bySku[o.sku] = { name: o.name, opNom: o.opNom, opPrix: o.opPrix, orders: [] };
-      bySku[o.sku].orders.push(o);
-    });
 
-    // Filtrer les déjà validés
-    allBadOrders = allBadOrders.filter(function(o){ return !validated.has('price_ecart|'+o.sku); });
-    if (!allBadOrders.length) {
+    // Trier par date (plus récente en haut), puis filtrer les validés/traités
+    allBadOrders.sort(function(a,b){ return b.saleDate.localeCompare(a.saleDate); });
+    var activeOrders = allBadOrders.filter(function(o){ return !validated.has('price_ecart|'+o.sku) && !treated.has('price_ecart|'+o.sku); });
+    var treatedOrders = allBadOrders.filter(function(o){ return treated.has('price_ecart|'+o.sku) && !validated.has('price_ecart|'+o.sku); });
+
+    var distinctSkusActive = new Set(activeOrders.map(function(o){return o.sku;}));
+    updateAlertTabBadge(distinctSkusActive.size);
+
+    if (!activeOrders.length) {
       priceBodyEl.innerHTML = '<div style="padding:14px;text-align:center;color:var(--gn);font-size:12px;font-weight:600">✓ Aucune incohérence de prix sur les opérations actives.</div>';
       updateAlertTabBadge(0);
       return;
     }
-    // Re-calculer les distinctSkus après filtrage
-    var distinctSkus2 = new Set(allBadOrders.map(function(o){return o.sku;}));
-    updateAlertTabBadge(distinctSkus2.size);
 
-    var bySku = {};
-    allBadOrders.forEach(function(o) {
-      if (!bySku[o.sku]) bySku[o.sku] = { name: o.name, opNom: o.opNom, opPrix: o.opPrix, orders: [] };
-      bySku[o.sku].orders.push(o);
-    });
-
-    var skus = Object.keys(bySku).sort();
-    var html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'
-      + '<thead><tr>'
-      + '<th style="'+TH+'">Réf / Date commande</th>'
-      + '<th style="'+TH+'">Produit</th>'
-      + '<th style="'+TH+'">Opération</th>'
-      + '<th style="'+TH+'text-align:right">Prix opé TTC</th>'
-      + '<th style="'+TH+'text-align:right">Prix constaté TTC</th>'
-      + '<th style="'+TH+'text-align:right">Écart</th>'
-      + '<th style="'+TH+'"></th>'
-      + '</tr></thead><tbody>';
-
-    skus.forEach(function(sku) {
-      var g = bySku[sku];
-      html += '<tr style="background:var(--rdBg)">'
-        + '<td style="'+TD+'font-weight:700;color:var(--rd)">'+esc(sku)+'</td>'
-        + '<td style="'+TD+'font-weight:600;color:var(--rd);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(g.name)+'</td>'
-        + '<td style="'+TD+'"><span style="padding:1px 7px;border-radius:99px;font-size:10px;font-weight:600;background:var(--rdBg);color:var(--rd);border:.5px solid var(--rd)">'+esc(g.opNom)+'</span></td>'
-        + '<td style="'+TD+'text-align:right;font-weight:600">'+g.opPrix+' €</td>'
-        + '<td style="'+TD+'"></td>'
-        + '<td style="'+TD+'"><span style="padding:2px 7px;border-radius:99px;font-size:10px;background:var(--rdBg);color:var(--rd)">'+g.orders.length+' cmd</span></td>'
-        + '<td style="'+TD+'"></td>'
-        + '</tr>';
-      g.orders.forEach(function(o) {
+    function buildPriceRows(orders, isTreated) {
+      if (!orders.length) return '';
+      return orders.map(function(o,i) {
         var ecartColor = Math.abs(o.ecartPct) >= 10 ? 'var(--rd)' : 'var(--am)';
         var signe = o.ecartPct >= 0 ? '+' : '';
         var fmtDate = new Date(o.saleDate+'T12:00:00Z').toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'});
-        html += '<tr style="background:var(--bg)">'
-          + '<td style="'+TD+'padding-left:22px;color:var(--txS);font-size:11px">'+fmtDate+'</td>'
-          + '<td style="'+TD+'font-size:11px;color:var(--txT)">'+esc(o.orderRef)+'</td>'
-          + '<td style="'+TD+'"></td>'
-          + '<td style="'+TD+'text-align:right;color:var(--txS)">'+o.opPrix+' €</td>'
-          + '<td style="'+TD+'text-align:right;font-weight:600">'+o.unitPriceTtc+' €</td>'
-          + '<td style="'+TD+'text-align:right;font-weight:700;color:'+ecartColor+'">'+signe+o.ecartPct+'%</td>'
-          + '<td style="'+TD+'"><button onclick="validerAlerte(\'price_ecart\',\''+esc(sku)+'\',{ope:\''+esc(g.opNom)+'\'})" style="padding:2px 10px;border:.5px solid var(--gn);border-radius:6px;font-size:11px;background:var(--gnBg);color:var(--gn);cursor:pointer;font-family:inherit">✓ Traité</button></td>'
-          + '</tr>';
-      });
-    });
+        var rowBg = isTreated ? 'background:#f9f9f9;' : (i%2?'background:var(--bg);':'');
+        return '<tr style="'+rowBg+'border-bottom:1px solid var(--borderL)">'
+          +'<td style="'+TD+'font-size:11px;color:var(--txS)">'+fmtDate+'</td>'
+          +'<td style="'+TD+'font-weight:600;font-size:11px;white-space:nowrap">'+esc(o.orderRef)+'</td>'
+          +'<td style="'+TD+'font-weight:500;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(o.name)+'">'+esc(o.name.slice(0,25))+'</td>'
+          +'<td style="'+TD+'font-size:11px;color:var(--txS)">'+esc(o.sku)+'</td>'
+          +'<td style="'+TD+'font-size:11px"><span style="padding:1px 7px;border-radius:99px;font-size:10px;font-weight:600;background:var(--rdBg);color:var(--rd)">'+esc(o.opNom.slice(0,20))+'</span></td>'
+          +'<td style="'+TD+'text-align:right">'+o.opPrix+' €</td>'
+          +'<td style="'+TD+'text-align:right;font-weight:600">'+o.unitPriceTtc+' €</td>'
+          +'<td style="'+TD+'text-align:right;font-weight:700;color:'+ecartColor+'">'+signe+o.ecartPct+'%</td>'
+          +'<td style="'+TD+'">'+alertProductLink(o.sku)+'</td>'
+          +'<td style="'+TD+'text-align:right;white-space:nowrap">'+(isTreated ? revBtn('price_ecart',o.sku)+xBtn('price_ecart',o.sku,{ope:o.opNom}) : okBtn('price_ecart',o.sku))+'</td>'
+          +'</tr>';
+      }).join('');
+    }
 
-    html += '</tbody></table></div>';
+    var thead = '<thead><tr>'
+      +'<th style="'+TH+'">Date</th><th style="'+TH+'">Commande</th>'
+      +'<th style="'+TH+'">Produit</th><th style="'+TH+'">Réf</th>'
+      +'<th style="'+TH+'">Opération</th>'
+      +'<th style="'+TH+'text-align:right">Prix opé TTC</th>'
+      +'<th style="'+TH+'text-align:right">Prix constaté TTC</th>'
+      +'<th style="'+TH+'text-align:right">Écart</th>'
+      +'<th style="'+TH+'">Lien</th><th style="'+TH+'"></th>'
+      +'</tr></thead>';
+
+    var html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'+thead+'<tbody>'+buildPriceRows(activeOrders,false)+'</tbody></table></div>';
+
+    if (treatedOrders.length) {
+      var treatedSkus = [...new Set(treatedOrders.map(function(o){return o.sku;}))];
+      html += '<details style="margin-top:10px"><summary style="font-size:11px;font-weight:600;color:var(--txS);cursor:pointer;padding:6px 10px;background:var(--bg);border-radius:6px;list-style:none">▸ Alertes traitées ('+treatedSkus.length+' produit'+( treatedSkus.length>1?'s':'')+')</summary>'
+        +'<div style="overflow-x:auto;margin-top:6px;opacity:.7"><table style="width:100%;border-collapse:collapse">'+thead+'<tbody>'+buildPriceRows(treatedOrders,true)+'</tbody></table></div></details>';
+    }
+
     priceBodyEl.innerHTML = html;
 
   } catch(e) {
@@ -7048,25 +7400,33 @@ async function renderAlertes() {
         if (!parentMap[parent]) parentMap[parent] = [];
         if (!parentMap[parent].includes(a.sku)) parentMap[parent].push(a.sku);
       });
-      var parentAlerts = Object.keys(parentMap).filter(function(p){ return parentMap[p].length >= 2 && !validated.has('sea_parent_doublon|'+p); });
-      if (!parentAlerts.length) {
-        parentBodyEl.innerHTML = '<div style="padding:12px;text-align:center;color:var(--gn);font-size:12px;font-weight:600">✓ Aucun doublon de déclinaison SEA détecté.</div>';
-      } else {
-        var rows2 = parentAlerts.map(function(parent, i) {
+      var parentAlertsActive = Object.keys(parentMap).filter(function(p){ return parentMap[p].length >= 2 && !validated.has('sea_parent_doublon|'+p) && !treated.has('sea_parent_doublon|'+p); });
+      var parentAlertsTreated = Object.keys(parentMap).filter(function(p){ return parentMap[p].length >= 2 && !validated.has('sea_parent_doublon|'+p) && treated.has('sea_parent_doublon|'+p); });
+      function buildParentRows(arr, isTreated) {
+        return arr.map(function(parent, i) {
           var skusList = parentMap[parent];
           var pills = skusList.map(function(s){
             var prod = (STATE.products||[]).find(function(p){ return p.sku===s; });
             return '<span style="padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600;background:var(--amBg);color:var(--am);margin:1px">'+esc(s)+(prod?' · '+esc((prod.name||'').slice(0,20)):'')+'</span>';
           }).join(' ');
-          return '<tr style="'+(i%2?'background:var(--bg)':'')+'">'
+          var rowBg = isTreated ? 'background:#f9f9f9;' : (i%2?'background:var(--bg);':'');
+          return '<tr style="'+rowBg+'border-bottom:1px solid var(--borderL)">'
             +'<td style="'+TD+'font-weight:700">'+esc(parent)+'</td>'
             +'<td style="'+TD+'">'+pills+'</td>'
-            +'<td style="'+TD+'"><button onclick="validerAlerte(\'sea_parent_doublon\',\''+esc(parent)+'\',{})" style="padding:2px 10px;border:.5px solid var(--gn);border-radius:6px;font-size:11px;background:var(--gnBg);color:var(--gn);cursor:pointer;font-family:inherit">✓ Traité</button></td>'
+            +'<td style="'+TD+'text-align:right;white-space:nowrap">'+(isTreated ? revBtn('sea_parent_doublon',parent)+xBtn('sea_parent_doublon',parent,{}) : okBtn('sea_parent_doublon',parent))+'</td>'
             +'</tr>';
         }).join('');
-        parentBodyEl.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse">'
-          +'<thead><tr><th style="'+TH+'">Modèle parent</th><th style="'+TH+'">Déclinaisons actives en SEA</th><th style="'+TH+'"></th></tr></thead>'
-          +'<tbody>'+rows2+'</tbody></table></div>';
+      }
+      if (!parentAlertsActive.length && !parentAlertsTreated.length) {
+        parentBodyEl.innerHTML = '<div style="padding:12px;text-align:center;color:var(--gn);font-size:12px;font-weight:600">✓ Aucun doublon de déclinaison SEA détecté.</div>';
+      } else {
+        var html2 = parentAlertsActive.length
+          ? '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="'+TH+'">Modèle parent</th><th style="'+TH+'">Déclinaisons actives en SEA</th><th style="'+TH+'"></th></tr></thead><tbody>'+buildParentRows(parentAlertsActive,false)+'</tbody></table></div>'
+          : '<div style="padding:12px;text-align:center;color:var(--gn);font-size:12px;font-weight:600">✓ Aucun doublon de déclinaison SEA détecté.</div>';
+        if (parentAlertsTreated.length) {
+          html2 += '<details style="margin-top:10px"><summary style="font-size:11px;font-weight:600;color:var(--txS);cursor:pointer;padding:6px 10px;background:var(--bg);border-radius:6px;list-style:none">▸ Alertes traitées ('+parentAlertsTreated.length+')</summary><div style="overflow-x:auto;margin-top:6px;opacity:.7"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="'+TH+'">Modèle parent</th><th style="'+TH+'">Déclinaisons actives en SEA</th><th style="'+TH+'"></th></tr></thead><tbody>'+buildParentRows(parentAlertsTreated,true)+'</tbody></table></div></details>';
+        }
+        parentBodyEl.innerHTML = html2;
       }
     } catch(e) {
       if (parentBodyEl) parentBodyEl.innerHTML = '<div style="color:var(--txT);font-size:12px;padding:8px">Mapping parent/enfant non disponible.</div>';
@@ -7075,27 +7435,18 @@ async function renderAlertes() {
   })();
 }
 
-async function validerAlerte(alertType, sku, detail) {
-  try {
-    await sbInsert('alert_history', { marketplace: MARKETPLACE, alert_type: alertType, sku: sku, detail: detail });
-    if (!STATE._validatedAlerts) STATE._validatedAlerts = new Set();
-    STATE._validatedAlerts.add(alertType + '|' + sku);
-    renderAlertes();
-  } catch(e) { alert('Erreur validation : ' + esc(e.message)); }
-}
-
 async function openAlertesHistorique() {
   var mpLabel = (MARKETPLACES.find(function(m){return m.id===MARKETPLACE;})||{label:MARKETPLACE}).label;
   openModal('📋 Historique alertes — '+mpLabel, '<div style="padding:20px;text-align:center;color:var(--txS)">Chargement...</div>');
   try {
     var hist = await sb('alert_history', 'marketplace=eq.'+MARKETPLACE+'&select=*&order=validated_at.desc&limit=200');
     if (!hist.length) {
-      document.getElementById('modal-body').innerHTML = '<div style="padding:20px;text-align:center;color:var(--txT)">Aucune alerte validée.</div>';
+      document.getElementById('modal-body').innerHTML = '<div style="padding:20px;text-align:center;color:var(--txT)">Aucune alerte archivée.</div>';
       return;
     }
     var TH2 = 'padding:7px 10px;font-size:11px;font-weight:600;color:var(--txS);background:var(--bg);border-bottom:1px solid var(--border);';
     var TD2 = 'padding:6px 10px;font-size:12px;border-bottom:1px solid var(--borderL);';
-    var typeLabels = { price_ecart:'⚠ Prix', sea_multi_mp:'⚡ Multi-MP', sea_delivery:'🚚 Délai', sea_ope_doublon:'🔀 SEA+Opé', sea_parent_doublon:'👨‍👧 Doublon parent' };
+    var typeLabels = { price_ecart:'⚠ Prix', sea_multi_mp:'⚡ Multi-MP', sea_delivery:'🚚 Délai', sea_ope_doublon:'🔀 SEA+Opé', sea_parent_doublon:'👨‍👧 Doublon parent', ope_delivery:'🔀 Opé+Délai' };
     var rows = hist.map(function(h, i) {
       var dt = new Date(h.validated_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'});
       return '<tr style="'+(i%2?'background:var(--bg)':'')+'">'
@@ -7116,9 +7467,13 @@ async function openAlertesHistorique() {
 
 // TAB SEA — CAMPAGNES & PRODUITS SPONSORISÉS
 // =============================================
+
+// Budgets SEA par marketplace et par semaine (source Excel 04/06/2026)
+const SEA_BUDGET_DATA = {"maisonsdumonde":{"S1":{"depenses":1863.81,"budget":null},"S2":{"depenses":3251.56,"budget":null},"S3":{"depenses":3658.2,"budget":null},"S4":{"depenses":3303.74,"budget":null},"S5":{"depenses":3126.22,"budget":null},"S6":{"depenses":3282.84,"budget":null},"S7":{"depenses":3463.52,"budget":null},"S8":{"depenses":3027.87,"budget":null},"S9":{"depenses":2644.57,"budget":null},"S10":{"depenses":2968.42,"budget":null},"S11":{"depenses":2699.43,"budget":null},"S12":{"depenses":2747.01,"budget":null},"S13":{"depenses":3196.65,"budget":null},"S14":{"depenses":3973.93,"budget":null},"S15":{"depenses":2989.15,"budget":null},"S16":{"depenses":1755.38,"budget":null},"S17":{"depenses":1789.12,"budget":null},"S18":{"depenses":1768.13,"budget":null},"S19":{"depenses":1780.24,"budget":null},"S20":{"depenses":2166.14,"budget":null},"S21":{"depenses":1848.65,"budget":null},"S22":{"depenses":null,"budget":null},"S23":{"depenses":null,"budget":617.4},"S24":{"depenses":null,"budget":791.28},"S25":{"depenses":null,"budget":735.84},"S26":{"depenses":null,"budget":1673.28},"S27":{"depenses":null,"budget":1689.24},"S28":{"depenses":null,"budget":1344.84},"S29":{"depenses":null,"budget":1416.24},"S30":{"depenses":null,"budget":1254.96},"S31":{"depenses":null,"budget":917.28},"S32":{"depenses":null,"budget":733.32},"S33":{"depenses":null,"budget":836.64},"S34":{"depenses":null,"budget":783.72},"S35":{"depenses":null,"budget":922.32},"S36":{"depenses":null,"budget":994.56},"S37":{"depenses":null,"budget":678.72},"S38":{"depenses":null,"budget":707.28},"S39":{"depenses":null,"budget":808.92},"S40":{"depenses":null,"budget":844.2},"S41":{"depenses":null,"budget":795.48},"S42":{"depenses":null,"budget":713.16},"S43":{"depenses":null,"budget":715.68},"S44":{"depenses":null,"budget":592.2},"S45":{"depenses":null,"budget":890.4},"S46":{"depenses":null,"budget":876.12},"S47":{"depenses":null,"budget":782.88},"S48":{"depenses":null,"budget":1323.0},"S49":{"depenses":null,"budget":518.28},"S50":{"depenses":null,"budget":271.32},"S51":{"depenses":null,"budget":148.68},"S52":{"depenses":null,"budget":248.64}},"cdiscount":{"S1":{"depenses":3879.24,"budget":null},"S2":{"depenses":15181.78,"budget":null},"S3":{"depenses":11293.7,"budget":null},"S4":{"depenses":13252.07,"budget":null},"S5":{"depenses":10805.85,"budget":null},"S6":{"depenses":9986.01,"budget":null},"S7":{"depenses":8303.69,"budget":null},"S8":{"depenses":3945.71,"budget":null},"S9":{"depenses":6485.4,"budget":null},"S10":{"depenses":4686.92,"budget":null},"S11":{"depenses":4507.75,"budget":null},"S12":{"depenses":3004.95,"budget":null},"S13":{"depenses":3473.02,"budget":null},"S14":{"depenses":5551.5,"budget":null},"S15":{"depenses":4412.94,"budget":null},"S16":{"depenses":4294.27,"budget":null},"S17":{"depenses":4378.01,"budget":null},"S18":{"depenses":6570.79,"budget":null},"S19":{"depenses":5422.67,"budget":null},"S20":{"depenses":4438.31,"budget":null},"S21":{"depenses":4368.23,"budget":null},"S22":{"depenses":4321.46,"budget":null},"S23":{"depenses":null,"budget":2432.64},"S24":{"depenses":null,"budget":2009.28},"S25":{"depenses":null,"budget":1189.44},"S26":{"depenses":null,"budget":5722.08},"S27":{"depenses":null,"budget":10983.84},"S28":{"depenses":null,"budget":9979.2},"S29":{"depenses":null,"budget":9996.0},"S30":{"depenses":null,"budget":8389.92},"S31":{"depenses":null,"budget":9364.32},"S32":{"depenses":null,"budget":9404.64},"S33":{"depenses":null,"budget":5604.48},"S34":{"depenses":null,"budget":5846.4},"S35":{"depenses":null,"budget":6420.96},"S36":{"depenses":null,"budget":9072.0},"S37":{"depenses":null,"budget":6881.28},"S38":{"depenses":null,"budget":5406.24},"S39":{"depenses":null,"budget":6545.28},"S40":{"depenses":null,"budget":6172.32},"S41":{"depenses":null,"budget":5335.68},"S42":{"depenses":null,"budget":4021.92},"S43":{"depenses":null,"budget":3316.32},"S44":{"depenses":null,"budget":4643.52},"S45":{"depenses":null,"budget":8840.16},"S46":{"depenses":null,"budget":9236.64},"S47":{"depenses":null,"budget":8736.0},"S48":{"depenses":null,"budget":19031.04},"S49":{"depenses":null,"budget":10735.2},"S50":{"depenses":null,"budget":4499.04},"S51":{"depenses":null,"budget":2976.96},"S52":{"depenses":null,"budget":2973.6}},"amazon":{"S1":{"depenses":null,"budget":null},"S2":{"depenses":567.53,"budget":null},"S3":{"depenses":1889.81,"budget":null},"S4":{"depenses":2077.75,"budget":null},"S5":{"depenses":1565.2,"budget":null},"S6":{"depenses":864.51,"budget":null},"S7":{"depenses":630.09,"budget":null},"S8":{"depenses":838,"budget":null},"S9":{"depenses":738,"budget":null},"S10":{"depenses":734,"budget":null},"S11":{"depenses":2022,"budget":null},"S12":{"depenses":2149,"budget":null},"S13":{"depenses":2582,"budget":null},"S14":{"depenses":1920,"budget":null},"S15":{"depenses":1304.7,"budget":null},"S16":{"depenses":1184.33,"budget":null},"S17":{"depenses":1420.98,"budget":null},"S18":{"depenses":458.96,"budget":null},"S19":{"depenses":752.15,"budget":null},"S20":{"depenses":584.9,"budget":null},"S21":{"depenses":346.53,"budget":null},"S22":{"depenses":593.99,"budget":null},"S23":{"depenses":null,"budget":584.28},"S24":{"depenses":null,"budget":326.16},"S25":{"depenses":null,"budget":209.52},"S26":{"depenses":null,"budget":275.4},"S27":{"depenses":null,"budget":281.88},"S28":{"depenses":null,"budget":230.04},"S29":{"depenses":null,"budget":210.6},"S30":{"depenses":null,"budget":309.96},"S31":{"depenses":null,"budget":259.2},"S32":{"depenses":null,"budget":308.88},"S33":{"depenses":null,"budget":292.68},"S34":{"depenses":null,"budget":263.52},"S35":{"depenses":null,"budget":443.88},"S36":{"depenses":null,"budget":517.32},"S37":{"depenses":null,"budget":339.12},"S38":{"depenses":null,"budget":260.28},"S39":{"depenses":null,"budget":211.68},"S40":{"depenses":null,"budget":423.36},"S41":{"depenses":null,"budget":380.16},"S42":{"depenses":null,"budget":348.84},"S43":{"depenses":null,"budget":280.8},"S44":{"depenses":null,"budget":324.0},"S45":{"depenses":null,"budget":250.56},"S46":{"depenses":null,"budget":163.08},"S47":{"depenses":null,"budget":278.64},"S48":{"depenses":null,"budget":305.64},"S49":{"depenses":null,"budget":272.16},"S50":{"depenses":null,"budget":203.04},"S51":{"depenses":null,"budget":136.08},"S52":{"depenses":null,"budget":null}},"manomano":{"S1":{"depenses":null,"budget":null},"S2":{"depenses":415.25,"budget":null},"S3":{"depenses":604.8,"budget":null},"S4":{"depenses":264.62,"budget":null},"S5":{"depenses":72.28,"budget":null},"S6":{"depenses":null,"budget":null},"S7":{"depenses":null,"budget":null},"S8":{"depenses":null,"budget":null},"S9":{"depenses":null,"budget":null},"S10":{"depenses":null,"budget":null},"S11":{"depenses":173,"budget":null},"S12":{"depenses":311,"budget":null},"S13":{"depenses":164,"budget":null},"S14":{"depenses":137,"budget":null},"S15":{"depenses":249.86,"budget":null},"S16":{"depenses":194.69,"budget":null},"S17":{"depenses":189.41,"budget":null},"S18":{"depenses":235.03,"budget":null},"S19":{"depenses":308.54,"budget":null},"S20":{"depenses":306.2,"budget":null},"S21":{"depenses":366.21,"budget":null},"S22":{"depenses":418.61,"budget":null},"S23":{"depenses":null,"budget":263.04},"S24":{"depenses":null,"budget":229.44},"S25":{"depenses":null,"budget":169.92},"S26":{"depenses":null,"budget":384.0},"S27":{"depenses":null,"budget":372.48},"S28":{"depenses":null,"budget":314.88},"S29":{"depenses":null,"budget":268.8},"S30":{"depenses":null,"budget":151.68},"S31":{"depenses":null,"budget":274.56},"S32":{"depenses":null,"budget":187.2},"S33":{"depenses":null,"budget":179.52},"S34":{"depenses":null,"budget":92.16},"S35":{"depenses":null,"budget":157.44},"S36":{"depenses":null,"budget":149.76},"S37":{"depenses":null,"budget":254.4},"S38":{"depenses":null,"budget":173.76},"S39":{"depenses":null,"budget":273.6},"S40":{"depenses":null,"budget":143.04},"S41":{"depenses":null,"budget":161.28},"S42":{"depenses":null,"budget":132.48},"S43":{"depenses":null,"budget":62.4},"S44":{"depenses":null,"budget":165.12},"S45":{"depenses":null,"budget":173.76},"S46":{"depenses":null,"budget":182.4},"S47":{"depenses":null,"budget":216.96},"S48":{"depenses":null,"budget":401.28},"S49":{"depenses":null,"budget":318.72},"S50":{"depenses":null,"budget":130.56},"S51":{"depenses":null,"budget":114.24},"S52":{"depenses":null,"budget":null}}};
+
 let seaSortCol = 'impressions';
 let seaSortDir = 'desc';
-let seaFilter = { search: '', onlyWithData: false, roasMin: '', months: [] };
+let seaFilter = { search: '', onlyWithData: false, roasMin: '', months: [], canal: 'all' };
 let _seaCorrespCache = null;
 
 // Note SEA : score CTR (0-3 pts) + score conv (0-3 pts) + bonus volume (1 pt)
@@ -7143,7 +7498,97 @@ function seaGradeColor(g) {
 
 async function renderSEA() {
   var el = document.getElementById("content");
-  el.innerHTML = buildSEACampaignsHTML() + '<div id="sea-products-container">'+renderSEAProductsTable()+'</div>';
+  var mpLabel = (MARKETPLACES.find(function(m){return m.id===MARKETPLACE;})||{label:MARKETPLACE}).label;
+
+  // ── Bloc 1 : Budget hebdomadaire ──────────────────────────────────
+  var bloc1 = buildSEABudgetBloc();
+
+  // ── Bloc 2 : Produits sponsorisés YTD (avec Attribution) ──────────
+  var bloc2 = '<div id="sea-products-container">'+renderSEAProductsTable()+'</div>';
+
+  // ── Bloc 3 : Campagnes globales ────────────────────────────────────
+  var bloc3 = buildSEACampaignsHTML();
+
+  el.innerHTML =
+    '<div style="font-size:15px;font-weight:700;margin-bottom:16px">SEA — '+mpLabel+'</div>'
+    + '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">'
+    + '<button onclick="openSEAImport()" style="padding:7px 16px;border:.5px solid var(--pu);border-radius:8px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">Import SEA</button>'
+    + '<button onclick="openSEAActiveImport()" style="padding:7px 16px;border:.5px solid var(--am);border-radius:8px;font-size:12px;background:var(--amBg);color:var(--am);cursor:pointer;font-weight:600;font-family:inherit">⚡ Importer produits SEA actifs</button>'
+    + '</div>'
+    + bloc1
+    + bloc2
+    + bloc3;
+}
+
+function buildSEABudgetBloc() {
+  var mpData = SEA_BUDGET_DATA[MARKETPLACE] || {};
+  var TH = 'padding:7px 10px;text-align:right;font-size:11px;font-weight:600;color:var(--txS);background:var(--bg);border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:2';
+  var THL = TH.replace('text-align:right','text-align:left');
+  var TD = 'padding:6px 10px;font-size:12px;border-bottom:1px solid var(--borderL);text-align:right;';
+
+  // Agréger CA HT (revenue_ht + shipping_ht) + ventes PS par semaine ISO 2026
+  // Même source que l'onglet Synthèse (getPsWeekCA)
+  var psWeekCA = {}, psWeekQty = {};
+  (STATE.psSalesDaily||[]).forEach(function(s) {
+    var d = String(s.sale_date||'').slice(0,10);
+    if (!d) return;
+    var wInfo = isoWeekLabel(d);
+    if (!wInfo) return;
+    var parsed = parseWeekLabel(wInfo.label);
+    if (!parsed || parsed.year !== 2026) return;
+    var wk = 'S'+parsed.week;
+    psWeekCA[wk] = (psWeekCA[wk]||0) + (parseFloat(s.revenue_ht)||0) + (parseFloat(s.shipping_ht)||0);
+    psWeekQty[wk] = (psWeekQty[wk]||0) + (parseInt(s.quantity)||0);
+  });
+
+  // Semaine courante
+  var nowWk = isoWeekLabel(new Date().toISOString().slice(0,10));
+  var _curWkParsed = nowWk ? parseWeekLabel(nowWk.label) : null;
+  var curWeekNum = _curWkParsed ? _curWkParsed.week : null;
+
+  var rows = '';
+  for (var w = 1; w <= 52; w++) {
+    var wk = 'S'+w;
+    var ca = psWeekCA[wk] || null;
+    var qty = psWeekQty[wk] || null;
+    var data = mpData[wk] || {};
+    var depenses = data.depenses || null;
+    var budget = data.budget || null;
+    var pctDepCA = (depenses && ca && ca > 0) ? (depenses/ca*100) : null;
+    var ecart = (depenses !== null && budget !== null) ? (depenses - budget) : null;
+    var isCur = (curWeekNum === w);
+    var rowBg = isCur ? 'background:var(--acBg);' : (w%2?'background:var(--bg);':'');
+    var ecartColor = ecart === null ? 'var(--txT)' : (ecart > 0 ? 'var(--rd)' : 'var(--gn)');
+    rows += '<tr style="'+rowBg+'border-bottom:1px solid var(--borderL)">'
+      +'<td style="'+TD.replace('text-align:right','text-align:left')+';font-weight:'+(isCur?700:500)+'">'+wk+(isCur?' ←':'')+'</td>'
+      +'<td style="'+TD+'">'+( ca ? Math.round(ca).toLocaleString('fr-FR')+'€' : '—' )+'</td>'
+      +'<td style="'+TD+'">'+( qty ? qty.toLocaleString('fr-FR') : '—' )+'</td>'
+      +'<td style="'+TD+'">'+( depenses ? Math.round(depenses).toLocaleString('fr-FR')+'€' : '—' )+'</td>'
+      +'<td style="'+TD+'">'+( pctDepCA !== null ? pctDepCA.toFixed(1)+'%' : '—' )+'</td>'
+      +'<td style="'+TD+'">'+( budget ? Math.round(budget).toLocaleString('fr-FR')+'€' : '—' )+'</td>'
+      +'<td style="'+TD+';font-weight:600;color:'+ecartColor+'">'+( ecart !== null ? (ecart>0?'+':'')+Math.round(ecart).toLocaleString('fr-FR')+'€' : '—' )+'</td>'
+      +'</tr>';
+  }
+
+  return '<div style="margin-bottom:20px">'
+    +'<div style="font-size:13px;font-weight:700;margin-bottom:10px;display:flex;align-items:center;gap:8px">'
+    +'📊 Bloc 1 — Suivi du budget hebdomadaire 2026'
+    +'<span style="font-size:11px;font-weight:400;color:var(--txS)">· CA = Prestashop HT livraison incluse (même source que Synthèse)</span>'
+    +'</div>'
+    +'<div class="card" style="padding:0;overflow:hidden">'
+    +'<div style="overflow-x:auto;max-height:60vh;overflow-y:auto">'
+    +'<table style="min-width:700px;border-collapse:collapse;width:100%">'
+    +'<thead><tr>'
+    +'<th style="'+THL+'">Semaine</th>'
+    +'<th style="'+TH+'">CA PS (HT)</th>'
+    +'<th style="'+TH+'">Nb ventes</th>'
+    +'<th style="'+TH+'">Dépenses SEA (€)</th>'
+    +'<th style="'+TH+'">% Dép. / CA</th>'
+    +'<th style="'+TH+'">Budget</th>'
+    +'<th style="'+TH+'">Écart vs Budget</th>'
+    +'</tr></thead>'
+    +'<tbody>'+rows+'</tbody>'
+    +'</table></div></div></div>';
 }
 
 function renderSeaProductsOnly() {
@@ -7262,17 +7707,55 @@ function buildSEACampaignsHTML() {
     if (future.length) cards += '<div style="margin-top:16px"><div style="font-size:13px;font-weight:700;margin-bottom:10px">A venir</div><div style="display:flex;gap:10px;flex-wrap:wrap">'+future.map(seaCard).join("")+'</div></div>';
   }
 
-  var actions = '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">'
+  var actions = '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">'
     + '<button onclick="openSEACreate(null)" style="padding:7px 16px;border:.5px solid var(--ac);border-radius:8px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">+ Nouvelle campagne</button>'
-    + '<button onclick="openSEAImport()" style="padding:7px 16px;border:.5px solid var(--pu);border-radius:8px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">Import SEA</button>'
-    + '<button onclick="openSEAActiveImport()" style="padding:7px 16px;border:.5px solid var(--am);border-radius:8px;font-size:12px;background:var(--amBg);color:var(--am);cursor:pointer;font-weight:600;font-family:inherit">⚡ Importer produits SEA actifs</button>'
     + '</div>';
 
-  var mpLabel = (MARKETPLACES.find(function(m){return m.id===MARKETPLACE;})||{label:MARKETPLACE}).label;
-  return '<div style="font-size:15px;font-weight:700;margin-bottom:16px">SEA — '+mpLabel+'</div>'
+  return '<div style="margin-top:20px">'
+    + '<div style="font-size:13px;font-weight:700;margin-bottom:10px">📅 Bloc 3 — Campagnes SEA globales</div>'
     + kpis + actions
-    + '<div class="card" style="padding:0;overflow:hidden"><div style="overflow-x:auto">'+svg+'</div></div>'
-    + cards;
+    + buildSEAGlobalCampaignsTable()
+    + '<div class="card" style="padding:0;overflow:hidden;margin-top:14px"><div style="overflow-x:auto">'+svg+'</div></div>'
+    + cards
+    + '</div>';
+}
+
+function buildSEAGlobalCampaignsTable() {
+  var campaigns = STATE.seaCampaigns || [];
+  if (!campaigns.length) return '<div style="background:var(--bg);border-radius:8px;padding:14px;font-size:12px;color:var(--txS);text-align:center;margin-bottom:12px">Aucune campagne SEA. Créez-en une via le bouton ci-dessus.</div>';
+  var TH = 'padding:8px 10px;font-size:11px;font-weight:600;color:var(--txS);background:var(--bg);border-bottom:1px solid var(--border);white-space:nowrap;text-align:left;position:sticky;top:0;z-index:2';
+  var TH_R = TH.replace('text-align:left','text-align:right');
+  var TD = 'padding:6px 10px;font-size:12px;border-bottom:1px solid var(--borderL);';
+  var fmtD = function(dt){ return dt ? new Date(dt).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '—'; };
+  var now = new Date();
+  var rows = campaigns.map(function(c,i) {
+    var isAct = new Date(c.date_debut)<=now && new Date(c.date_fin)>=now;
+    var ctr = (c.impressions && c.clics) ? (c.clics/c.impressions*100).toFixed(2)+'%' : '—';
+    var txConv = (c.clics && c.conversions) ? (c.conversions/c.clics*100).toFixed(2)+'%' : '—';
+    var roas = (c.budget && c.conversions && c.ca) ? (c.ca/c.budget).toFixed(1)+'x' : '—';
+    return '<tr style="'+(i%2?'background:var(--bg);':'')+'border-bottom:1px solid var(--borderL);cursor:pointer" onclick="openSEACampaignDetail('+c.id+')">'
+      +'<td style="'+TD+'font-weight:600">'+esc(c.nom||'—')+'</td>'
+      +'<td style="'+TD+'">'+(c.type_camp?'<span style="padding:1px 7px;border-radius:99px;font-size:10px;background:var(--acBg);color:var(--ac)">'+esc(c.type_camp)+'</span>':'—')+'</td>'
+      +'<td style="'+TD+'">'+fmtD(c.date_debut)+'</td>'
+      +'<td style="'+TD+'">'+fmtD(c.date_fin)+'</td>'
+      +'<td style="'+TD+'text-align:right">'+( c.impressions ? c.impressions.toLocaleString('fr-FR') : '—' )+'</td>'
+      +'<td style="'+TD+'text-align:right">'+( c.clics ? c.clics.toLocaleString('fr-FR') : '—' )+'</td>'
+      +'<td style="'+TD+'text-align:right">'+( c.budget ? Math.round(c.budget).toLocaleString('fr-FR')+'€' : '—' )+'</td>'
+      +'<td style="'+TD+'text-align:right">'+( c.conversions ? c.conversions : '—' )+'</td>'
+      +'<td style="'+TD+'text-align:right">'+( c.ca ? Math.round(c.ca).toLocaleString('fr-FR')+'€' : '—' )+'</td>'
+      +'<td style="'+TD+'text-align:right">'+ctr+'</td>'
+      +'<td style="'+TD+'text-align:right">'+txConv+'</td>'
+      +'<td style="'+TD+'text-align:right">'+roas+'</td>'
+      +'<td style="'+TD+'"><span style="padding:2px 7px;border-radius:99px;font-size:10px;font-weight:600;background:'+(isAct?'var(--gnBg)':'var(--bg)')+';color:'+(isAct?'var(--gn)':'var(--txT)')+'">'+( isAct?'● Actif':'—' )+'</span></td>'
+      +'</tr>';
+  }).join('');
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="scroll-table"><table style="min-width:1200px;border-collapse:collapse;width:100%"><thead><tr>'
+    +'<th style="'+TH+'">Campagne</th><th style="'+TH+'">Type</th><th style="'+TH+'">Début</th><th style="'+TH+'">Fin</th>'
+    +'<th style="'+TH_R+'">Impressions</th><th style="'+TH_R+'">Clics</th>'
+    +'<th style="'+TH_R+'">Budget investi</th><th style="'+TH_R+'">Conversions</th><th style="'+TH_R+'">CA</th>'
+    +'<th style="'+TH_R+'">Taux de clic</th><th style="'+TH_R+'">Taux de conv.</th><th style="'+TH_R+'">ROAS</th>'
+    +'<th style="'+TH+'">Statut</th>'
+    +'</tr></thead><tbody>'+rows+'</tbody></table></div></div>';
 }
 
 function renderSEAProductsTable() {
@@ -7330,6 +7813,7 @@ function renderSEAProductsTable() {
     var roas = (conv > 0 && budget > 0 && avgHt != null) ? Math.round(conv * avgHt / budget * 10) / 10 : null;
     return {
       sku: p.sku||'', name: p.name||'', type: p.type||'', product_id: p.product_id||'',
+      canal: p.canal_attribue||'',
       impressions: imp, clics: clics, conversions: conv, budget: budget,
       ctr: ctr, tauxConv: tauxConv, roas: roas,
       grade: hasData ? seaGrade(ctr, tauxConv, conv) : null,
@@ -7349,6 +7833,9 @@ function renderSEAProductsTable() {
     rows = rows.filter(function(r) {
       return r.name.toLowerCase().indexOf(s) !== -1 || r.sku.toLowerCase().indexOf(s) !== -1;
     });
+  }
+  if (f.canal && f.canal !== 'all') {
+    rows = rows.filter(function(r) { return r.canal === f.canal; });
   }
   // Si filtre mois actif → n'afficher que les produits avec données
   if (f.months && f.months.length > 0) rows = rows.filter(function(r) { return r.hasData; });
@@ -7382,11 +7869,13 @@ function renderSEAProductsTable() {
     var activeTag = r.isActive
       ? '<span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:var(--gnBg);color:var(--gn)">● Actif</span>'
       : '<span style="font-size:11px;color:var(--txT)">—</span>';
+    var canalTag = r.canal ? '<span style="padding:1px 7px;border-radius:99px;font-size:10px;font-weight:600;background:var(--acBg);color:var(--ac)">'+esc(r.canal)+'</span>' : '<span style="color:var(--txT);font-size:11px">—</span>';
     return '<tr style="'+rowStyle+'" onclick="openSEAProductDetail(\''+esc(r.sku)+'\')">'
       + '<td style="padding:7px 10px;text-align:center">'+activeTag+'</td>'
       + '<td style="padding:7px 10px;font-weight:500;max-width:240px"><div style="line-height:1.3">'+esc(r.name)+'</div></td>'
       + '<td style="padding:7px 10px;font-size:11px;color:var(--txS);white-space:nowrap"><div>'+esc(r.product_id)+'</div><div style="font-weight:600">'+esc(r.sku)+'</div></td>'
       + '<td style="padding:7px 10px;text-align:center">'+(r.type?pill(typeLbl,typeCol):'')+'</td>'
+      + '<td style="padding:7px 10px;text-align:center">'+canalTag+'</td>'
       + '<td style="padding:7px 10px;text-align:right">'+(r.impressions>0?r.impressions.toLocaleString('fr-FR'):'—')+'</td>'
       + '<td style="padding:7px 10px;text-align:right">'+(r.clics>0?r.clics.toLocaleString('fr-FR'):'—')+'</td>'
       + '<td style="padding:7px 10px;text-align:right">'+(r.conversions>0?r.conversions:'—')+'</td>'
@@ -7409,6 +7898,7 @@ function renderSEAProductsTable() {
       + '<td style="padding:7px 10px;text-align:center">—</td>'
       + '<td style="padding:7px 10px;font-weight:600;color:var(--txS)">Autres produits</td>'
       + '<td style="padding:7px 10px;font-size:11px;color:var(--txT)">Non suivis dans le catalogue</td>'
+      + '<td style="padding:7px 10px;text-align:center">—</td>'
       + '<td style="padding:7px 10px;text-align:center">—</td>'
       + '<td style="padding:7px 10px;text-align:right">'+(aImp>0?aImp.toLocaleString('fr-FR'):'—')+'</td>'
       + '<td style="padding:7px 10px;text-align:right">'+(aClics>0?aClics.toLocaleString('fr-FR'):'—')+'</td>'
@@ -7442,24 +7932,34 @@ function renderSEAProductsTable() {
       + '</div>'
     : '';
 
+  var availCanaux = [...new Set(allRows.map(function(r){ return r.canal; }).filter(Boolean))].sort();
+  var canalFilterEl = availCanaux.length
+    ? '<select onchange="seaFilter.canal=this.value;renderSeaProductsOnly()" style="padding:6px 10px;border:.5px solid var(--border);border-radius:7px;font-size:12px;background:var(--card);font-family:inherit">'
+      +'<option value="all"'+((!f.canal||f.canal==='all')?' selected':'')+'>Toutes attributions</option>'
+      +availCanaux.map(function(c){ return '<option value="'+esc(c)+'"'+(f.canal===c?' selected':'')+'>'+esc(c)+'</option>'; }).join('')
+      +'</select>'
+    : '';
+
   return '<div style="margin-top:20px">'
     + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">'
-    + '<div style="font-size:13px;font-weight:700">Produits sponsorisés — YTD '+curYear+'</div>'
+    + '<div style="font-size:13px;font-weight:700">📦 Bloc 2 — Produits sponsorisés — YTD '+curYear+'</div>'
     + '<div style="font-size:12px;color:var(--txS)">'+withDataCount+' / '+allRows.length+' produits avec données SEA</div>'
     + '</div>'
     + noDataBanner
     + '<div class="filters" style="margin-bottom:6px">'
     + '<input placeholder="Rechercher..." value="'+esc(seaFilter.search)+'" oninput="seaSearchChange(this.value)" style="flex:1;min-width:180px"/>'
+    + canalFilterEl
     + '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--txS);cursor:pointer;white-space:nowrap"><input type="checkbox" '+(seaFilter.onlyWithData?'checked':'')+' onchange="seaFilter.onlyWithData=this.checked;renderSeaProductsOnly()" style="cursor:pointer"> Avec données uniquement</label>'
     + '<div style="display:flex;align-items:center;gap:4px;white-space:nowrap"><span style="font-size:11px;color:var(--txS)">ROAS ≥</span><input type="number" min="0" step="0.5" value="'+esc(seaFilter.roasMin||'')+'" placeholder="ex: 4" oninput="seaFilter.roasMin=this.value;renderSeaProductsOnly()" style="width:60px;padding:4px 6px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
     + '</div>'
     + filterMonthEl
-    + '<div class="card" style="padding:0;overflow:hidden"><div class="scroll-table"><table style="min-width:1100px">'
+    + '<div class="card" style="padding:0;overflow:hidden"><div class="scroll-table"><table style="min-width:1200px">'
     + '<thead><tr style="border-bottom:1px solid var(--border);background:var(--bg)">'
     + '<th style="padding:8px 10px;font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;text-align:center">Statut</th>'
     + th('name','Produit','left')
     + '<th style="padding:8px 10px;font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;text-align:left">Réfs</th>'
     + '<th style="padding:8px 10px;font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;text-align:center">Type</th>'
+    + '<th style="padding:8px 10px;font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;text-align:center">Attribution</th>'
     + th('impressions','Impressions')+th('clics','Clics')+th('conversions','Conversions')
     + th('ctr','CTR%')+th('tauxConv','Conv%')+th('budget','Budget €')
     + th('roas','ROAS')
