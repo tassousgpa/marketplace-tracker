@@ -7679,9 +7679,9 @@ function renderTDC() {
   // lengow_total_order = total_paid_tax_incl (base réelle multi-produits)
   // lengow_marketplace_order_id = reference_marketplace (ref commande côté MP)
   var _allBase = (STATE.psSalesDaily||[]).filter(function(o){
-    return o.lengow_total_order !== null && o.lengow_total_order !== undefined && parseFloat(o.lengow_total_order) > 0;
+    return o.commission !== null && o.commission !== undefined && parseFloat(o.commission) > 0;
   });
-  var _hasRealComm = (STATE.psSalesDaily||[]).some(function(o){ return o.commission !== null && o.commission !== undefined; });
+  var _hasRealComm = _allBase.length > 0;
 
   var _filteredRows = _allBase.filter(function(o) {
     var d = String(o.sale_date||'').slice(0,10);
@@ -7787,8 +7787,8 @@ function renderTDC() {
 
   if (_rows.length === 0) {
     var _emptyMsg = _allBase.length === 0
-      ? 'Aucune commande trouvée — relancer le sync ps_sync.js pour peupler les données'
-      : 'Aucune commande pour cette période ou ces filtres';
+      ? 'Aucune commission importée — exécutez la requête SQL Lengow et importez le CSV via le bouton ci-dessus'
+      : 'Aucune commande avec commission pour cette période ou ces filtres';
     _tableHtml += '<tr><td colspan="'+_commSpan+'" style="text-align:center;padding:30px;color:var(--txS);font-size:13px">'+_emptyMsg+'</td></tr>';
   } else {
     _rows.forEach(function(r) {
