@@ -7679,7 +7679,8 @@ function renderTDC() {
   // lengow_total_order = total_paid_tax_incl (base réelle multi-produits)
   // lengow_marketplace_order_id = reference_marketplace (ref commande côté MP)
   var _allBase = (STATE.psSalesDaily||[]).filter(function(o){
-    return o.commission !== null && o.commission !== undefined && parseFloat(o.commission) > 0;
+    return o.commission !== null && o.commission !== undefined && parseFloat(o.commission) > 0
+      && o.lengow_total_order !== null && o.lengow_total_order !== undefined && parseFloat(o.lengow_total_order) > 0;
   });
   var _hasRealComm = _allBase.length > 0;
 
