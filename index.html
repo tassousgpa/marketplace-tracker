@@ -6192,7 +6192,7 @@ async function openMarronnierGlobal() {
   try {
     // Charger toutes les opérations de toutes les marketplaces
     var allOps = await sb('commercial_operations', 'select=*&order=date_debut.desc');
-    var allOpProds = await sb('operation_products', 'select=operation_id,ref,taux_commission,cofinancement,marketplace');
+    var allOpProds = await sb('operation_products', 'select=operation_id,ref,taux_commission,prix');
 
     // Filtres marketplace
     var mpFilter = new Set(MARKETPLACES.map(function(m){ return m.id; }));
@@ -6264,7 +6264,7 @@ async function openOpeExportModal() {
   var allOps, allOpProds;
   try {
     allOps = await sb('commercial_operations', 'select=*&order=date_debut.desc');
-    allOpProds = await sb('operation_products', 'select=*');
+    allOpProds = await sb('operation_products', 'select=operation_id,ref,taux_commission,prix');
   } catch(e) { alert('Erreur chargement : '+esc(e.message)); return; }
 
   window._opeExportAllOps = allOps;
@@ -6334,7 +6334,7 @@ function executeOpeExport() {
       'Opération': op.nom||'',
       'Date début': op.date_debut||'',
       'Date fin': op.date_fin||'',
-      'Taux de commission / Co-financement': isMano ? (p.cofinancement!=null?p.cofinancement:'') : (p.taux_commission!=null?p.taux_commission+'%':''),
+      'Taux de commission / Co-financement': p.taux_commission!=null ? (isMano ? p.taux_commission+' €' : p.taux_commission+'%') : '',
       'Prix': p.prix!=null ? p.prix : ''
     };
   });
@@ -7526,8 +7526,8 @@ function buildSEABudgetBloc() {
   var THL = TH.replace('text-align:right','text-align:left');
   var TD = 'padding:6px 10px;font-size:12px;border-bottom:1px solid var(--borderL);text-align:right;';
 
-  // Agréger CA HT (revenue_ht + shipping_ht) + ventes PS par semaine ISO 2026
-  // Même source que l'onglet Synthèse (getPsWeekCA)
+  // ── CA hebdo — même logique que Synthèse : Odoo > saisie manuelle > PS daily > hist ──
+  // Pré-index PS daily par semaine (revenue_ht + shipping_ht)
   var psWeekCA = {}, psWeekQty = {};
   (STATE.psSalesDaily||[]).forEach(function(s) {
     var d = String(s.sale_date||'').slice(0,10);
@@ -7541,6 +7541,46 @@ function buildSEABudgetBloc() {
     psWeekQty[wk] = (psWeekQty[wk]||0) + (parseInt(s.quantity)||0);
   });
 
+  // Pré-index ventes Odoo par semaine (depuis product_sales_weekly)
+  var odooWeekQty = {};
+  (STATE.productSalesWeekly||[]).forEach(function(r) {
+    var parsed = parseWeekLabel(r.week_label);
+    if (!parsed || parsed.year !== 2026) return;
+    var wk = 'S'+parsed.week;
+    odooWeekQty[wk] = (odooWeekQty[wk]||0) + (r.qty||0);
+  });
+
+  // Fonction répliquant getWeekCA de Synthèse (priorité : Odoo > saisie > PS > hist)
+  function seaBudgetGetWeekCA(weekNum) {
+    var wkLabel = 'S'+weekNum+' 2026';
+    var imports = STATE.revenueImports||[];
+    var entries = STATE.revenueEntries||[];
+    // 1. Import Odoo (year_type=N, période ≤14j)
+    var odoo = imports.find(function(i) {
+      return i.period_label === wkLabel && i.year_type === 'N'
+        && (new Date(i.period_end) - new Date(i.period_start)) / 86400000 <= 14;
+    });
+    if (odoo && odoo.revenue > 0) return odoo.revenue;
+    // 2. Saisie manuelle
+    var entry = entries.find(function(e) { return e.week_label === wkLabel; });
+    if (entry && entry.revenue > 0) return entry.revenue;
+    // 3. PS daily
+    var ps = Math.round(psWeekCA['S'+weekNum]||0);
+    if (ps > 0) return ps;
+    // 4. Historique XLS
+    var hist = imports.find(function(i) { return i.period_label === wkLabel && i.year_type === 'hist'; });
+    if (hist && hist.revenue > 0) return hist.revenue;
+    return null;
+  }
+
+  // Nombre de ventes hebdo : Odoo > PS
+  function seaBudgetGetWeekQty(weekNum) {
+    var wk = 'S'+weekNum;
+    var odooQty = odooWeekQty[wk] || null;
+    if (odooQty) return odooQty;
+    return psWeekQty[wk] || null;
+  }
+
   // Semaine courante
   var nowWk = isoWeekLabel(new Date().toISOString().slice(0,10));
   var _curWkParsed = nowWk ? parseWeekLabel(nowWk.label) : null;
@@ -7549,8 +7589,8 @@ function buildSEABudgetBloc() {
   var rows = '';
   for (var w = 1; w <= 52; w++) {
     var wk = 'S'+w;
-    var ca = psWeekCA[wk] || null;
-    var qty = psWeekQty[wk] || null;
+    var ca = seaBudgetGetWeekCA(w);
+    var qty = seaBudgetGetWeekQty(w);
     var data = mpData[wk] || {};
     var depenses = data.depenses || null;
     var budget = data.budget || null;
