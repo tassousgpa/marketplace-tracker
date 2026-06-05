@@ -54,6 +54,21 @@ if (!SB_URL || !SB_KEY) {
   process.exit(1);
 }
 
+// Diagnostic : affiche la structure brute de order_extra_information pour un order_id donné
+// Appeler manuellement : DIAG_ORDER_ID=12345 node ps_sync.js
+async function diagLengowResource() {
+  const diagId = process.env.DIAG_ORDER_ID;
+  if (!diagId) return;
+  console.log(`\n  [DIAG] order_extra_information pour order #${diagId}`);
+  try {
+    const resp = await psGet(`/order_extra_information?id_order=${diagId}&display=full`);
+    console.log("  [DIAG] Réponse brute :", JSON.stringify(resp, null, 2).slice(0, 2000));
+  } catch (e) {
+    console.log("  [DIAG] Erreur :", e.message);
+  }
+  process.exit(0);
+}
+
 // ══════════════════════════════════════════════════════════════════
 // CONFIGURATION — exclusions d'états
 // ══════════════════════════════════════════════════════════════════
@@ -390,6 +405,10 @@ async function runManualMode(startTime) {
       // Frais de livraison : au niveau commande, stockés sur la 1ère ligne produit uniquement
       const orderShipTtc = Math.round(toFloat(order.total_shipping_tax_incl) * 100) / 100;
       const orderShipHt  = Math.round(toFloat(order.total_shipping_tax_excl) * 100) / 100;
+      // Base commissionnable réelle (total TTC payé = produits + livraison, correct pour multi-produits)
+      const orderTotalTtc = Math.round(toFloat(order.total_paid_tax_incl) * 100) / 100;
+      // Référence commande sur la marketplace (ex: "2606051418XUR1U" pour Cdiscount)
+      const mpOrderRef = order.reference_marketplace || null;
       let shipAssigned = false;
 
       for (const row of rowsArr) {
@@ -401,19 +420,22 @@ async function runManualMode(startTime) {
         shipAssigned = true;
         totalLines++;
         buffer.push({
-          order_id:        toInt(orderId),
-          order_reference: orderRef,
-          sale_date:       saleDate,
-          payment_method:  paymentMethod,
+          order_id:                    toInt(orderId),
+          order_reference:             orderRef,
+          sale_date:                   saleDate,
+          payment_method:              paymentMethod,
           marketplace,
-          product_ref:     String(row.product_reference).trim(),
-          product_name:    String(row.product_name || "").slice(0, 255),
-          quantity:        qty,
-          revenue_ttc:     revTtc,
-          revenue_ht:      revHt,
-          shipping_ttc:    isFirst ? orderShipTtc : 0,
-          shipping_ht:     isFirst ? orderShipHt  : 0,
-          order_state:     stateName,
+          product_ref:                 String(row.product_reference).trim(),
+          product_name:                String(row.product_name || "").slice(0, 255),
+          quantity:                    qty,
+          revenue_ttc:                 revTtc,
+          revenue_ht:                  revHt,
+          shipping_ttc:                isFirst ? orderShipTtc : 0,
+          shipping_ht:                 isFirst ? orderShipHt  : 0,
+          order_state:                 stateName,
+          commission:                  null,           // rempli ultérieurement via accès MySQL Lengow
+          lengow_marketplace_order_id: isFirst ? mpOrderRef : null,
+          lengow_total_order:          isFirst ? orderTotalTtc : null,
         });
       }
 
@@ -447,6 +469,9 @@ async function runManualMode(startTime) {
 // MAIN
 // ══════════════════════════════════════════════════════════════════
 async function main() {
+  // Mode diagnostic : DIAG_ORDER_ID=12345 node ps_sync.js
+  await diagLengowResource();
+
   const startTime = Date.now();
   console.log(`\n[${new Date().toISOString()}] ═══════════════════════════════════`);
   console.log(`[${new Date().toISOString()}] Démarrage sync Prestashop → Supabase`);
@@ -607,6 +632,10 @@ async function main() {
       // Frais de livraison : au niveau commande, stockés sur la 1ère ligne produit uniquement
       const orderShipTtc = Math.round(toFloat(order.total_shipping_tax_incl) * 100) / 100;
       const orderShipHt  = Math.round(toFloat(order.total_shipping_tax_excl) * 100) / 100;
+      // Base commissionnable réelle (total TTC = produits + livraison, correct pour multi-produits)
+      const orderTotalTtc = Math.round(toFloat(order.total_paid_tax_incl) * 100) / 100;
+      // Référence commande sur la marketplace (ex: "2606051418XUR1U" pour Cdiscount)
+      const mpOrderRef = order.reference_marketplace || null;
       let shipAssigned = false;
 
       for (const row of rowsArr) {
@@ -619,19 +648,22 @@ async function main() {
 
         totalLines++;
         buffer.push({
-          order_id:        toInt(orderId),
-          order_reference: orderRef,
-          sale_date:       saleDate,
-          payment_method:  paymentMethod,
+          order_id:                    toInt(orderId),
+          order_reference:             orderRef,
+          sale_date:                   saleDate,
+          payment_method:              paymentMethod,
           marketplace,
-          product_ref:     String(row.product_reference).trim(),
-          product_name:    String(row.product_name || "").slice(0, 255),
-          quantity:        qty,
-          revenue_ttc:     revTtc,
-          revenue_ht:      revHt,
-          shipping_ttc:    isFirst ? orderShipTtc : 0,
-          shipping_ht:     isFirst ? orderShipHt  : 0,
-          order_state:     stateName,
+          product_ref:                 String(row.product_reference).trim(),
+          product_name:                String(row.product_name || "").slice(0, 255),
+          quantity:                    qty,
+          revenue_ttc:                 revTtc,
+          revenue_ht:                  revHt,
+          shipping_ttc:                isFirst ? orderShipTtc : 0,
+          shipping_ht:                 isFirst ? orderShipHt  : 0,
+          order_state:                 stateName,
+          commission:                  null,           // rempli ultérieurement via accès MySQL Lengow
+          lengow_marketplace_order_id: isFirst ? mpOrderRef : null,
+          lengow_total_order:          isFirst ? orderTotalTtc : null,
         });
       }
 

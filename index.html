@@ -402,13 +402,13 @@ function normalizeKeyword(kw) {
 }
 
 // Gestion et Anomalies masqués (non supprimés, code conservé)
-const TAB_NAMES     = ["Synthèse","Produits","Historique","Positions","Concurrents","Alertes","Audit","Opé. Commerciales"];
-const TAB_NAMES_SEA = ["Synthèse","Produits","Historique","Positions","Concurrents","Alertes","Audit","Opé. Commerciales","SEA"];
-const TAB_NAMES_LIGHT     = ["Synthèse","Produits","Historique","Alertes","Audit","Opé. Commerciales"];
-const TAB_NAMES_LIGHT_SEA = ["Synthèse","Produits","Historique","Alertes","Audit","Opé. Commerciales","SEA"];
-const TAB_NAMES_MINIMAL     = ["Synthèse","Alertes","Audit","Opé. Commerciales"];
-const TAB_NAMES_MINIMAL_SEA = ["Synthèse","Alertes","Audit","Opé. Commerciales","SEA"];
-const LAREDOUTE_TABS = ["Synthèse","Positions","Concurrents","Alertes","Audit","Opé. Commerciales"];
+const TAB_NAMES     = ["Synthèse","Produits","Historique","Positions","Concurrents","Alertes","Audit","Opé. Commerciales","TDC"];
+const TAB_NAMES_SEA = ["Synthèse","Produits","Historique","Positions","Concurrents","Alertes","Audit","Opé. Commerciales","TDC","SEA"];
+const TAB_NAMES_LIGHT     = ["Synthèse","Produits","Historique","Alertes","Audit","Opé. Commerciales","TDC"];
+const TAB_NAMES_LIGHT_SEA = ["Synthèse","Produits","Historique","Alertes","Audit","Opé. Commerciales","TDC","SEA"];
+const TAB_NAMES_MINIMAL     = ["Synthèse","Alertes","Audit","Opé. Commerciales","TDC"];
+const TAB_NAMES_MINIMAL_SEA = ["Synthèse","Alertes","Audit","Opé. Commerciales","TDC","SEA"];
+const LAREDOUTE_TABS = ["Synthèse","Positions","Concurrents","Alertes","Audit","Opé. Commerciales","TDC"];
 const MINIMAL_MP = new Set(["leroymerlin"]);
 const SEA_MP = new Set(["cdiscount","but","maisonsdumonde","conforama","manomano"]);
 
@@ -474,7 +474,7 @@ async function loadData() {
     // Évite le problème de la limite 5000 qui tronquerait les premiers keywords.
     // La table positions ne contient que le dernier run (purge côté scraper avant chaque session)
     // → select * sans filtre ni limite, requête simple et fiable
-    const [products, allProducts, snapshots, positions, sellerStats, revenueEntries, trackedSellers, revenueImports, productSalesWeekly, monthlyHistory, activeOps, activeOpProducts, seaCampaigns, seaProductStats, supplyStats, psSalesDaily, seaActiveProducts, seaActiveAllMp] = await Promise.all([
+    const [products, allProducts, snapshots, positions, sellerStats, revenueEntries, trackedSellers, revenueImports, productSalesWeekly, monthlyHistory, activeOps, activeOpProducts, seaCampaigns, seaProductStats, supplyStats, psSalesDaily, seaActiveProducts, seaActiveAllMp, commissionRates] = await Promise.all([
       sb("products", `marketplace=eq.${MARKETPLACE}&active=eq.true&select=*&order=product_id`),
       sb("products", `marketplace=eq.${MARKETPLACE}&select=*&order=product_id`),
       sb("product_snapshots", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=10000`),
@@ -490,9 +490,10 @@ async function loadData() {
       sb("sea_campaigns_general", "marketplace=eq."+MARKETPLACE+"&select=*&order=date_debut.desc").catch(()=>[]),
       sb("sea_product_stats", "marketplace=eq."+MARKETPLACE+"&select=ref,period_start,period_end,period_label,period_type,budget,impressions,clics,conversions&order=period_start.desc").catch(()=>[]),
       sb("product_supply_stats", `select=product_ref,warehouse_stock,in_transit_stock,unshipped_orders,import_date&order=import_date.desc&limit=10000`).catch(()=>[]),
-      (()=>{ const d=`${new Date().getFullYear()}-01-01`; return sb("ps_sales_daily",`marketplace=eq.${MARKETPLACE}&sale_date=gte.${d}&select=product_ref,product_name,sale_date,quantity,revenue_ht,shipping_ht&order=sale_date.desc&limit=10000`).catch(()=>[]); })(),
+      (()=>{ const d=`${new Date().getFullYear()}-01-01`; const _base=`marketplace=eq.${MARKETPLACE}&sale_date=gte.${d}&order=sale_date.desc&limit=10000`; return sb("ps_sales_daily",_base+`&select=order_id,order_reference,product_ref,product_name,sale_date,quantity,revenue_ht,shipping_ht,revenue_ttc,shipping_ttc,commission,lengow_marketplace_order_id,lengow_total_order`).catch(()=>sb("ps_sales_daily",_base+`&select=order_id,order_reference,product_ref,product_name,sale_date,quantity,revenue_ht,shipping_ht,revenue_ttc,shipping_ttc`).catch(()=>[])); })(),
       sb("sea_active_products", `marketplace=eq.${MARKETPLACE}&select=sku,period_start,period_end`).catch(()=>[]),
       sb("sea_active_products", `select=marketplace,sku,period_start,period_end`).catch(()=>[]),
+      sb("commission_rates", `marketplace=eq.${MARKETPLACE}&select=product_ref,rate`).catch(()=>[]),
     ]);
 
     // Mettre à jour le cache de scraping avec les données fraîchement chargées
@@ -770,7 +771,7 @@ async function loadData() {
     const _activeOpRefs0 = new Set(); (activeOpProducts||[]).forEach(ap=>{if(_activeOpIds0.has(ap.operation_id))_activeOpRefs0.add(ap.ref);});
     const _opeDelCount0 = (products||[]).filter(p=>p.sku&&(p._delivery||0)>30&&_activeOpRefs0.has(p.sku)).length;
     const _syncAlertCount = alertData.seaMultiMp.length + alertData.seaDelivery.length + alertData.seaOpeDoublons.length + _opeDelCount0;
-    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, leaderCounts, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], revenueImports: revenueImports||[], monthlyHistory: monthlyHistory||[], activeOps: activeOps||[], activeOpProducts: activeOpProducts||[], productSalesWeekly: productSalesWeekly||[], seaCampaigns: seaCampaigns||[], seaProductStats: seaProductStats||[], supplyByRef, psSalesDaily: psSalesDaily||[], seaActiveProducts: seaActiveProducts||[], seaActiveAllMp: seaActiveAllMp||[], alertData, _alertsJustLoaded: _syncAlertCount > 0, tab:STATE.tab||0 };
+    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, leaderCounts, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], revenueImports: revenueImports||[], monthlyHistory: monthlyHistory||[], activeOps: activeOps||[], activeOpProducts: activeOpProducts||[], productSalesWeekly: productSalesWeekly||[], seaCampaigns: seaCampaigns||[], seaProductStats: seaProductStats||[], supplyByRef, psSalesDaily: psSalesDaily||[], seaActiveProducts: seaActiveProducts||[], seaActiveAllMp: seaActiveAllMp||[], commissionRates: commissionRates||[], alertData, _alertsJustLoaded: _syncAlertCount > 0, tab:STATE.tab||0 };
 
     const sessionDisplay = latestDate ? new Date(latestDate + "T12:00:00Z").toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}) : "N/A";
     document.getElementById("header-subtitle").textContent = `${products.length} produits · Relevé du ${sessionDisplay}`;
@@ -917,14 +918,15 @@ function switchTab(i) {
 }
 function renderContent() {
   const el = document.getElementById("content");
-  // Minimal marketplaces (Leroy Merlin) — Synthèse, Alertes, Audit, Opé. [+ SEA]
+  // Minimal marketplaces (Leroy Merlin) — Synthèse, Alertes, Audit, Opé. [+ TDC] [+ SEA]
   if (isMinimalMp()) {
     switch(STATE.tab) {
       case 0: el.innerHTML = renderSyntheseMinimal(); break;
       case 1: renderAlertes(); break;
       case 2: renderAudit(); break;
       case 3: renderOpeCommerciales(); break;
-      case 4: if (SEA_MP.has(MARKETPLACE)) renderSEA(); break;
+      case 4: renderTDC(); break;
+      case 5: if (SEA_MP.has(MARKETPLACE)) renderSEA(); break;
       default: el.innerHTML = '';
     }
     return;
@@ -939,6 +941,7 @@ function renderContent() {
       case 3: renderAlertes(); break;
       case 4: renderAudit(); break;
       case 5: renderOpeCommerciales(); break;
+      case 6: renderTDC(); break;
       default: el.innerHTML = '';
     }
     return;
@@ -953,7 +956,8 @@ function renderContent() {
       case 3: renderAlertes(); break;
       case 4: renderAudit(); break;
       case 5: renderOpeCommerciales(); break;
-      case 6: if (SEA_MP.has(MARKETPLACE)) renderSEA(); break;
+      case 6: renderTDC(); break;
+      case 7: if (SEA_MP.has(MARKETPLACE)) renderSEA(); break;
       default: el.innerHTML = '';
     }
     return;
@@ -969,7 +973,8 @@ function renderContent() {
     case 5: renderAlertes(); break;
     case 6: renderAudit(); break;
     case 7: renderOpeCommerciales(); break;
-    case 8: if (SEA_MP.has(MARKETPLACE)) renderSEA(); break;
+    case 8: renderTDC(); break;
+    case 9: if (SEA_MP.has(MARKETPLACE)) renderSEA(); break;
     default: el.innerHTML = '';
   }
 }
@@ -7638,6 +7643,350 @@ function seaGradeColor(g) {
   if (g === 'B') return 'accent';
   if (g === 'C') return 'amber';
   return 'red';
+}
+
+// ══════════════════════════════════════════════════════════════════
+// TDC — Taux De Commission
+// Commission réelle : non disponible via API PS (stockée en MySQL Lengow).
+// Données disponibles : base TTC réelle (total_paid_tax_incl) + ref MP.
+// ══════════════════════════════════════════════════════════════════
+function renderTDC() {
+  var el = document.getElementById("content");
+  var mpLabel = (MARKETPLACES.find(function(m){return m.id===MARKETPLACE;})||{label:MARKETPLACE}).label;
+
+  // Réinitialiser les filtres au changement de marketplace
+  if (window._tdcMp !== MARKETPLACE) {
+    var _td = new Date().toISOString().slice(0,10);
+    var _fd = new Date(Date.now()-14*86400000).toISOString().slice(0,10);
+    window._tdcFrom = _fd;
+    window._tdcTo   = _td;
+    window._tdcRef  = '';
+    window._tdcName = '';
+    window._tdcMp   = MARKETPLACE;
+  }
+
+  // ── Lookup taux théoriques ──────────────────────────────────────
+  var _ratesMap = {}, _defaultRate = null;
+  (STATE.commissionRates||[]).forEach(function(r) {
+    if (r.product_ref) _ratesMap[String(r.product_ref)] = parseFloat(r.rate)||0;
+    else _defaultRate = parseFloat(r.rate);
+  });
+  function _theoRate(ref) {
+    return _ratesMap[String(ref||'')] !== undefined ? _ratesMap[String(ref||'')] : _defaultRate;
+  }
+
+  // ── Source de données : lignes avec base TTC (1ère ligne par commande) ──
+  // lengow_total_order = total_paid_tax_incl (base réelle multi-produits)
+  // lengow_marketplace_order_id = reference_marketplace (ref commande côté MP)
+  var _allBase = (STATE.psSalesDaily||[]).filter(function(o){
+    return o.lengow_total_order !== null && o.lengow_total_order !== undefined && parseFloat(o.lengow_total_order) > 0;
+  });
+  var _hasRealComm = (STATE.psSalesDaily||[]).some(function(o){ return o.commission !== null && o.commission !== undefined; });
+
+  var _filteredRows = _allBase.filter(function(o) {
+    var d = String(o.sale_date||'').slice(0,10);
+    if (window._tdcFrom && d < window._tdcFrom) return false;
+    if (window._tdcTo   && d > window._tdcTo)   return false;
+    if (window._tdcRef  && String(o.product_ref||'').toLowerCase().indexOf(window._tdcRef.toLowerCase()) < 0) return false;
+    if (window._tdcName && String(o.product_name||'').toLowerCase().indexOf(window._tdcName.toLowerCase()) < 0) return false;
+    return true;
+  });
+
+  // ── Calculer les métriques par ligne ───────────────────────────
+  var _rows = _filteredRows.map(function(o) {
+    var revTtc  = parseFloat(o.revenue_ttc)||0;
+    var shipTtc = parseFloat(o.shipping_ttc)||0;
+    var base    = parseFloat(o.lengow_total_order)||0;
+    var tauxTheo  = _theoRate(o.product_ref);
+    var commEst   = (base > 0 && tauxTheo !== null) ? Math.round(base * tauxTheo / 100 * 100) / 100 : null;
+    // Commission réelle (null pour l'instant — nécessite accès MySQL Lengow)
+    var commReel  = (o.commission !== null && o.commission !== undefined) ? parseFloat(o.commission) : null;
+    var tauxReel  = (commReel !== null && base > 0) ? (commReel / base * 100) : null;
+    var ecart     = (tauxReel !== null && tauxTheo !== null) ? (tauxReel - tauxTheo) : null;
+    return { o:o, revTtc:revTtc, shipTtc:shipTtc, base:base, tauxTheo:tauxTheo, commEst:commEst, commReel:commReel, tauxReel:tauxReel, ecart:ecart };
+  });
+
+  // ── KPIs ────────────────────────────────────────────────────────
+  var _nb = _rows.length;
+  var _nbTotal = _allBase.length;
+  var _totalBase  = _rows.reduce(function(s,r){return s+r.base;},0);
+  var _totalEst   = _rows.reduce(function(s,r){return s+(r.commEst||0);},0);
+  var _withTheo   = _rows.filter(function(r){return r.tauxTheo!==null;});
+  var _avgTheo    = _withTheo.length ? _withTheo.reduce(function(s,r){return s+r.tauxTheo;},0)/_withTheo.length : null;
+  var _withEcart  = _rows.filter(function(r){return r.ecart!==null;});
+  var _avgEcart   = _withEcart.length ? _withEcart.reduce(function(s,r){return s+r.ecart;},0)/_withEcart.length : null;
+  var _nbAno      = _withEcart.filter(function(r){return Math.abs(r.ecart)>=2;}).length;
+  var _ecartColor = _avgEcart === null ? 'var(--txT)' : (Math.abs(_avgEcart) >= 5 ? 'var(--rd)' : (Math.abs(_avgEcart) >= 2 ? '#D58000' : 'var(--gn)'));
+
+  var _kpiHtml = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">'
+    +'<div class="card" style="padding:12px 16px"><div style="font-size:11px;color:var(--txS);margin-bottom:4px">Commandes analysées</div>'
+      +'<div style="font-size:20px;font-weight:700">'+_nb+(_nb!==_nbTotal?' / '+_nbTotal:'')+' <span style="font-size:12px;font-weight:400;color:var(--txS)">'+(_nb!==_nbTotal?' filtrées':'')+'</span></div>'
+      +'<div style="font-size:11px;color:var(--txS);margin-top:2px">période sélectionnée</div>'
+    +'</div>'
+    +'<div class="card" style="padding:12px 16px"><div style="font-size:11px;color:var(--txS);margin-bottom:4px">Base TTC totale</div>'
+      +'<div style="font-size:20px;font-weight:700;color:var(--ac)">'+Math.round(_totalBase).toLocaleString('fr-FR')+'&nbsp;€</div>'
+      +'<div style="font-size:11px;color:var(--txS);margin-top:2px">base commissionnable</div>'
+    +'</div>'
+    +'<div class="card" style="padding:12px 16px"><div style="font-size:11px;color:var(--txS);margin-bottom:4px">Commission estimée</div>'
+      +'<div style="font-size:20px;font-weight:700">'+Math.round(_totalEst).toLocaleString('fr-FR')+'&nbsp;€</div>'
+      +'<div style="font-size:11px;color:var(--txS);margin-top:2px">'+(_avgTheo!==null?'taux théo. '+_avgTheo.toFixed(1)+'%':'taux non défini')+'</div>'
+    +'</div>'
+    +'<div class="card" style="padding:12px 16px"><div style="font-size:11px;color:var(--txS);margin-bottom:4px">'
+      +(_hasRealComm ? 'Écart moyen réel/théo.' : 'Commission réelle')+'</div>'
+      +'<div style="font-size:20px;font-weight:700;color:'+(_hasRealComm?_ecartColor:'var(--txS)')+'">'+(_hasRealComm&&_avgEcart!==null?(_avgEcart>0?'+':'')+_avgEcart.toFixed(2)+' pp':'—')+'</div>'
+      +'<div style="font-size:11px;color:var(--txS);margin-top:2px">'+(_hasRealComm?'':' accès MySQL Lengow requis')+'</div>'
+    +'</div>'
+    +'</div>';
+
+  // ── Bandeau info si commission réelle absente ───────────────────
+  var _infoHtml = '';
+  if (!_hasRealComm) {
+    _infoHtml = '<div style="background:var(--acBg);border:1px solid var(--ac);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">'
+      +'<span style="font-size:14px">ℹ</span>'
+      +'<div style="flex:1;min-width:200px">Commission réelle non disponible via l\'API Prestashop. '
+      +'<strong>Mode estimation actif</strong> — commissions calculées sur taux théorique. '
+      +'Pour activer les vraies commissions : exécuter la requête SQL dans phpMyAdmin, '
+      +'exporter en CSV et cliquer <strong>Importer commissions CSV</strong>.</div>'
+      +'<button onclick="openTDCImport()" style="padding:6px 14px;border:.5px solid var(--ac);border-radius:7px;font-size:11px;background:var(--card);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit;white-space:nowrap">Importer commissions CSV</button>'
+      +'</div>';
+  }
+
+  // ── Filtres ─────────────────────────────────────────────────────
+  var _filterHtml = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">'
+    +'<span style="font-size:11px;font-weight:600;color:var(--txS)">Période&nbsp;:</span>'
+    +'<input type="date" value="'+(window._tdcFrom||'')+'" onchange="window._tdcFrom=this.value;renderTDC()" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">'
+    +'<span style="font-size:11px;color:var(--txS)">→</span>'
+    +'<input type="date" value="'+(window._tdcTo||'')+'" onchange="window._tdcTo=this.value;renderTDC()" style="padding:5px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">'
+    +'<input type="text" placeholder="Référence…" value="'+(window._tdcRef||'')+'" oninput="window._tdcRef=this.value;renderTDC()" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;width:130px">'
+    +'<input type="text" placeholder="Produit…" value="'+(window._tdcName||'')+'" oninput="window._tdcName=this.value;renderTDC()" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;width:180px">'
+    +'</div>';
+
+  // ── Tableau ─────────────────────────────────────────────────────
+  var TH  = 'padding:7px 10px;text-align:right;font-size:11px;font-weight:600;color:var(--txS);background:var(--bg);border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:2';
+  var THL = TH.replace('text-align:right','text-align:left');
+  var TD  = 'padding:6px 10px;font-size:12px;border-bottom:1px solid var(--borderL);text-align:right;vertical-align:middle';
+  var TDL = TD.replace('text-align:right','text-align:left');
+
+  // Colonnes variables selon disponibilité commission réelle
+  var _commCol   = _hasRealComm ? '<th style="'+TH+'">Comm. réelle</th><th style="'+TH+'">Taux réel</th><th style="'+TH+'">Écart</th>' : '';
+  var _commSpan  = _hasRealComm ? 11 : 8;
+
+  var _tableHtml = '<div class="card" style="padding:0;overflow:hidden"><div class="scroll-table"><table>'
+    +'<thead><tr>'
+    +'<th style="'+THL+'">Date</th>'
+    +'<th style="'+THL+'">Réf. produit</th>'
+    +'<th style="'+THL+';min-width:180px">Produit</th>'
+    +'<th style="'+THL+'">Réf. MP</th>'
+    +'<th style="'+TH+'">Prix TTC</th>'
+    +'<th style="'+TH+'">Livraison TTC</th>'
+    +'<th style="'+TH+'">Base TTC</th>'
+    +'<th style="'+TH+'">Comm. estimée</th>'
+    +'<th style="'+TH+'">Taux théo.</th>'
+    + _commCol
+    +'</tr></thead><tbody>';
+
+  if (_rows.length === 0) {
+    var _emptyMsg = _allBase.length === 0
+      ? 'Aucune commande trouvée — relancer le sync ps_sync.js pour peupler les données'
+      : 'Aucune commande pour cette période ou ces filtres';
+    _tableHtml += '<tr><td colspan="'+_commSpan+'" style="text-align:center;padding:30px;color:var(--txS);font-size:13px">'+_emptyMsg+'</td></tr>';
+  } else {
+    _rows.forEach(function(r) {
+      var _ea = r.ecart !== null ? Math.abs(r.ecart) : 0;
+      var _rowBg = '';
+      var _ecartBadge = '—';
+      if (r.ecart !== null) {
+        var _sign = r.ecart > 0 ? '+' : '';
+        var _ecartStr = _sign + r.ecart.toFixed(2) + ' pp';
+        if (_ea >= 5) { _rowBg = 'background:rgba(181,49,44,0.06);'; _ecartBadge = '<span style="display:inline-block;background:var(--rd);color:#fff;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700">'+_ecartStr+'</span>'; }
+        else if (_ea >= 2) { _rowBg = 'background:rgba(213,128,0,0.06);'; _ecartBadge = '<span style="display:inline-block;background:#D58000;color:#fff;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:700">'+_ecartStr+'</span>'; }
+        else { _ecartBadge = '<span style="color:var(--gn)">'+_ecartStr+'</span>'; }
+      }
+      var _dateRaw = String(r.o.sale_date||'').slice(0,10);
+      var _dateDisp = _dateRaw ? _dateRaw.slice(8)+'/'+_dateRaw.slice(5,7)+'/'+_dateRaw.slice(0,4) : '—';
+      var _mpRef = r.o.lengow_marketplace_order_id ? esc(r.o.lengow_marketplace_order_id) : '<span style="color:var(--txS)">—</span>';
+      var _prodName = String(r.o.product_name||'');
+      var _prodDisp = _prodName.length > 50 ? _prodName.slice(0,50)+'…' : _prodName;
+      var _commRealCells = _hasRealComm
+        ? '<td style="'+TD+'">'+( r.commReel!==null ? r.commReel.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+'&nbsp;€' : '<span style="color:var(--txS)">—</span>' )+'</td>'
+          +'<td style="'+TD+';font-weight:700;color:var(--ac)">'+( r.tauxReel!==null ? r.tauxReel.toFixed(2)+'%' : '<span style="color:var(--txS)">—</span>' )+'</td>'
+          +'<td style="'+TD+'">'+_ecartBadge+'</td>'
+        : '';
+      _tableHtml += '<tr style="'+_rowBg+'">'
+        +'<td style="'+TDL+'">'+_dateDisp+'</td>'
+        +'<td style="'+TDL+'">'+esc(r.o.product_ref||'—')+'</td>'
+        +'<td style="'+TDL+';max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(_prodName)+'">'+esc(_prodDisp)+'</td>'
+        +'<td style="'+TDL+';font-size:11px;color:var(--txS)">'+_mpRef+'</td>'
+        +'<td style="'+TD+'">'+r.revTtc.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+'&nbsp;€</td>'
+        +'<td style="'+TD+'">'+r.shipTtc.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+'&nbsp;€</td>'
+        +'<td style="'+TD+';font-weight:600">'+r.base.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+'&nbsp;€</td>'
+        +'<td style="'+TD+';color:var(--txS)">'+( r.commEst!==null ? r.commEst.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+'&nbsp;€' : '—' )+'</td>'
+        +'<td style="'+TD+'">'+( r.tauxTheo!==null ? r.tauxTheo.toFixed(2)+'%' : '<span style="color:var(--txS)">—</span>' )+'</td>'
+        + _commRealCells
+        +'</tr>';
+    });
+  }
+  _tableHtml += '</tbody></table></div></div>';
+
+  // ── Note de bas de page ─────────────────────────────────────────
+  var _footHtml = '<div style="margin-top:10px;font-size:11px;color:var(--txS);display:flex;gap:16px;flex-wrap:wrap">'
+    +'<span>Base TTC = <code>total_paid_tax_incl</code> Prestashop (produits + livraison)</span>'
+    +'<span>Réf. MP = référence commande côté marketplace</span>'
+    +(_hasRealComm
+      ? '<span style="display:flex;gap:5px;align-items:center"><span style="display:inline-block;width:10px;height:10px;background:rgba(181,49,44,0.2);border-radius:2px"></span>Anomalie &gt;5pp</span>'
+        +'<span style="display:flex;gap:5px;align-items:center"><span style="display:inline-block;width:10px;height:10px;background:rgba(213,128,0,0.2);border-radius:2px"></span>Alerte 2–5pp</span>'
+      : '')
+    +'</div>';
+
+  var _importBtn = '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">'
+    +'<button onclick="openTDCImport()" style="padding:7px 16px;border:.5px solid var(--gn);border-radius:8px;font-size:12px;background:var(--gnBg,rgba(34,197,94,.08));color:var(--gn);cursor:pointer;font-weight:600;font-family:inherit">Import commissions CSV</button>'
+    +'</div>';
+
+  el.innerHTML = '<div style="font-size:15px;font-weight:700;margin-bottom:16px">TDC — Taux de Commission — '+esc(mpLabel)+'</div>'
+    + _importBtn
+    + _infoHtml
+    + _kpiHtml
+    + _filterHtml
+    + _tableHtml
+    + _footHtml;
+}
+
+// ══════════════════════════════════════════════════════════════════
+// TDC — Import commissions CSV (depuis export phpMyAdmin Lengow)
+// ══════════════════════════════════════════════════════════════════
+function openTDCImport() {
+  var sqlQuery = "SELECT\n  id_order,\n  CAST(JSON_UNQUOTE(JSON_EXTRACT(extra, '$.commission')) AS DECIMAL(12,2))  AS commission,\n  JSON_UNQUOTE(JSON_EXTRACT(extra, '$.marketplace_order_id'))              AS marketplace_order_id,\n  CAST(JSON_UNQUOTE(JSON_EXTRACT(extra, '$.total_order')) AS DECIMAL(12,2)) AS total_order,\n  CAST(JSON_UNQUOTE(JSON_EXTRACT(extra, '$.shipping')) AS DECIMAL(12,2))   AS shipping,\n  JSON_UNQUOTE(JSON_EXTRACT(extra, '$.marketplace'))                       AS marketplace\nFROM psdem1_lengow_orders\nWHERE id_order IS NOT NULL AND id_order > 0\n  AND JSON_EXTRACT(extra, '$.commission') IS NOT NULL\n  AND CAST(JSON_UNQUOTE(JSON_EXTRACT(extra, '$.commission')) AS DECIMAL(12,2)) > 0\nORDER BY id_order DESC;";
+
+  openModal("Import Commissions Lengow — TDC",
+    '<div style="display:grid;gap:10px">'
+    // Étape 1 : SQL
+    +'<div style="background:var(--acBg);border-radius:8px;padding:10px 12px;font-size:11px">'
+      +'<div style="font-weight:700;margin-bottom:6px;font-size:12px">Étape 1 — Exécuter cette requête dans phpMyAdmin</div>'
+      +'<textarea readonly onclick="this.select()" style="width:100%;box-sizing:border-box;height:120px;font-family:monospace;font-size:10px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--tx);resize:vertical;white-space:pre">'+sqlQuery+'</textarea>'
+      +'<div style="color:var(--txS);margin-top:4px">Cliquer dans la zone → Ctrl+A → Ctrl+C pour copier</div>'
+    +'</div>'
+    // Étape 2 : Export
+    +'<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:11px">'
+      +'<div style="font-weight:700;margin-bottom:4px;font-size:12px">Étape 2 — Exporter en CSV depuis phpMyAdmin</div>'
+      +'<div style="color:var(--txS)">Onglet <em>Résultats</em> → bouton <em>Exporter</em> → format <strong>CSV</strong> (séparateur <code>;</code> ou <code>,</code> — les deux sont acceptés)</div>'
+    +'</div>'
+    // Étape 3 : Upload
+    +'<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:11px">'
+      +'<div style="font-weight:700;margin-bottom:6px;font-size:12px">Étape 3 — Importer le fichier CSV</div>'
+      +'<input id="tdc-imp-file" type="file" accept=".csv" style="width:100%;box-sizing:border-box;padding:6px;border:.5px solid var(--border);border-radius:6px;font-size:11px;font-family:inherit;background:var(--card)">'
+    +'</div>'
+    +'<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Mot de passe admin *</label>'
+      +'<input id="tdc-imp-pwd" type="password" style="width:100%;box-sizing:border-box;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
+    +'<button onclick="confirmTDCImport()" style="padding:10px;background:var(--gn);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Importer les commissions</button>'
+    +'<div id="tdc-imp-status" style="font-size:12px;text-align:center;min-height:16px"></div>'
+    +'</div>'
+  );
+}
+
+async function confirmTDCImport() {
+  var statusEl = document.getElementById("tdc-imp-status");
+  var pwd  = document.getElementById("tdc-imp-pwd")?.value;
+  var file = document.getElementById("tdc-imp-file")?.files[0];
+  if (pwd !== ADMIN_PASSWORD) { statusEl.innerHTML='<span style="color:var(--rd)">Mot de passe incorrect.</span>'; return; }
+  if (!file) { statusEl.innerHTML='<span style="color:var(--rd)">Sélectionner un fichier CSV.</span>'; return; }
+
+  statusEl.innerHTML='<span style="color:var(--txS)">Lecture du fichier...</span>';
+
+  try {
+    var text = await new Promise(function(res,rej){
+      var fr = new FileReader();
+      fr.onload = function(e){ res(e.target.result); };
+      fr.onerror = rej;
+      fr.readAsText(file,'UTF-8');
+    });
+
+    // Détecter le séparateur (;  ou ,)
+    var firstLine = text.split('\n')[0] || '';
+    var sep = (firstLine.split(';').length >= firstLine.split(',').length) ? ';' : ',';
+
+    // Parser CSV simple (gère les valeurs entre guillemets)
+    function parseCsvLine(line, s) {
+      var res = [], cur = '', inQ = false;
+      for (var i = 0; i < line.length; i++) {
+        var c = line[i];
+        if (c === '"') { inQ = !inQ; }
+        else if (c === s && !inQ) { res.push(cur.trim()); cur = ''; }
+        else { cur += c; }
+      }
+      res.push(cur.trim());
+      return res;
+    }
+
+    var lines = text.replace(/\r/g,'').split('\n').filter(function(l){return l.trim();});
+    if (lines.length < 2) { statusEl.innerHTML='<span style="color:var(--rd)">Fichier vide ou format incorrect.</span>'; return; }
+
+    var headers = parseCsvLine(lines[0], sep).map(function(h){ return h.toLowerCase().replace(/"/g,'').trim(); });
+    var colIdxOf = function(names) {
+      for (var i=0;i<names.length;i++) {
+        var idx = headers.indexOf(names[i]);
+        if (idx >= 0) return idx;
+      }
+      return -1;
+    };
+    var iId  = colIdxOf(['id_order','id order','idorder']);
+    var iCom = colIdxOf(['commission']);
+    if (iId < 0 || iCom < 0) {
+      statusEl.innerHTML='<span style="color:var(--rd)">Colonnes introuvables — attendu : <code>id_order</code>, <code>commission</code>. Headers trouvés : '+esc(headers.join(', '))+'</span>';
+      return;
+    }
+
+    var rows = [];
+    for (var li = 1; li < lines.length; li++) {
+      var cells = parseCsvLine(lines[li], sep);
+      var idRaw  = String(cells[iId]  || '').replace(/"/g,'').trim();
+      var comRaw = String(cells[iCom] || '').replace(/"/g,'').replace(',','.').trim();
+      var ordId  = parseInt(idRaw);
+      var comm   = parseFloat(comRaw);
+      if (!ordId || isNaN(ordId) || ordId <= 0) continue;
+      if (isNaN(comm) || comm <= 0) continue;
+      rows.push({ id_order: ordId, commission: Math.round(comm * 100) / 100 });
+    }
+
+    if (!rows.length) {
+      statusEl.innerHTML='<span style="color:var(--am)">Aucune ligne valide (id_order > 0 et commission > 0) trouvée dans le CSV.</span>';
+      return;
+    }
+
+    statusEl.innerHTML='<span style="color:var(--txS)">Mise à jour de '+rows.length+' commandes dans Supabase...</span>';
+
+    // Dédupliquer par id_order (garder la dernière occurrence)
+    var dedupMap = {};
+    rows.forEach(function(r){ dedupMap[r.id_order] = r.commission; });
+    var uniqRows = Object.keys(dedupMap).map(function(k){ return { id_order: parseInt(k), commission: dedupMap[k] }; });
+
+    // Mise à jour par lots de 20 requêtes parallèles
+    var updated = 0, skipped = 0;
+    var BATCH = 20;
+    for (var i = 0; i < uniqRows.length; i += BATCH) {
+      var batch = uniqRows.slice(i, i + BATCH);
+      var results = await Promise.all(batch.map(async function(r) {
+        try {
+          var res = await sbUpdate("ps_sales_daily", "order_id=eq."+r.id_order, { commission: r.commission });
+          return Array.isArray(res) ? res.length : (res ? 1 : 0);
+        } catch(e) {
+          console.warn('[TDC Import] Erreur ordre '+r.id_order+' :', e.message);
+          return 0;
+        }
+      }));
+      results.forEach(function(n){ if(n > 0) updated++; else skipped++; });
+      var progress = Math.min(i + BATCH, uniqRows.length);
+      statusEl.innerHTML='<span style="color:var(--txS)">'+progress+' / '+uniqRows.length+' traitées...</span>';
+    }
+
+    var skipMsg = skipped > 0 ? ' · '+skipped+' commande(s) non trouvée(s) dans la base PS' : '';
+    statusEl.innerHTML='<span style="color:var(--gn)">✓ '+updated+' commande(s) mises à jour'+skipMsg+'</span>';
+    console.log('[TDC Import] Terminé — '+updated+' mises à jour, '+skipped+' non trouvées sur '+uniqRows.length+' uniques ('+rows.length+' lignes CSV)');
+    setTimeout(function(){ closeModal(); loadData(); }, 1600);
+
+  } catch(e) {
+    console.error('[TDC Import] Erreur :', e);
+    statusEl.innerHTML='<span style="color:var(--rd)">Erreur : '+esc(e.message)+'</span>';
+  }
 }
 
 async function renderSEA() {
