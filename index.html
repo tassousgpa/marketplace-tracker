@@ -6129,7 +6129,6 @@ function buildOpeHTML() {
   const actions = '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">'
     + '<button onclick="openOpeCreate(null)" style="padding:7px 16px;border:.5px solid var(--ac);border-radius:8px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">+ Nouvelle opération</button>'
     + '<button onclick="openMarronnierGlobal()" style="padding:7px 16px;border:.5px solid var(--pu);border-radius:8px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">📅 Marronnier global (toutes marketplaces)</button>'
-    + '<button onclick="openOpeExportModal()" style="padding:7px 16px;border:.5px solid var(--gn);border-radius:8px;font-size:12px;background:var(--gnBg);color:var(--gn);cursor:pointer;font-weight:600;font-family:inherit">⬇ Export</button>'
     + '</div>';
 
   return kpis + actions
@@ -6174,38 +6173,49 @@ function renderOpeCards() {
 }
 
 async function openMarronnierGlobal() {
-  // Ouvre un volet pleine page avec le calendrier de toutes les opérations de toutes les marketplaces
   var overlay = document.getElementById('marronnier-overlay');
   if (overlay) { overlay.remove(); }
   overlay = document.createElement('div');
   overlay.id = 'marronnier-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;background:var(--bg);z-index:500;overflow:auto;font-family:DM Sans,sans-serif';
-  overlay.innerHTML = '<div style="padding:20px 28px;border-bottom:.5px solid var(--border);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:var(--bg);z-index:10">'
-    +'<div style="font-size:16px;font-weight:700">📅 Marronnier global — Toutes marketplaces</div>'
-    +'<div style="display:flex;gap:8px;align-items:center">'
+  overlay.innerHTML =
+    '<div style="padding:14px 20px;border-bottom:.5px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;position:sticky;top:0;background:var(--bg);z-index:10">'
+    +'<div style="font-size:15px;font-weight:700">📅 Marronnier global — Toutes marketplaces</div>'
+    +'<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'
     +'<div id="marronnier-mp-filter" style="display:flex;gap:4px;flex-wrap:wrap"></div>'
-    +'<button onclick="document.getElementById(\'marronnier-overlay\').remove()" style="padding:6px 14px;border:.5px solid var(--border);border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;background:var(--card);font-family:inherit">✕ Fermer</button>'
+    +'<div id="marronnier-status-filter" style="display:flex;gap:4px"></div>'
+    +'<button onclick="openOpeExportModal()" style="padding:6px 14px;border:.5px solid var(--gn);border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;background:var(--gnBg);color:var(--gn);font-family:inherit">⬇ Export</button>'
+    +'<button onclick="document.getElementById(\'marronnier-overlay\').remove()" style="padding:6px 14px;border:.5px solid var(--border);border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;background:var(--card);font-family:inherit">✕ Fermer</button>'
     +'</div></div>'
     +'<div id="marronnier-body" style="padding:20px 28px"><div style="text-align:center;padding:40px;color:var(--txS)">Chargement...</div></div>';
   document.body.appendChild(overlay);
 
   try {
-    // Charger toutes les opérations de toutes les marketplaces
     var allOps = await sb('commercial_operations', 'select=*&order=date_debut.desc');
     var allOpProds = await sb('operation_products', 'select=operation_id,ref,taux_commission,prix');
 
-    // Filtres marketplace
-    var mpFilter = new Set(MARKETPLACES.map(function(m){ return m.id; }));
     var filterEl = document.getElementById('marronnier-mp-filter');
     if (filterEl) {
       filterEl.innerHTML = MARKETPLACES.map(function(m){
-        return '<button onclick="toggleMarronnierMp(\''+m.id+'\')" id="mmp-btn-'+m.id+'" style="padding:3px 10px;border:.5px solid var(--border);border-radius:6px;font-size:11px;cursor:pointer;background:var(--acBg);color:var(--ac);font-family:inherit;font-weight:600">'+m.label+'</button>';
+        return '<button onclick="toggleMarronnierMp(\''+m.id+'\')" id="mmp-btn-'+m.id+'" style="padding:3px 9px;border:.5px solid var(--border);border-radius:6px;font-size:11px;cursor:pointer;background:var(--acBg);color:var(--ac);font-family:inherit;font-weight:600">'+m.label+'</button>';
+      }).join('');
+    }
+    var statusEl = document.getElementById('marronnier-status-filter');
+    if (statusEl) {
+      statusEl.innerHTML = [
+        {v:'all',l:'Tout'},
+        {v:'active',l:'● Actives'},
+        {v:'future',l:'⏳ À venir'},
+        {v:'expired',l:'Expirées'}
+      ].map(function(s){
+        return '<button onclick="toggleMarronnierStatus(\''+s.v+'\')" id="mms-btn-'+s.v+'" style="padding:3px 9px;border:.5px solid var(--border);border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;font-weight:500;background:'+(s.v==='all'?'var(--acBg)':'var(--bg)')+';color:'+(s.v==='all'?'var(--ac)':'var(--txS)')+'">'+s.l+'</button>';
       }).join('');
     }
 
     window._marronnierOps = allOps;
-    window._marronnierMpFilter = new Set(MARKETPLACES.map(function(m){ return m.id; }));
     window._marronnierOpProds = allOpProds;
+    window._marronnierMpFilter = new Set(MARKETPLACES.map(function(m){ return m.id; }));
+    window._marronnierStatusFilter = 'all';
     renderMarronnierContent();
   } catch(e) {
     var body = document.getElementById('marronnier-body');
@@ -6222,49 +6232,105 @@ function toggleMarronnierMp(mpId) {
     var active = window._marronnierMpFilter.has(mpId);
     btn.style.background = active ? 'var(--acBg)' : 'var(--bg)';
     btn.style.color = active ? 'var(--ac)' : 'var(--txT)';
+    btn.style.borderColor = active ? 'var(--ac)' : 'var(--border)';
   }
+  renderMarronnierContent();
+}
+
+function toggleMarronnierStatus(val) {
+  window._marronnierStatusFilter = val;
+  ['all','active','future','expired'].forEach(function(v){
+    var b = document.getElementById('mms-btn-'+v);
+    if (!b) return;
+    b.style.background = v===val ? 'var(--acBg)' : 'var(--bg)';
+    b.style.color = v===val ? 'var(--ac)' : 'var(--txS)';
+    b.style.borderColor = v===val ? 'var(--ac)' : 'var(--border)';
+  });
   renderMarronnierContent();
 }
 
 function renderMarronnierContent() {
   var body = document.getElementById('marronnier-body');
   if (!body) return;
+  var today = new Date().toISOString().slice(0,10);
+  var statusF = window._marronnierStatusFilter || 'all';
   var ops = (window._marronnierOps||[]).filter(function(op){
-    return window._marronnierMpFilter && window._marronnierMpFilter.has(op.marketplace);
+    if (window._marronnierMpFilter && !window._marronnierMpFilter.has(op.marketplace)) return false;
+    if (statusF === 'active') return op.date_debut <= today && op.date_fin >= today;
+    if (statusF === 'future') return op.date_debut > today;
+    if (statusF === 'expired') return op.date_fin < today;
+    return true;
   });
-  if (!ops.length) { body.innerHTML = '<div style="text-align:center;padding:40px;color:var(--txS)">Aucune opération pour les marketplaces sélectionnées.</div>'; return; }
+  if (!ops.length) { body.innerHTML = '<div style="text-align:center;padding:40px;color:var(--txS)">Aucune opération pour les filtres sélectionnés.</div>'; return; }
 
-  var now = new Date();
-  var TH = 'padding:7px 10px;font-size:11px;font-weight:600;color:var(--txS);background:var(--bg);border-bottom:1px solid var(--border);white-space:nowrap;text-align:left';
-  var TD = 'padding:6px 10px;font-size:12px;border-bottom:1px solid var(--borderL);';
+  var TH = 'padding:7px 10px;font-size:11px;font-weight:600;color:var(--txS);background:var(--bg);border-bottom:1px solid var(--border);white-space:nowrap;text-align:left;position:sticky;top:0;z-index:2';
+  var TD = 'padding:8px 10px;font-size:12px;border-bottom:1px solid var(--borderL);';
   var fmtD = function(d){ return d ? new Date(d).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '—'; };
+
   var rows = ops.map(function(op,i){
-    var isAct = op.date_debut<=now.toISOString().slice(0,10) && op.date_fin>=now.toISOString().slice(0,10);
+    var isAct = op.date_debut <= today && op.date_fin >= today;
+    var isFut = op.date_debut > today;
+    var statLabel = isAct ? '<span style="padding:2px 7px;border-radius:99px;font-size:10px;font-weight:600;background:var(--gnBg);color:var(--gn)">● Actif</span>'
+      : isFut ? '<span style="padding:2px 7px;border-radius:99px;font-size:10px;font-weight:600;background:var(--acBg);color:var(--ac)">⏳ À venir</span>'
+      : '<span style="padding:2px 7px;border-radius:99px;font-size:10px;color:var(--txT)">Expiré</span>';
     var mpObj = MARKETPLACES.find(function(m){ return m.id===op.marketplace; })||{label:op.marketplace};
-    return '<tr style="'+(i%2?'background:var(--bg);':'')+'border-bottom:1px solid var(--borderL)">'
-      +'<td style="'+TD+'font-weight:600">'+esc(op.nom||'—')+'</td>'
-      +'<td style="'+TD+'"><span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:var(--acBg);color:var(--ac)">'+esc(mpObj.label)+'</span></td>'
-      +'<td style="'+TD+'">'+(op.type_ope?esc(op.type_ope):'—')+'</td>'
-      +'<td style="'+TD+'">'+fmtD(op.date_debut)+'</td>'
-      +'<td style="'+TD+'">'+fmtD(op.date_fin)+'</td>'
-      +'<td style="'+TD+'"><span style="padding:2px 7px;border-radius:99px;font-size:10px;font-weight:600;background:'+(isAct?'var(--gnBg)':'var(--bg)')+';color:'+(isAct?'var(--gn)':'var(--txT)')+'">'+( isAct?'● Actif':'—' )+'</span></td>'
+    var mpColor = (MP_COLORS[op.marketplace]||{}).text || 'var(--ac)';
+    var mpBg = (MP_COLORS[op.marketplace]||{}).bg || 'var(--acBg)';
+    // Nb produits
+    var nbProds = (window._marronnierOpProds||[]).filter(function(p){ return p.operation_id === op.id; }).length;
+    return '<tr style="'+(i%2?'background:var(--bg);':'')+'border-bottom:1px solid var(--borderL);cursor:pointer" onclick="openOpeDetailGlobal('+op.id+')" title="Voir le détail">'
+      +'<td style="'+TD+'font-weight:600;max-width:220px">'+esc(op.nom||'—')+'</td>'
+      +'<td style="'+TD+'"><span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:700;background:'+mpBg+';color:'+mpColor+'">'+esc(mpObj.label)+'</span></td>'
+      +'<td style="'+TD+'">'+(op.type_ope?'<span style="padding:1px 6px;border-radius:99px;font-size:10px;background:var(--borderL);color:var(--txS)">'+esc(op.type_ope)+'</span>':'—')+'</td>'
+      +'<td style="'+TD+'white-space:nowrap">'+fmtD(op.date_debut)+'</td>'
+      +'<td style="'+TD+'white-space:nowrap">'+fmtD(op.date_fin)+'</td>'
+      +'<td style="'+TD+'text-align:right;color:var(--txS)">'+nbProds+'</td>'
+      +'<td style="'+TD+'">'+statLabel+'</td>'
+      +'<td style="'+TD+'"><span style="font-size:11px;color:var(--ac)">↗ Détail</span></td>'
       +'</tr>';
   }).join('');
-  body.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'
-    +'<thead><tr><th style="'+TH+'">Opération</th><th style="'+TH+'">Marketplace</th><th style="'+TH+'">Type</th>'
-    +'<th style="'+TH+'">Début</th><th style="'+TH+'">Fin</th><th style="'+TH+'">Statut</th></tr></thead>'
+
+  body.innerHTML = '<div style="margin-bottom:8px;font-size:12px;color:var(--txS)">'+ops.length+' opération'+(ops.length>1?'s':'')+' — cliquez sur une ligne pour voir le détail</div>'
+    +'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+    +'<thead><tr>'
+    +'<th style="'+TH+'">Opération</th><th style="'+TH+'">Marketplace</th><th style="'+TH+'">Type</th>'
+    +'<th style="'+TH+'">Début</th><th style="'+TH+'">Fin</th>'
+    +'<th style="'+TH+'text-align:right">Nb produits</th>'
+    +'<th style="'+TH+'">Statut</th><th style="'+TH+'"></th>'
+    +'</tr></thead>'
     +'<tbody>'+rows+'</tbody></table></div>';
+}
+
+async function openOpeDetailGlobal(opId) {
+  var op = (window._marronnierOps||[]).find(function(o){ return o.id === opId; });
+  if (!op) return;
+  // Switcher temporairement le contexte MP + injecter l'op dans opeData
+  var prevMp = MARKETPLACE;
+  var prevOpeData = opeData.slice();
+  MARKETPLACE = op.marketplace;
+  if (!opeData.find(function(o){ return o.id === opId; })) opeData = [op].concat(opeData);
+  try {
+    await openOpeDetail(opId);
+  } finally {
+    MARKETPLACE = prevMp;
+    opeData = prevOpeData;
+  }
 }
 
 async function openOpeExportModal() {
   var sCb = 'cursor:pointer;accent-color:var(--ac)';
   var sLabel = 'display:flex;align-items:center;gap:6px;font-size:12px;color:var(--tx);margin-bottom:6px;cursor:pointer';
+  var sST = 'font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--txS);margin-bottom:8px';
 
-  // Charger toutes les ops + produits si besoin
+  // Réutiliser les données déjà chargées par le Marronnier si dispo, sinon charger
   var allOps, allOpProds;
   try {
-    allOps = await sb('commercial_operations', 'select=*&order=date_debut.desc');
-    allOpProds = await sb('operation_products', 'select=operation_id,ref,taux_commission,prix');
+    allOps = window._marronnierOps && window._marronnierOps.length
+      ? window._marronnierOps
+      : await sb('commercial_operations', 'select=*&order=date_debut.desc');
+    allOpProds = window._marronnierOpProds && window._marronnierOpProds.length
+      ? window._marronnierOpProds
+      : await sb('operation_products', 'select=operation_id,ref,taux_commission,prix');
   } catch(e) { alert('Erreur chargement : '+esc(e.message)); return; }
 
   window._opeExportAllOps = allOps;
@@ -6273,31 +6339,47 @@ async function openOpeExportModal() {
   var mpOptions = MARKETPLACES.map(function(m){
     return '<label style="'+sLabel+'"><input type="checkbox" class="ope-exp-mp" value="'+m.id+'" checked style="'+sCb+'"> '+m.label+'</label>';
   }).join('');
+
   var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">'
+    // Colonne gauche
     +'<div>'
-    +'<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--txS);margin-bottom:8px">Marketplaces</div>'
+    +'<div style="'+sST+'">Marketplaces</div>'
+    +'<div style="display:flex;gap:4px;margin-bottom:6px">'
+    +'<button onclick="document.querySelectorAll(\'.ope-exp-mp\').forEach(c=>c.checked=true)" style="padding:2px 8px;border:.5px solid var(--border);border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;background:var(--bg)">Toutes</button>'
+    +'<button onclick="document.querySelectorAll(\'.ope-exp-mp\').forEach(c=>c.checked=false)" style="padding:2px 8px;border:.5px solid var(--border);border-radius:5px;font-size:11px;cursor:pointer;font-family:inherit;background:var(--bg)">Aucune</button>'
+    +'</div>'
     +mpOptions
-    +'<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--txS);margin-top:14px;margin-bottom:8px">Période</div>'
+    +'<div style="'+sST+';margin-top:14px">Statut des opérations</div>'
+    +'<label style="'+sLabel+'"><input type="radio" name="ope-exp-status" value="all" checked style="'+sCb+'"> Toutes</label>'
+    +'<label style="'+sLabel+'"><input type="radio" name="ope-exp-status" value="active" style="'+sCb+'"> ● Actives uniquement</label>'
+    +'<label style="'+sLabel+'"><input type="radio" name="ope-exp-status" value="future" style="'+sCb+'"> ⏳ À venir uniquement</label>'
+    +'<label style="'+sLabel+'"><input type="radio" name="ope-exp-status" value="expired" style="'+sCb+'"> Expirées uniquement</label>'
+    +'</div>'
+    // Colonne droite
+    +'<div>'
+    +'<div style="'+sST+'">Période (dates de l\'opération)</div>'
     +'<label style="'+sLabel+'"><input type="radio" name="ope-exp-date" value="all" checked style="'+sCb+'"> Toutes les dates</label>'
-    +'<label style="'+sLabel+'"><input type="radio" name="ope-exp-date" value="active" style="'+sCb+'"> Opérations actives uniquement</label>'
     +'<label style="'+sLabel+'"><input type="radio" name="ope-exp-date" value="custom" style="'+sCb+'"> Période personnalisée</label>'
-    +'<div id="ope-exp-date-range" style="margin-top:8px;display:none;flex-direction:column;gap:6px">'
+    +'<div id="ope-exp-date-range" style="margin-top:6px;display:none;flex-direction:column;gap:6px">'
+    +'<div style="font-size:11px;color:var(--txS)">Début ≥</div>'
     +'<input type="date" id="ope-exp-from" style="padding:6px 10px;border:.5px solid var(--border);border-radius:7px;font-size:12px;font-family:inherit">'
+    +'<div style="font-size:11px;color:var(--txS)">Fin ≤</div>'
     +'<input type="date" id="ope-exp-to" style="padding:6px 10px;border:.5px solid var(--border);border-radius:7px;font-size:12px;font-family:inherit">'
     +'</div>'
+    +'<div style="'+sST+';margin-top:16px">Format d\'export</div>'
+    +'<label style="'+sLabel+'"><input type="radio" name="ope-exp-fmt" value="xlsx" checked style="'+sCb+'"> Excel (XLSX) — 1 onglet par marketplace</label>'
+    +'<label style="'+sLabel+'"><input type="radio" name="ope-exp-fmt" value="csv" style="'+sCb+'"> CSV — toutes marketplaces dans un seul fichier</label>'
+    +'<div style="margin-top:12px;padding:10px;background:var(--bg);border-radius:8px;font-size:11px;color:var(--txS)">'
+    +'Colonnes : Référence · Nom produit · Opération · Début · Fin · Commission/Co-financement · Prix'
     +'</div>'
-    +'<div>'
-    +'<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--txS);margin-bottom:8px">Format</div>'
-    +'<label style="'+sLabel+'"><input type="radio" name="ope-exp-fmt" value="csv" checked style="'+sCb+'"> CSV</label>'
-    +'<label style="'+sLabel+'"><input type="radio" name="ope-exp-fmt" value="xlsx" style="'+sCb+'"> Excel (XLSX)</label>'
-    +'<div style="font-size:11px;color:var(--txS);margin-top:12px">Colonnes exportées : Référence produit, Marketplace, Taux de commission (ou co-financement pour ManoMano), Prix.</div>'
     +'</div>'
     +'</div>'
     +'<div style="margin-top:20px;text-align:right">'
-    +'<button onclick="executeOpeExport()" style="padding:8px 20px;background:var(--ac);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">⬇ Télécharger</button>'
+    +'<button onclick="executeOpeExport()" style="padding:8px 22px;background:var(--ac);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">⬇ Télécharger</button>'
     +'</div>';
+
   openModal('Export Opérations Commerciales', html);
-  // Toggle date range
+
   document.querySelectorAll('input[name="ope-exp-date"]').forEach(function(r){
     r.addEventListener('change', function(){
       var dr = document.getElementById('ope-exp-date-range');
@@ -6310,45 +6392,70 @@ function executeOpeExport() {
   var allOps = window._opeExportAllOps || [];
   var allOpProds = window._opeExportAllOpProds || [];
   var selectedMps = Array.from(document.querySelectorAll('.ope-exp-mp:checked')).map(function(c){ return c.value; });
+  var statusMode = (document.querySelector('input[name="ope-exp-status"]:checked')||{}).value || 'all';
   var dateMode = (document.querySelector('input[name="ope-exp-date"]:checked')||{}).value || 'all';
-  var fmt = (document.querySelector('input[name="ope-exp-fmt"]:checked')||{}).value || 'csv';
+  var fmt = (document.querySelector('input[name="ope-exp-fmt"]:checked')||{}).value || 'xlsx';
   var today = new Date().toISOString().slice(0,10);
-  var fromDate = document.getElementById('ope-exp-from') ? document.getElementById('ope-exp-from').value : '';
-  var toDate = document.getElementById('ope-exp-to') ? document.getElementById('ope-exp-to').value : '';
+  var fromDate = (document.getElementById('ope-exp-from')||{}).value || '';
+  var toDate   = (document.getElementById('ope-exp-to')||{}).value || '';
 
-  // Filtrer ops
+  // Filtrer les opérations
   var ops = allOps.filter(function(op){
     if (!selectedMps.includes(op.marketplace)) return false;
-    if (dateMode === 'active') return op.date_debut<=today && op.date_fin>=today;
+    if (statusMode === 'active')  return op.date_debut <= today && op.date_fin >= today;
+    if (statusMode === 'future')  return op.date_debut > today;
+    if (statusMode === 'expired') return op.date_fin < today;
     if (dateMode === 'custom' && fromDate && toDate) return op.date_fin >= fromDate && op.date_debut <= toDate;
     return true;
   });
+  if (!ops.length) { alert('Aucune opération pour les critères sélectionnés.'); return; }
 
   var opIds = new Set(ops.map(function(o){ return o.id; }));
-  var rows = allOpProds.filter(function(p){ return opIds.has(p.operation_id); }).map(function(p){
-    var op = ops.find(function(o){ return o.id===p.operation_id; })||{};
-    var isMano = op.marketplace === 'manomano';
-    return {
-      'Référence produit': p.ref||'',
-      'Marketplace': op.marketplace||'',
-      'Opération': op.nom||'',
-      'Date début': op.date_debut||'',
-      'Date fin': op.date_fin||'',
-      'Taux de commission / Co-financement': p.taux_commission!=null ? (isMano ? p.taux_commission+' €' : p.taux_commission+'%') : '',
-      'Prix': p.prix!=null ? p.prix : ''
-    };
-  });
 
-  if (!rows.length) { alert('Aucune donnée à exporter pour les critères sélectionnés.'); return; }
+  // Construire les lignes par marketplace
+  function rowsForMp(mp) {
+    var mpOps = ops.filter(function(o){ return o.marketplace === mp; });
+    var mpOpIds = new Set(mpOps.map(function(o){ return o.id; }));
+    var isMano = mp === 'manomano';
+    return allOpProds.filter(function(p){ return mpOpIds.has(p.operation_id); }).map(function(p){
+      var op = mpOps.find(function(o){ return o.id===p.operation_id; })||{};
+      var statut = op.date_debut > today ? 'À venir' : op.date_fin < today ? 'Expirée' : 'Active';
+      return {
+        'Référence produit': p.ref||'',
+        'Nom produit': p.nom_produit||'',
+        'Opération': op.nom||'',
+        'Statut': statut,
+        'Date début': op.date_debut||'',
+        'Date fin': op.date_fin||'',
+        [isMano ? 'Co-financement (€)' : 'Commission (%)']: p.taux_commission!=null ? p.taux_commission : '',
+        'Prix (€)': p.prix!=null ? p.prix : ''
+      };
+    });
+  }
 
   if (fmt === 'xlsx' && typeof XLSX !== 'undefined') {
-    var ws = XLSX.utils.json_to_sheet(rows);
     var wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Operations');
+    selectedMps.forEach(function(mp){
+      var mpObj = MARKETPLACES.find(function(m){ return m.id===mp; })||{label:mp};
+      var rows = rowsForMp(mp);
+      if (!rows.length) return;
+      var ws = XLSX.utils.json_to_sheet(rows);
+      // Largeurs colonnes
+      ws['!cols'] = [{wch:18},{wch:30},{wch:25},{wch:10},{wch:12},{wch:12},{wch:16},{wch:10}];
+      var sheetName = mpObj.label.slice(0,31); // SheetJS limite à 31 chars
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    });
+    if (!wb.SheetNames.length) { alert('Aucune donnée à exporter.'); return; }
     XLSX.writeFile(wb, 'ope_commerciales_export.xlsx');
   } else {
-    var headers = Object.keys(rows[0]);
-    var csv = headers.join(';')+'\n'+rows.map(function(r){ return headers.map(function(h){ return '"'+(r[h]||'').toString().replace(/"/g,'""')+'"'; }).join(';'); }).join('\n');
+    // CSV : toutes marketplaces dans un seul fichier, avec colonne Marketplace
+    var allRows = [];
+    selectedMps.forEach(function(mp){ allRows = allRows.concat(rowsForMp(mp).map(function(r){ r['Marketplace']=mp; return r; })); });
+    if (!allRows.length) { alert('Aucune donnée à exporter.'); return; }
+    var headers = Object.keys(allRows[0]);
+    var csv = headers.join(';')+'\n'+allRows.map(function(r){
+      return headers.map(function(h){ return '"'+(r[h]||'').toString().replace(/"/g,'""')+'"'; }).join(';');
+    }).join('\n');
     var blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8'});
     var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'ope_commerciales_export.csv'; a.click();
   }
