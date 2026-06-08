@@ -389,7 +389,7 @@ async function runManualMode(startTime) {
       }
 
       const marketplace   = mapMarketplaceFromPayment(order.payment);
-      const saleDate      = String(order.date_add || "").slice(0, 10);
+      const saleDate      = order.date_add ? new Date(order.date_add.replace(' ', 'T') + (order.date_add.includes('T') ? '' : 'Z')).toISOString() : null;
       const orderRef      = order.reference || null;
       const paymentMethod = order.payment || null;
 
@@ -614,7 +614,7 @@ async function main() {
       }
 
       const marketplace = mapMarketplaceFromPayment(order.payment);
-      const saleDate = String(order.date_add || "").slice(0, 10);
+      const saleDate = order.date_add ? new Date(order.date_add.replace(' ', 'T') + (order.date_add.includes('T') ? '' : 'Z')).toISOString() : null;
       const orderRef = order.reference || null;
       const paymentMethod = order.payment || null;
 
