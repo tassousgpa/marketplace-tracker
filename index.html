@@ -7675,6 +7675,12 @@ function renderTDC() {
     return _ratesMap[String(ref||'')] !== undefined ? _ratesMap[String(ref||'')] : _defaultRate;
   }
 
+  // ── Comptage articles par commande (toutes lignes confondues) ─────
+  var _orderItemCount = {};
+  (STATE.psSalesDaily||[]).forEach(function(o) {
+    if (o.order_id) _orderItemCount[o.order_id] = (_orderItemCount[o.order_id]||0) + 1;
+  });
+
   // ── Source de données : lignes avec base TTC (1ère ligne par commande) ──
   // lengow_total_order = total_paid_tax_incl (base réelle multi-produits)
   // lengow_marketplace_order_id = reference_marketplace (ref commande côté MP)
@@ -7768,12 +7774,18 @@ function renderTDC() {
 
   // Colonnes variables selon disponibilité commission réelle
   var _commCol   = _hasRealComm ? '<th style="'+TH+'">Comm. réelle</th><th style="'+TH+'">Taux réel</th><th style="'+TH+'">Écart</th>' : '';
-  var _commSpan  = _hasRealComm ? 11 : 8;
+  var _commSpan  = _hasRealComm ? 13 : 10;
 
-  var _tableHtml = '<div class="card" style="padding:0;overflow:hidden"><div class="scroll-table"><table>'
+  var _multiNote = '<div style="background:var(--acBg);border:1px solid var(--border);border-radius:7px;padding:8px 12px;margin-bottom:10px;font-size:11px;color:var(--txS);display:flex;gap:6px;align-items:flex-start">'
+    +'<span style="margin-top:1px">ℹ</span>'
+    +'<span>Une même commande peut contenir plusieurs articles. Chaque ligne affiche un article représentatif de la commande — la base TTC et la commission portent sur l\'ensemble de la commande.</span>'
+    +'</div>';
+
+  var _tableHtml = _multiNote + '<div class="card" style="padding:0;overflow:hidden"><div class="scroll-table"><table>'
     +'<thead><tr>'
     +'<th style="'+THL+'">Date</th>'
     +'<th style="'+TH+'">N° commande</th>'
+    +'<th style="'+TH+'">Nb art.</th>'
     +'<th style="'+THL+'">Réf. produit</th>'
     +'<th style="'+THL+';min-width:180px">Produit</th>'
     +'<th style="'+TH+'">Prix TTC</th>'
@@ -7810,9 +7822,14 @@ function renderTDC() {
           +'<td style="'+TD+';font-weight:700;color:var(--ac)">'+( r.tauxReel!==null ? r.tauxReel.toFixed(2)+'%' : '<span style="color:var(--txS)">—</span>' )+'</td>'
           +'<td style="'+TD+'">'+_ecartBadge+'</td>'
         : '';
+      var _nbArt = r.o.order_id ? (_orderItemCount[r.o.order_id]||1) : 1;
+      var _nbArtBadge = _nbArt > 1
+        ? '<span style="display:inline-block;background:var(--acBg);color:var(--ac);border:1px solid var(--ac);padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700">'+_nbArt+'</span>'
+        : '<span style="color:var(--txS)">1</span>';
       _tableHtml += '<tr style="'+_rowBg+'">'
         +'<td style="'+TDL+'">'+_dateDisp+'</td>'
         +'<td style="'+TD+';font-size:11px;color:var(--txS)">'+esc(String(r.o.order_id||'—'))+'</td>'
+        +'<td style="'+TD+'">'+_nbArtBadge+'</td>'
         +'<td style="'+TDL+'">'+esc(r.o.product_ref||'—')+'</td>'
         +'<td style="'+TDL+';max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(_prodName)+'">'+esc(_prodDisp)+'</td>'
         +'<td style="'+TD+'">'+r.revTtc.toLocaleString('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2})+'&nbsp;€</td>'
