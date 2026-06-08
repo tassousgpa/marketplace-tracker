@@ -179,6 +179,7 @@ const MARKETPLACES = [
   { id: "laredoute", label: "La Redoute" },
   { id: "but", label: "BUT" },
   { id: "manomano", label: "ManoMano" },
+  { id: "site_internet", label: "Site Internet" },
 ];
 
 // Couleurs identitaires par marketplace
@@ -191,6 +192,7 @@ const MP_COLORS = {
   laredoute:      { border: "#8b1dc1", bg: "#f8f0fc", text: "#6b0fa0", btn: "#7b14b0" },
   leroymerlin:    { border: "#67bb33", bg: "#f1fbea", text: "#3a8a1a", btn: "#4a9a22" },
   manomano:       { border: "#f5580a", bg: "#fff5f0", text: "#c0400a", btn: "#d44c0a" },
+  site_internet:  { border: "#0066cc", bg: "#f0f6ff", text: "#004c99", btn: "#0055bb" },
 };
 
 function applyMpTheme(mp) {
@@ -409,6 +411,7 @@ const TAB_NAMES_LIGHT_SEA = ["Synthèse","Produits","Historique","Alertes","Audi
 const TAB_NAMES_MINIMAL     = ["Synthèse","Alertes","Audit","Opé. Commerciales","TDC"];
 const TAB_NAMES_MINIMAL_SEA = ["Synthèse","Alertes","Audit","Opé. Commerciales","TDC","SEA"];
 const LAREDOUTE_TABS = ["Synthèse","Positions","Concurrents","Alertes","Audit","Opé. Commerciales","TDC"];
+const TAB_NAMES_SITE = ["Synthèse", "Projets/Backlog"];
 const MINIMAL_MP = new Set(["leroymerlin"]);
 const SEA_MP = new Set(["cdiscount","but","maisonsdumonde","conforama","manomano"]);
 
@@ -439,6 +442,7 @@ function stripUrlParams(s) {
   return s;
 }
 function getTabNames() {
+  if (MARKETPLACE === "site_internet") return TAB_NAMES_SITE;
   if (isMinimalMp()) return SEA_MP.has(MARKETPLACE) ? TAB_NAMES_MINIMAL_SEA : TAB_NAMES_MINIMAL;
   if (MARKETPLACE === "laredoute") return LAREDOUTE_TABS;
   if (isLightMp()) return SEA_MP.has(MARKETPLACE) ? TAB_NAMES_LIGHT_SEA : TAB_NAMES_LIGHT;
@@ -468,10 +472,36 @@ function switchMarketplace(mp, btn) {
 }
 
 async function loadData() {
+  if (MARKETPLACE === "site_internet") {
+    try {
+      const [revenueImports, revenueEntries, monthlyHistory] = await Promise.all([
+        sb("revenue_imports", "marketplace=eq.site_internet&select=*&order=period_start.asc").catch(()=>[]),
+        sb("revenue_entries", "marketplace=eq.site_internet&select=*&order=week_start_date.asc").catch(()=>[]),
+        sb("revenue_monthly_history", "marketplace=eq.site_internet&select=year,month,revenue&order=year.asc,month.asc").catch(()=>[]),
+      ]);
+      STATE.revenueImports = revenueImports;
+      STATE.revenueEntries = revenueEntries;
+      STATE.monthlyHistory = monthlyHistory;
+      STATE.products = [];
+      STATE.allProducts = [];
+      STATE.psSalesDaily = [];
+      STATE.productSalesWeekly = [];
+    } catch(e) {
+      STATE.revenueImports = [];
+      STATE.revenueEntries = [];
+      STATE.monthlyHistory = [];
+      STATE.products = [];
+      STATE.allProducts = [];
+      STATE.psSalesDaily = [];
+      STATE.productSalesWeekly = [];
+    }
+    renderTabs(); renderContent();
+    return;
+  }
   try {
     // Pour les positions : on récupère d'abord la date du dernier scraping (1 ligne),
     // puis on fetche TOUTES les positions de ce jour-là pour garantir les 18 keywords.
-    // Évite le problème de la limite 5000 qui tronquerait les premiers keywords.
+    // Évite le problème de la limite 5000 qui tronquerait les premiers keyboards.
     // La table positions ne contient que le dernier run (purge côté scraper avant chaque session)
     // → select * sans filtre ni limite, requête simple et fiable
     const [products, allProducts, snapshots, positions, sellerStats, revenueEntries, trackedSellers, revenueImports, productSalesWeekly, monthlyHistory, activeOps, activeOpProducts, seaCampaigns, seaProductStats, supplyStats, psSalesDaily, seaActiveProducts, seaActiveAllMp, commissionRates] = await Promise.all([
@@ -918,6 +948,15 @@ function switchTab(i) {
 }
 function renderContent() {
   const el = document.getElementById("content");
+  // Site Internet — page dédiée avec ses propres onglets
+  if (MARKETPLACE === "site_internet") {
+    switch(STATE.tab) {
+      case 0: el.innerHTML = renderSiteInternet(); break;
+      case 1: renderSiteBacklog(); break;
+      default: el.innerHTML = '';
+    }
+    return;
+  }
   // Minimal marketplaces (Leroy Merlin) — Synthèse, Alertes, Audit, Opé. [+ TDC] [+ SEA]
   if (isMinimalMp()) {
     switch(STATE.tab) {
@@ -1942,11 +1981,15 @@ function renderRevenueBlock() {
     return names[parseInt(mo)-1] + " " + y;
   };
 
-  const btnRow = `<div style="display:flex;gap:8px;flex-wrap:wrap">
-    <button onclick="openRevenueModal()" style="padding:6px 14px;border:.5px solid var(--ac);border-radius:6px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">+ Semaine manuelle</button>
-    <button onclick="openImportXLSModal('week')" style="padding:6px 14px;border:.5px solid var(--am);border-radius:6px;font-size:12px;background:var(--amBg);color:var(--am);cursor:pointer;font-weight:600;font-family:inherit">⬆ Import Odoo Semaine</button>
-    <button onclick="openImportXLSModal('ytd')" style="padding:6px 14px;border:.5px solid var(--pu);border-radius:6px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">⬆ Import YTD</button>
-  </div>`;
+  const btnRow = MARKETPLACE === "site_internet"
+    ? `<div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button onclick="openImportHistoricalModal()" style="padding:6px 14px;border:.5px solid var(--am);border-radius:6px;font-size:12px;background:var(--amBg);color:var(--am);cursor:pointer;font-weight:600;font-family:inherit">⬆ Import Ventes Semaines (Odoo)</button>
+      </div>`
+    : `<div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button onclick="openRevenueModal()" style="padding:6px 14px;border:.5px solid var(--ac);border-radius:6px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">+ Semaine manuelle</button>
+        <button onclick="openImportXLSModal('week')" style="padding:6px 14px;border:.5px solid var(--am);border-radius:6px;font-size:12px;background:var(--amBg);color:var(--am);cursor:pointer;font-weight:600;font-family:inherit">⬆ Import Odoo Semaine</button>
+        <button onclick="openImportXLSModal('ytd')" style="padding:6px 14px;border:.5px solid var(--pu);border-radius:6px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">⬆ Import YTD</button>
+      </div>`;
 
   // ── Somme CA PS sur une semaine ──────────────────────────────────
   function getPsWeekCA(weekLabel) {
@@ -4148,6 +4191,7 @@ const MP_LABELS = {
   leroymerlin:    "Leroy Merlin",
   manomano:       "ManoMano",
   but:            "BUT",
+  site_internet:  "Site Internet",
 };
 
 const ADMIN_PASSWORD = "sgpa92!";
@@ -4314,10 +4358,23 @@ function resolveOdooMp(ch) {
 }
 const ODOO_SKIP = ["Livraison","Retrait","Bon de réduction","Remise"];
 
+// Modes de paiement qui correspondent au canal Site Internet (source: Matrice mode de paiement)
+const SITE_INTERNET_PAYMENTS = new Set([
+  "alma - paiement en 10 fois","alma - paiement en 12 fois","alma - paiement en 24 fois",
+  "alma - paiement en 3 fois","alma - paiement en 4 fois","alma - payer maintenant",
+  "apple pay","bancontact","bancontact via stripe","bobochic","card","card via stripe",
+  "commande gratuite","crédit long oney","crédit long oney (cb)","google pay","mollie","oney",
+  "paiement par carte bancaire","paiement par carte bancaire en une ou plusieurs fois",
+  "paiment avec younited pay","pay by bank","paypal","real_de","transfert bancaire",
+  "via stripe","virement bancaire",
+]);
+
 // ── MAPPING colonnes XLS historique "Ventes par semaines" → marketplace ──
 function resolveXlsColMp(colHeader) {
   if (!colHeader) return null;
   const h = String(colHeader).toLowerCase().trim();
+  // Site Internet — vérification en premier (avant resolveOdooMp qui ne connaît pas ces modes)
+  if (SITE_INTERNET_PAYMENTS.has(h)) return 'site_internet';
   // Essai via resolveOdooMp (normalise les espaces en underscores)
   const byOdoo = resolveOdooMp(h.replace(/\s+/g,'_'));
   if (byOdoo) return byOdoo;
@@ -4385,7 +4442,7 @@ function openImportHistoricalModal() {
   openModal("Import Historique Ventes Semaines (XLS)", `
     <div style="display:grid;gap:14px">
       <div style="background:var(--amBg);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--am)">
-        Importe les fichiers "Ventes par semaines" multi-années (format : colonnes = modes de paiement, lignes = semaines). Les données sont stockées avec le type <b>hist</b> et ont une priorité inférieure à la sync PS et aux imports Odoo hebdomadaires.
+        Importe les fichiers "Ventes par semaines" multi-années (format : colonnes = modes de paiement, lignes = semaines). Les colonnes correspondant aux modes de paiement <b>Site Internet</b> sont automatiquement agrégées. Les données sont stockées avec le type <b>hist</b>.
       </div>
       <div>
         <label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Fichier XLS/XLSX *</label>
@@ -9674,6 +9731,111 @@ sessionStorage.setItem("admin_access", ADMIN_CODE);
     throw new Error("MAINTENANCE");
   }
 }
+// ─── Site Internet ────────────────────────────────────────────────────────────
+
+function renderSiteInternet() {
+  return renderRevenueBlock() + renderProductSalesBlocks();
+}
+
+// IDs des bases de données Notion — à renseigner après configuration
+const NOTION_DATABASES = [
+  { id: "fiches_produits",   label: "Création fiches produits en cours",        dbId: "" },
+  { id: "plan_photos",       label: "Plan clean photos",                         dbId: "" },
+  { id: "contenu_visuels",   label: "Création contenu / visuels réseaux sociaux", dbId: "" },
+  { id: "partenariats",      label: "Partenariats influence réseaux sociaux",    dbId: "" },
+];
+
+async function renderSiteBacklog() {
+  const el = document.getElementById("content");
+  el.innerHTML = `<div style="padding:24px">
+    <div style="font-size:18px;font-weight:700;color:#004c99;margin-bottom:4px">Projets / Backlog</div>
+    <div style="font-size:13px;color:#6b6a65;margin-bottom:24px">Données synchronisées depuis Notion</div>
+    <div id="notion-backlogs" style="display:flex;flex-direction:column;gap:32px">
+      ${NOTION_DATABASES.map(db => `
+        <div class="card" id="notion-block-${db.id}">
+          <div style="font-weight:600;font-size:15px;margin-bottom:12px;color:#004c99">${esc(db.label)}</div>
+          <div id="notion-content-${db.id}" style="font-size:13px;color:#6b6a65">
+            ${db.dbId ? 'Chargement…' : '<em>Base de données Notion non configurée — voir guide de configuration.</em>'}
+          </div>
+        </div>`).join('')}
+    </div>
+  </div>`;
+
+  // Charger chaque base configurée
+  for (const db of NOTION_DATABASES) {
+    if (!db.dbId) continue;
+    const target = document.getElementById("notion-content-" + db.id);
+    try {
+      const res = await fetch("/api/notion?db=" + encodeURIComponent(db.dbId));
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      target.innerHTML = renderNotionItems(data.results || []);
+    } catch(e) {
+      target.innerHTML = `<span style="color:#b5312c">Erreur de chargement : ${esc(String(e))}</span>`;
+    }
+  }
+}
+
+function renderNotionItems(items) {
+  if (!items.length) return '<em style="color:#aaa">Aucun élément.</em>';
+  return `<table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead>
+      <tr style="background:#f0f6ff">
+        <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">Titre</th>
+        <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">Statut</th>
+        <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">Assigné</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${items.map(item => {
+        const props = item.properties || {};
+        const title = _notionTitle(props);
+        const status = _notionStatus(props);
+        const assignee = _notionAssignee(props);
+        return `<tr style="border-bottom:1px solid #f0f0ee">
+          <td style="padding:7px 10px">${esc(title)}</td>
+          <td style="padding:7px 10px">${status ? `<span style="background:#e8f4ff;color:#004c99;border-radius:4px;padding:2px 7px;font-size:12px">${esc(status)}</span>` : ''}</td>
+          <td style="padding:7px 10px;color:#888">${esc(assignee)}</td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>`;
+}
+
+function _notionTitle(props) {
+  // Cherche la première propriété de type "title"
+  for (const key of Object.keys(props)) {
+    const p = props[key];
+    if (p.type === "title" && p.title && p.title.length) {
+      return p.title.map(t => t.plain_text || "").join("");
+    }
+  }
+  return "(sans titre)";
+}
+
+function _notionStatus(props) {
+  for (const key of ["Statut","Status","status","statut"]) {
+    const p = props[key];
+    if (!p) continue;
+    if (p.type === "status" && p.status) return p.status.name;
+    if (p.type === "select" && p.select) return p.select.name;
+  }
+  return "";
+}
+
+function _notionAssignee(props) {
+  for (const key of ["Assigné","Assigné à","Assigned","Responsable"]) {
+    const p = props[key];
+    if (!p) continue;
+    if (p.type === "people" && p.people && p.people.length) {
+      return p.people.map(u => u.name || "").join(", ");
+    }
+  }
+  return "";
+}
+
+// ─── Fin Site Internet ────────────────────────────────────────────────────────
+
 // Code d'accès général
 const accessGranted = sessionStorage.getItem("mkp_access");
 if (!accessGranted) {
