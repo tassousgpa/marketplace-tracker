@@ -6605,17 +6605,47 @@ async function openOpeDetail(id) {
     + (op.nom && op.nom.startsWith('Soldes Été') ? '<button onclick="openSoldesAnalysis('+id+')" style="padding:7px 14px;border:.5px solid var(--gn);border-radius:6px;font-size:12px;background:var(--gnBg);color:var(--gn);cursor:pointer;font-weight:600;font-family:inherit">📊 Analyse Soldes J/J</button>' : '')
     + '<button onclick="deleteOpe('+id+')" style="padding:7px 14px;border:.5px solid var(--rd);border-radius:6px;font-size:12px;background:var(--rdBg);color:var(--rd);cursor:pointer;font-weight:600;font-family:inherit">🗑 Supprimer</button>'
     + '</div>'
-    + '<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">'
-    + '<div style="font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;margin-bottom:8px">Ajouter un produit manuellement</div>'
-    + '<div style="display:grid;grid-template-columns:1fr 1.5fr 0.7fr 0.7fr auto;gap:8px;align-items:end">'
-    + '<div><label style="font-size:10px;color:var(--txS);display:block;margin-bottom:3px">Référence *</label><input id="ope-add-ref" placeholder="BES-XXXX" style="width:100%;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;box-sizing:border-box"></div>'
-    + '<div><label style="font-size:10px;color:var(--txS);display:block;margin-bottom:3px">Nom produit</label><input id="ope-add-nom" placeholder="optionnel" style="width:100%;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;box-sizing:border-box"></div>'
-    + '<div><label style="font-size:10px;color:var(--txS);display:block;margin-bottom:3px">Prix (€)</label><input id="ope-add-prix" type="number" step="0.01" placeholder="0.00" style="width:100%;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;box-sizing:border-box"></div>'
-    + '<div><label style="font-size:10px;color:var(--txS);display:block;margin-bottom:3px">'+(isMM?'Co-fin. (€)':'Commission (%)')+'</label><input id="ope-add-taux" type="number" step="0.1" placeholder="10" style="width:100%;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;box-sizing:border-box"></div>'
-    + '<button onclick="confirmAddOpeProd('+id+')" style="padding:7px 12px;background:var(--gn);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">+ Ajouter</button>'
-    + '</div>'
-    + '<div id="ope-add-status" style="font-size:11px;min-height:14px;margin-top:6px"></div>'
-    + '</div>';
+    + (function() {
+        var _existingRefs = new Set(prods.map(function(p){return p.ref;}));
+        var _catProds = (STATE.products||[]).filter(function(p){return p.sku && !_existingRefs.has(p.sku);});
+        var _commLbl = isMM ? 'Co-fin. (€)' : 'Commission (%)';
+        var _inp = 'width:100%;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;box-sizing:border-box';
+        var _catRows = !_catProds.length
+          ? '<div style="padding:10px;text-align:center;font-size:11px;color:var(--txS)">Tous les produits du catalogue sont déjà dans l\'opération.</div>'
+          : _catProds.map(function(p){
+              var lbl = esc(p.sku)+(p.name?' — '+esc(p.name.length>55?p.name.slice(0,55)+'…':p.name):'');
+              var sk = esc((p.sku+' '+(p.name||'')).toLowerCase());
+              return '<label style="display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:.5px solid var(--borderL);cursor:pointer;font-size:11px" data-search="'+sk+'">'
+                +'<input type="checkbox" class="ope-cat-cb" value="'+esc(p.sku)+'" data-nom="'+esc(p.name||'')+'" style="cursor:pointer">'
+                +'<span>'+lbl+'</span></label>';
+            }).join('');
+        return '<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">'
+          +'<div style="font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;margin-bottom:8px">Ajouter des produits</div>'
+          +'<div style="display:flex;gap:0;border:.5px solid var(--border);border-radius:7px;overflow:hidden;margin-bottom:10px;width:fit-content">'
+          +'<button id="ope-add-tab-cat" onclick="toggleOpeAddMode(\'cat\')" style="padding:6px 16px;font-size:11px;font-weight:600;border:none;cursor:pointer;font-family:inherit;background:var(--ac);color:#fff">📦 Catalogue</button>'
+          +'<button id="ope-add-tab-libre" onclick="toggleOpeAddMode(\'libre\')" style="padding:6px 16px;font-size:11px;font-weight:600;border:none;cursor:pointer;font-family:inherit;background:var(--card);color:var(--txS);border-left:.5px solid var(--border)">✏️ Saisie libre</button>'
+          +'</div>'
+          // ── Catalogue ──
+          +'<div id="ope-add-cat">'
+          +'<input id="ope-cat-search" placeholder="Rechercher par SKU ou nom…" oninput="filterOpeCat()" style="'+_inp+';margin-bottom:6px">'
+          +'<div id="ope-cat-list" style="max-height:160px;overflow-y:auto;border:.5px solid var(--border);border-radius:6px;background:var(--bg);margin-bottom:8px">'+_catRows+'</div>'
+          +'<div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end">'
+          +'<div><label style="font-size:10px;color:var(--txS);display:block;margin-bottom:3px">Prix (€) — optionnel</label><input id="ope-add-prix-cat" type="number" step="0.01" placeholder="0.00" style="'+_inp+'"></div>'
+          +'<div><label style="font-size:10px;color:var(--txS);display:block;margin-bottom:3px">'+_commLbl+'</label><input id="ope-add-taux-cat" type="number" step="0.1" placeholder="10" style="'+_inp+'"></div>'
+          +'<button onclick="confirmAddOpeProdCat('+id+')" style="padding:7px 12px;background:var(--gn);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">+ Ajouter</button>'
+          +'</div></div>'
+          // ── Saisie libre ──
+          +'<div id="ope-add-libre" style="display:none">'
+          +'<div style="display:grid;grid-template-columns:1fr 1.5fr 0.7fr 0.7fr auto;gap:8px;align-items:end">'
+          +'<div><label style="font-size:10px;color:var(--txS);display:block;margin-bottom:3px">Référence *</label><input id="ope-add-ref" placeholder="BES-XXXX" style="'+_inp+'"></div>'
+          +'<div><label style="font-size:10px;color:var(--txS);display:block;margin-bottom:3px">Nom produit</label><input id="ope-add-nom" placeholder="optionnel" style="'+_inp+'"></div>'
+          +'<div><label style="font-size:10px;color:var(--txS);display:block;margin-bottom:3px">Prix (€)</label><input id="ope-add-prix" type="number" step="0.01" placeholder="0.00" style="'+_inp+'"></div>'
+          +'<div><label style="font-size:10px;color:var(--txS);display:block;margin-bottom:3px">'+_commLbl+'</label><input id="ope-add-taux" type="number" step="0.1" placeholder="10" style="'+_inp+'"></div>'
+          +'<button onclick="confirmAddOpeProd('+id+')" style="padding:7px 12px;background:var(--gn);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">+ Ajouter</button>'
+          +'</div></div>'
+          +'<div id="ope-add-status" style="font-size:11px;min-height:14px;margin-top:6px"></div>'
+          +'</div>';
+      })();
 
   openModal("📋 "+esc(op.nom), html);
 
@@ -7096,6 +7126,50 @@ async function confirmAddOpeProd(opId) {
     await sbInsert("operation_products", { operation_id: opId, marketplace: MARKETPLACE, ref, nom_produit: nom||null, prix, taux_commission: taux });
     openOpeDetail(opId);
   } catch(e) { if(statusEl) statusEl.innerHTML='<span style="color:var(--rd)">Erreur : '+esc(e.message)+'</span>'; }
+}
+
+function toggleOpeAddMode(mode) {
+  var cat   = document.getElementById('ope-add-cat');
+  var libre = document.getElementById('ope-add-libre');
+  var tCat  = document.getElementById('ope-add-tab-cat');
+  var tLibre= document.getElementById('ope-add-tab-libre');
+  if (cat)   cat.style.display   = mode === 'cat'   ? 'block' : 'none';
+  if (libre) libre.style.display = mode === 'libre' ? 'block' : 'none';
+  if (tCat)   { tCat.style.background   = mode==='cat'   ? 'var(--ac)' : 'var(--card)'; tCat.style.color   = mode==='cat'   ? '#fff' : 'var(--txS)'; }
+  if (tLibre) { tLibre.style.background = mode==='libre' ? 'var(--ac)' : 'var(--card)'; tLibre.style.color = mode==='libre' ? '#fff' : 'var(--txS)'; }
+}
+
+function filterOpeCat() {
+  var q = (document.getElementById('ope-cat-search')?.value || '').toLowerCase();
+  var list = document.getElementById('ope-cat-list');
+  if (!list) return;
+  list.querySelectorAll('label[data-search]').forEach(function(el) {
+    el.style.display = (!q || (el.dataset.search || '').indexOf(q) >= 0) ? '' : 'none';
+  });
+}
+
+async function confirmAddOpeProdCat(opId) {
+  var statusEl = document.getElementById('ope-add-status');
+  var checked  = Array.from(document.querySelectorAll('.ope-cat-cb:checked'));
+  if (!checked.length) { if (statusEl) statusEl.innerHTML = '<span style="color:var(--am)">Sélectionnez au moins un produit.</span>'; return; }
+  var prix    = parseFloat((document.getElementById('ope-add-prix-cat')?.value||'').replace(',','.')) || null;
+  var tauxRaw = document.getElementById('ope-add-taux-cat')?.value;
+  var taux    = _parseTauxOpe(tauxRaw, MARKETPLACE === 'manomano');
+  var rows = checked.map(function(cb) {
+    return { operation_id: opId, marketplace: MARKETPLACE, ref: cb.value, nom_produit: cb.dataset.nom || null, prix: prix, taux_commission: taux };
+  });
+  if (statusEl) statusEl.innerHTML = '<span style="color:var(--txS)">Ajout de '+rows.length+' produit(s)…</span>';
+  try {
+    for (var i = 0; i < rows.length; i += 200) {
+      var resp = await fetch(SB_URL+'/rest/v1/operation_products', {
+        method: 'POST',
+        headers: { apikey: SB_KEY, Authorization: 'Bearer '+SB_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify(rows.slice(i, i+200))
+      });
+      if (!resp.ok) throw new Error('HTTP '+resp.status+' — '+await resp.text());
+    }
+    openOpeDetail(opId);
+  } catch(e) { if (statusEl) statusEl.innerHTML = '<span style="color:var(--rd)">Erreur : '+esc(e.message)+'</span>'; }
 }
 
 // ── Parsing taux commission — gère format % Excel (0.1) et entier (10) ──────
