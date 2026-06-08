@@ -7111,48 +7111,45 @@ function _parseTauxOpe(v, isMM) {
   return (hasPercSign || n >= 1) ? n / 100 : n;
 }
 
-function _downloadCsv(filename, rows) {
-  var csv = rows.map(function(r) {
-    return r.map(function(c) {
-      var s = c == null ? '' : String(c);
-      return (s.indexOf(',')>=0||s.indexOf('"')>=0||s.indexOf('\n')>=0) ? '"'+s.replace(/"/g,'""')+'"' : s;
-    }).join(',');
-  }).join('\r\n');
-  var blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8'});
-  var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+function _downloadXlsx(filename, aoa, sheetName) {
+  var wb = XLSX.utils.book_new();
+  var ws = XLSX.utils.aoa_to_sheet(aoa);
+  XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Template');
+  XLSX.writeFile(wb, filename);
 }
 
 function downloadOpeTemplate() {
   var isMM = MARKETPLACE === 'manomano';
-  _downloadCsv('template_ope_produits.csv', [
-    ['# Template import produits opération commerciale'],
-    ['# Remplir à partir de la ligne 8 — ne pas modifier les lignes 1 à 7'],
+  _downloadXlsx('template_ope_produits.xlsx', [
+    ['Template import produits — opération commerciale'],
+    ['Remplir à partir de la ligne 8. Ne pas modifier les lignes 1 à 7.'],
     [''],[''],[''],[''],
-    ['Ref enfant','Nom produit','Prix (€)', isMM?'Co-financement (€)':'Commission (%) — entier ex: 10 pour 10%'],
-    ['BES-EXEMPLE','Produit exemple','99.90','10'],
-  ]);
+    ['Ref enfant', 'Nom produit', 'Prix (€)', isMM ? 'Co-financement (€)' : 'Commission (%) — entier ex: 10 pour 10%'],
+    ['BES-EXEMPLE', 'Produit exemple', 99.90, 10],
+  ], 'Produits');
 }
 
 function downloadOpeTemplateFull() {
   var isMM = MARKETPLACE === 'manomano';
   var today = new Date().toISOString().slice(0,10);
-  _downloadCsv('template_ope_commerciale_full.csv', [
+  _downloadXlsx('template_ope_commerciale_full.xlsx', [
     [''],
-    ['Type:','DEALS EXCLUSIFS'],
-    ['Nom:','Nom Opération'],
+    ['Type:', 'DEALS EXCLUSIFS'],
+    ['Nom:', 'Nom Opération'],
     [''],[''],[''],
-    ['','Ref enfant','Nom produit','Prix (€)',isMM?'Co-financement (€)':'Commission (%) — entier ex: 10','Opération','Date début','Date fin'],
-    ['','BES-EXEMPLE','Produit exemple','99.90','10','Nom Opération',today,today],
-  ]);
+    ['', 'Ref enfant', 'Nom produit', 'Prix (€)', isMM ? 'Co-financement (€)' : 'Commission (%) — entier ex: 10', 'Opération', 'Date début', 'Date fin'],
+    ['', 'BES-EXEMPLE', 'Produit exemple', 99.90, 10, 'Nom Opération', today, today],
+  ], 'Opération');
 }
 
 function downloadSEAActiveTemplate() {
-  _downloadCsv('template_sea_actifs.csv', [
-    ['# Template import produits SEA actifs'],
-    ['# Colonne A = SKU produit (une ligne par SKU — pas d\'entête)'],
+  _downloadXlsx('template_sea_actifs.xlsx', [
+    ['Template import produits SEA actifs'],
+    ['Colonne A = SKU produit (une ligne par SKU, sans en-tête de données)'],
+    ['SKU'],
     ['BES-EXEMPLE'],
     ['BES-EXEMPLE2'],
-  ]);
+  ], 'SEA Actifs');
 }
 
 function openOpeEdit(id) {
