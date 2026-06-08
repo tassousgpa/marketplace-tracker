@@ -10067,8 +10067,157 @@ function _filterSeoPositions() {
 
 // ─── Site Internet ────────────────────────────────────────────────────────────
 
+function renderSiteHeatmap() {
+  const psSales = STATE.psSalesDaily || [];
+
+  // Semaine courante lun-dim
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const nowUTC   = new Date();
+  const dow = nowUTC.getUTCDay() || 7; // 1=lun … 7=dim
+  const monday = new Date(nowUTC);
+  monday.setUTCDate(nowUTC.getUTCDate() - (dow - 1));
+  monday.setUTCHours(0, 0, 0, 0);
+
+  const weekDates = Array.from({length: 7}, (_, i) => {
+    const d = new Date(monday);
+    d.setUTCDate(monday.getUTCDate() + i);
+    return d.toISOString().slice(0, 10);
+  });
+  const DAY_FR = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+
+  // Tranches horaires : 00-06 puis toutes les 2h
+  const SLOTS = [
+    {label:'00h – 06h', from:0,  to:6},
+    {label:'06h – 08h', from:6,  to:8},
+    {label:'08h – 10h', from:8,  to:10},
+    {label:'10h – 12h', from:10, to:12},
+    {label:'12h – 14h', from:12, to:14},
+    {label:'14h – 16h', from:14, to:16},
+    {label:'16h – 18h', from:16, to:18},
+    {label:'18h – 20h', from:18, to:20},
+    {label:'20h – 22h', from:20, to:22},
+    {label:'22h – 24h', from:22, to:24},
+  ];
+
+  // Matrice [slot][jour] = qty
+  const matrix = SLOTS.map(() => new Array(7).fill(0));
+  let hasTimeData = false;
+
+  psSales.forEach(s => {
+    const saleStr  = String(s.sale_date || '');
+    const dateOnly = saleStr.slice(0, 10);
+    const dayIdx   = weekDates.indexOf(dateOnly);
+    if (dayIdx < 0) return;
+
+    let hour = 0;
+    if (saleStr.length > 10) {
+      const t = new Date(saleStr.includes('T') ? saleStr : saleStr.replace(' ', 'T') + 'Z');
+      hour = t.getUTCHours();
+      if (hour > 0) hasTimeData = true;
+    }
+
+    const slotIdx = SLOTS.findIndex(sl => hour >= sl.from && hour < sl.to);
+    if (slotIdx < 0) return;
+    matrix[slotIdx][dayIdx] += (s.quantity || 1);
+  });
+
+  const colTotals = weekDates.map((_, di) => SLOTS.reduce((s, _, si) => s + matrix[si][di], 0));
+  const rowTotals = SLOTS.map((_, si) => weekDates.reduce((s, _, di) => s + matrix[si][di], 0));
+  const grandTotal = colTotals.reduce((a, b) => a + b, 0);
+  const maxCell = Math.max(...matrix.flat(), 1);
+
+  const nowHour  = nowUTC.getUTCHours();
+  const todayIdx = weekDates.indexOf(todayStr);
+
+  // Couleur de cellule : intensité bleue selon valeur
+  function cellStyle(si, di, val) {
+    const isFuture = di > todayIdx || (di === todayIdx && SLOTS[si].from > nowHour);
+    if (isFuture) return 'background:#f7f6f4;color:var(--txT)';
+    if (val === 0) return 'background:#fafaf8;color:var(--txT)';
+    const intensity = val / maxCell;
+    const alpha = 0.12 + intensity * 0.75;
+    const textColor = intensity > 0.55 ? '#fff' : 'var(--tx)';
+    return `background:rgba(44,94,160,${alpha.toFixed(2)});color:${textColor}`;
+  }
+
+  const headerCells = weekDates.map((d, di) => {
+    const isToday = di === todayIdx;
+    return `<th style="padding:8px 6px;text-align:center;font-weight:${isToday?'700':'600'};font-size:12px;color:${isToday?'#004c99':'var(--txS)'};border-bottom:2px solid ${isToday?'#0066cc':'var(--border)'};min-width:58px;white-space:nowrap">
+      ${DAY_FR[di]}<br><span style="font-weight:400;font-size:10px">${d.slice(8)+'/'+ d.slice(5,7)}</span>
+    </th>`;
+  }).join('');
+
+  const bodyRows = SLOTS.map((slot, si) => {
+    const isCurrentSlot = todayIdx >= 0 && nowHour >= slot.from && nowHour < slot.to;
+    const cells = weekDates.map((_, di) => {
+      const val = matrix[si][di];
+      const isFuture = di > todayIdx || (di === todayIdx && slot.from > nowHour);
+      const st = cellStyle(si, di, val);
+      return `<td style="padding:7px 4px;text-align:center;font-weight:${val>0?'700':'400'};font-size:13px;border-right:.5px solid var(--borderL);${st}">
+        ${isFuture ? '' : (val > 0 ? val : '—')}
+      </td>`;
+    }).join('');
+    const rowTotal = rowTotals[si];
+    return `<tr style="border-bottom:.5px solid var(--borderL)${isCurrentSlot?';box-shadow:inset 3px 0 0 #0066cc':''}">
+      <td style="padding:7px 10px;font-size:11px;font-weight:${isCurrentSlot?'700':'500'};color:${isCurrentSlot?'#004c99':'var(--txS)'};white-space:nowrap;border-right:1.5px solid var(--border);background:var(--bg)">${slot.label}</td>
+      ${cells}
+      <td style="padding:7px 8px;text-align:center;font-weight:700;font-size:12px;color:var(--ac);border-left:1.5px solid var(--border);background:var(--acBg)">${rowTotal || '—'}</td>
+    </tr>`;
+  }).join('');
+
+  const footerCells = weekDates.map((_, di) => {
+    const v = colTotals[di];
+    const isToday = di === todayIdx;
+    return `<td style="padding:7px 4px;text-align:center;font-weight:700;font-size:12px;color:${isToday?'#004c99':'var(--ac)'};border-right:.5px solid var(--borderL);background:var(--acBg)">${v || '—'}</td>`;
+  }).join('');
+
+  if (!hasTimeData && grandTotal > 0) {
+    // Les sale_date sont des dates sans heure → on ne peut pas faire la distribution horaire
+    return `<div class="card" style="margin-top:16px">
+      <div class="card-title">⏱ Ventes par tranche horaire — semaine en cours</div>
+      <div style="padding:16px;font-size:12px;color:var(--am);background:var(--amBg);border-radius:8px">
+        ⚠️ Les dates de vente en base ne contiennent pas l'heure (format date sans timestamp). Le tableau horaire nécessite que <code>sale_date</code> soit un champ <b>timestamp</b> en base.
+      </div>
+    </div>`;
+  }
+
+  if (grandTotal === 0) {
+    return `<div class="card" style="margin-top:16px">
+      <div class="card-title">⏱ Ventes par tranche horaire — semaine en cours</div>
+      <div style="padding:20px;text-align:center;font-size:12px;color:var(--txT)">Aucune vente cette semaine.</div>
+    </div>`;
+  }
+
+  return `<div class="card" style="margin-top:16px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <div class="card-title" style="margin:0">⏱ Ventes par tranche horaire — semaine en cours</div>
+      <span style="padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;background:#fef9ec;color:#a35f00;border:.5px solid #e9c97a">● Live</span>
+      <span style="font-size:12px;color:var(--txT);margin-left:auto">${grandTotal} ventes · ${weekDates.filter((_,i)=>colTotals[i]>0).length} jours actifs</span>
+    </div>
+    <div style="overflow-x:auto">
+      <table style="border-collapse:collapse;font-size:12px;width:100%">
+        <thead>
+          <tr style="border-bottom:2px solid var(--border)">
+            <th style="padding:8px 10px;text-align:left;font-size:11px;color:var(--txS);font-weight:600;background:var(--bg);border-right:1.5px solid var(--border);min-width:110px">Tranche</th>
+            ${headerCells}
+            <th style="padding:8px 8px;text-align:center;font-size:11px;color:var(--ac);font-weight:700;border-left:1.5px solid var(--border);background:var(--acBg);min-width:52px">Total</th>
+          </tr>
+        </thead>
+        <tbody>${bodyRows}</tbody>
+        <tfoot>
+          <tr style="border-top:2px solid var(--border)">
+            <td style="padding:7px 10px;font-size:11px;font-weight:700;color:var(--ac);background:var(--acBg);border-right:1.5px solid var(--border)">Total</td>
+            ${footerCells}
+            <td style="padding:7px 8px;text-align:center;font-weight:800;font-size:13px;color:var(--ac);border-left:1.5px solid var(--border);background:var(--acBg)">${grandTotal}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>`;
+}
+
 function renderSiteInternet() {
-  return renderRevenueBlock() + renderProductSalesBlocks();
+  return renderRevenueBlock() + renderSiteHeatmap() + renderProductSalesBlocks();
 }
 
 // IDs des bases de données Notion — à renseigner après configuration
