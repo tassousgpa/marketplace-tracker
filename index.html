@@ -489,6 +489,8 @@ async function loadData() {
       STATE.productSalesWeekly = productSalesWeekly;
       STATE.products = [];
       STATE.allProducts = [];
+      STATE.activeOps = [];
+      STATE.activeOpProducts = [];
     } catch(e) {
       STATE.revenueImports = [];
       STATE.revenueEntries = [];
@@ -497,6 +499,8 @@ async function loadData() {
       STATE.productSalesWeekly = [];
       STATE.products = [];
       STATE.allProducts = [];
+      STATE.activeOps = [];
+      STATE.activeOpProducts = [];
     }
     renderTabs(); renderContent();
     return;
