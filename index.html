@@ -479,8 +479,8 @@ async function loadData() {
         sb("revenue_imports", "marketplace=eq.site_internet&select=*&order=period_start.asc").catch(()=>[]),
         sb("revenue_entries", "marketplace=eq.site_internet&select=*&order=week_start_date.asc").catch(()=>[]),
         sb("revenue_monthly_history", "marketplace=eq.site_internet&select=year,month,revenue&order=year.asc,month.asc").catch(()=>[]),
-        sb("ps_sales_daily", `marketplace=eq.site_internet&sale_date=gte.${yr}-01-01&select=order_id,order_reference,product_ref,product_name,sale_date,quantity,revenue_ht,shipping_ht,revenue_ttc,shipping_ttc&order=sale_date.desc&limit=10000`).catch(()=>[]),
-        sb("product_sales_weekly", "marketplace=eq.site_internet&select=*&order=week_label.desc").catch(()=>[]),
+        sb("ps_sales_daily", `marketplace=eq.site&sale_date=gte.${yr}-01-01&select=order_id,order_reference,product_ref,product_name,sale_date,quantity,revenue_ht,shipping_ht,revenue_ttc,shipping_ttc&order=sale_date.desc&limit=10000`).catch(()=>[]),
+        sb("product_sales_weekly", "marketplace=eq.site&select=*&order=week_label.desc").catch(()=>[]),
       ]);
       STATE.revenueImports = revenueImports;
       STATE.revenueEntries = revenueEntries;
