@@ -1,0 +1,206 @@
+const crypto = require('crypto');
+
+async function getGoogleToken(serviceAccountJson, scope) {
+  const sa = JSON.parse(serviceAccountJson);
+  const now = Math.floor(Date.now() / 1000);
+  const h = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
+  const c = Buffer.from(JSON.stringify({
+    iss: sa.client_email,
+    scope,
+    aud: 'https://oauth2.googleapis.com/token',
+    exp: now + 3600,
+    iat: now,
+  })).toString('base64url');
+  const toSign = `${h}.${c}`;
+  const signer = crypto.createSign('RSA-SHA256');
+  signer.update(toSign);
+  const sig = signer.sign(sa.private_key, 'base64url');
+  const jwt = `${toSign}.${sig}`;
+
+  const r = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,
+  });
+  const d = await r.json();
+  if (!d.access_token) throw new Error('Auth failed: ' + JSON.stringify(d));
+  return d.access_token;
+}
+
+async function runReport(token, propertyId, body) {
+  const r = await fetch(
+    `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }
+  );
+  if (!r.ok) {
+    const t = await r.text();
+    throw new Error(`GA4 ${r.status}: ${t}`);
+  }
+  return r.json();
+}
+
+function parseRows(data) {
+  return (data.rows || []).map(row => ({
+    dims: (row.dimensionValues || []).map(v => v.value),
+    mets: (row.metricValues || []).map(v => parseFloat(v.value) || 0),
+  }));
+}
+
+// Aggregate totals from rows (when no dimensions requested, GA4 may return single row)
+function sumMetrics(data, metIdx) {
+  return (data.rows || []).reduce((sum, row) => {
+    return sum + (parseFloat(row.metricValues?.[metIdx]?.value) || 0);
+  }, 0);
+}
+
+const ORGANIC_FILTER = {
+  filter: {
+    fieldName: 'sessionDefaultChannelGroup',
+    stringFilter: { matchType: 'EXACT', value: 'Organic Search' },
+  },
+};
+
+// Last completed calendar week Mon–Sun
+function lastWeek() {
+  const now = new Date();
+  const dow = now.getUTCDay() || 7; // 1=Mon … 7=Sun
+  const lastSun = new Date(now);
+  lastSun.setUTCDate(now.getUTCDate() - dow);
+  const lastMon = new Date(lastSun);
+  lastMon.setUTCDate(lastSun.getUTCDate() - 6);
+  const fmt = d => d.toISOString().slice(0, 10);
+  // ISO week number
+  const jan1 = new Date(Date.UTC(lastMon.getUTCFullYear(), 0, 1));
+  const wn = Math.ceil(((lastMon - jan1) / 86400000 + jan1.getUTCDay() + 1) / 7);
+  return { start: fmt(lastMon), end: fmt(lastSun), label: `S${wn} ${lastMon.getUTCFullYear()}` };
+}
+
+function lastWeekN1() {
+  const wk = lastWeek();
+  const s = new Date(wk.start); s.setUTCFullYear(s.getUTCFullYear() - 1);
+  const e = new Date(wk.end);   e.setUTCFullYear(e.getUTCFullYear() - 1);
+  return { start: s.toISOString().slice(0, 10), end: e.toISOString().slice(0, 10) };
+}
+
+export default async function handler(req, res) {
+  const saJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  const propertyId = process.env.GA4_PROPERTY_ID;
+
+  if (!saJson || !propertyId) {
+    return res.status(500).json({
+      error: 'GA4 not configured (GOOGLE_SERVICE_ACCOUNT_JSON or GA4_PROPERTY_ID missing)',
+    });
+  }
+
+  let token;
+  try {
+    token = await getGoogleToken(saJson, 'https://www.googleapis.com/auth/analytics.readonly');
+  } catch (e) {
+    return res.status(500).json({ error: 'Auth error: ' + e.message });
+  }
+
+  const type = req.query.type;
+
+  try {
+    // ── KPIs : last completed week vs N-1 ──────────────────────────
+    if (type === 'kpi') {
+      const wk  = lastWeek();
+      const wkN1 = lastWeekN1();
+      const metrics = [
+        { name: 'sessions' },
+        { name: 'transactions' },
+        { name: 'purchaseToVisitRate' },
+      ];
+      const [curData, n1Data] = await Promise.all([
+        runReport(token, propertyId, {
+          dateRanges: [{ startDate: wk.start, endDate: wk.end }],
+          metrics,
+          dimensionFilter: ORGANIC_FILTER,
+        }),
+        runReport(token, propertyId, {
+          dateRanges: [{ startDate: wkN1.start, endDate: wkN1.end }],
+          metrics,
+          dimensionFilter: ORGANIC_FILTER,
+        }),
+      ]);
+      const getTotal = (data, idx) => {
+        // No dimensions → single row with aggregate, or in totals
+        const t = data.totals?.[0]?.metricValues?.[idx];
+        if (t) return parseFloat(t.value) || 0;
+        return sumMetrics(data, idx);
+      };
+      res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=300');
+      return res.status(200).json({
+        current: {
+          sessions: getTotal(curData, 0),
+          transactions: getTotal(curData, 1),
+          conversionRate: getTotal(curData, 2),
+        },
+        n1: {
+          sessions: getTotal(n1Data, 0),
+          transactions: getTotal(n1Data, 1),
+          conversionRate: getTotal(n1Data, 2),
+        },
+        weekLabel: wk.label,
+        week: wk,
+        weekN1: wkN1,
+      });
+    }
+
+    // ── Sessions par jour — 7 derniers jours ──────────────────────
+    if (type === 'daily') {
+      const data = await runReport(token, propertyId, {
+        dateRanges: [{ startDate: '7daysAgo', endDate: 'yesterday' }],
+        dimensions: [{ name: 'date' }],
+        metrics: [{ name: 'sessions' }],
+        dimensionFilter: ORGANIC_FILTER,
+        orderBys: [{ dimension: { dimensionName: 'date' } }],
+      });
+      const rows = parseRows(data);
+      res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=300');
+      return res.status(200).json({
+        days: rows.map(r => ({ date: r.dims[0], sessions: r.mets[0] })),
+      });
+    }
+
+    // ── Distribution horaire — 7 derniers jours ───────────────────
+    if (type === 'hourly') {
+      const data = await runReport(token, propertyId, {
+        dateRanges: [{ startDate: '7daysAgo', endDate: 'yesterday' }],
+        dimensions: [{ name: 'hour' }],
+        metrics: [{ name: 'sessions' }],
+        dimensionFilter: ORGANIC_FILTER,
+        orderBys: [{ dimension: { dimensionName: 'hour' } }],
+      });
+      const rows = parseRows(data);
+      res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=300');
+      return res.status(200).json({
+        hours: rows.map(r => ({ hour: parseInt(r.dims[0], 10), sessions: r.mets[0] })),
+      });
+    }
+
+    // ── Évolution hebdomadaire — 52 dernières semaines ────────────
+    if (type === 'evolution') {
+      const data = await runReport(token, propertyId, {
+        dateRanges: [{ startDate: '364daysAgo', endDate: 'yesterday' }],
+        dimensions: [{ name: 'yearWeek' }],
+        metrics: [{ name: 'sessions' }],
+        dimensionFilter: ORGANIC_FILTER,
+        orderBys: [{ dimension: { dimensionName: 'yearWeek' } }],
+      });
+      const rows = parseRows(data);
+      res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=300');
+      return res.status(200).json({
+        weeks: rows.map(r => ({ yearWeek: r.dims[0], sessions: r.mets[0] })),
+      });
+    }
+
+    return res.status(400).json({ error: `Unknown type: ${type}` });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+}

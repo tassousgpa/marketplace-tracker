@@ -411,7 +411,7 @@ const TAB_NAMES_LIGHT_SEA = ["Synthèse","Produits","Historique","Alertes","Audi
 const TAB_NAMES_MINIMAL     = ["Synthèse","Alertes","Audit","Opé. Commerciales","TDC"];
 const TAB_NAMES_MINIMAL_SEA = ["Synthèse","Alertes","Audit","Opé. Commerciales","TDC","SEA"];
 const LAREDOUTE_TABS = ["Synthèse","Positions","Concurrents","Alertes","Audit","Opé. Commerciales","TDC"];
-const TAB_NAMES_SITE = ["Synthèse", "Projets/Backlog"];
+const TAB_NAMES_SITE = ["Synthèse", "SEO", "Positions SEO", "Projets/Backlog"];
 const MINIMAL_MP = new Set(["leroymerlin"]);
 const SEA_MP = new Set(["cdiscount","but","maisonsdumonde","conforama","manomano"]);
 
@@ -952,7 +952,9 @@ function renderContent() {
   if (MARKETPLACE === "site_internet") {
     switch(STATE.tab) {
       case 0: el.innerHTML = renderSiteInternet(); break;
-      case 1: renderSiteBacklog(); break;
+      case 1: renderSiteSEO(); break;
+      case 2: renderSitePositionsSEO(); break;
+      case 3: renderSiteBacklog(); break;
       default: el.innerHTML = '';
     }
     return;
@@ -9731,6 +9733,335 @@ sessionStorage.setItem("admin_access", ADMIN_CODE);
     throw new Error("MAINTENANCE");
   }
 }
+// ─── SEO helpers ──────────────────────────────────────────────────────────────
+
+function _ensureChartJs(cb) {
+  if (window.Chart) { cb(); return; }
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js';
+  s.onload = cb;
+  s.onerror = () => cb(new Error('Chart.js failed to load'));
+  document.head.appendChild(s);
+}
+
+function _destroyChart(id) {
+  if (window._seoCharts && window._seoCharts[id]) {
+    window._seoCharts[id].destroy();
+    delete window._seoCharts[id];
+  }
+}
+function _saveChart(id, chart) {
+  if (!window._seoCharts) window._seoCharts = {};
+  window._seoCharts[id] = chart;
+}
+
+const _SEO_BLUE = '#2c5ea0';
+const _SEO_BLUE_LIGHT = 'rgba(44,94,160,0.12)';
+
+function _fmtPct(v) { return v == null ? '—' : (v * 100).toFixed(2).replace('.', ',') + '%'; }
+function _fmtNum(v) { return v == null ? '—' : Math.round(v).toLocaleString('fr-FR'); }
+function _pctEvol(cur, prev) {
+  if (!prev) return null;
+  return ((cur - prev) / prev * 100).toFixed(1);
+}
+function _evolBadge(cur, prev) {
+  const p = _pctEvol(cur, prev);
+  if (p == null) return '';
+  const up = parseFloat(p) >= 0;
+  return `<span style="font-size:11px;font-weight:600;color:${up?'var(--gn)':'var(--rd)'};margin-left:6px">${up?'▲':'▼'} ${Math.abs(p)}%</span>`;
+}
+
+// Jours de la semaine en FR à partir d'une date YYYYMMDD
+function _dayLabel(d) {
+  const y = d.slice(0,4), m = d.slice(4,6), day = d.slice(6,8);
+  const dt = new Date(`${y}-${m}-${day}T12:00:00Z`);
+  return ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'][dt.getUTCDay()];
+}
+
+// Placeholder chart avec message d'erreur ou de config
+function _seoErrorHtml(msg) {
+  return `<div style="padding:32px 24px;text-align:center;color:var(--txT);font-size:13px">${msg}</div>`;
+}
+
+async function renderSiteSEO() {
+  const el = document.getElementById('content');
+  el.innerHTML = `
+    <div style="padding:24px;display:flex;flex-direction:column;gap:20px">
+      <div id="seo-kpis" class="metrics" style="margin-bottom:0">
+        ${[1,2,3,4].map(()=>`<div class="metric"><div class="metric-label" style="background:var(--borderL);border-radius:4px;width:80px;height:12px;margin-bottom:6px"></div><div class="metric-value" style="background:var(--borderL);border-radius:4px;width:50px;height:28px"></div></div>`).join('')}
+      </div>
+      <div class="card" style="min-height:200px">
+        <div class="card-title">Sessions organiques — 7 derniers jours</div>
+        <div id="wrap-daily" style="position:relative;height:180px"><canvas id="chart-daily"></canvas></div>
+      </div>
+      <div class="card" style="min-height:160px">
+        <div class="card-title">Distribution horaire — % des sessions (moy. 7 jours)</div>
+        <div id="wrap-hourly" style="position:relative;height:150px"><canvas id="chart-hourly"></canvas></div>
+      </div>
+      <div class="card" style="min-height:200px">
+        <div class="card-title">Évolution trafic organique (52 semaines)</div>
+        <div id="wrap-evolution" style="position:relative;height:180px"><canvas id="chart-evolution"></canvas></div>
+      </div>
+    </div>`;
+
+  _ensureChartJs(async (err) => {
+    if (err) {
+      document.getElementById('seo-kpis').innerHTML = _seoErrorHtml('Impossible de charger Chart.js');
+      return;
+    }
+    try {
+      const [kpi, daily, hourly, evol] = await Promise.all([
+        fetch('/api/ga4?type=kpi').then(r => r.json()),
+        fetch('/api/ga4?type=daily').then(r => r.json()),
+        fetch('/api/ga4?type=hourly').then(r => r.json()),
+        fetch('/api/ga4?type=evolution').then(r => r.json()),
+      ]);
+
+      if (kpi.error || daily.error) {
+        const msg = kpi.error || daily.error || 'Erreur API GA4';
+        if (msg.includes('not configured')) {
+          document.getElementById('seo-kpis').innerHTML = _seoErrorHtml(`⚙️ GA4 non configuré — voir guide de configuration ci-dessous.<br><br>
+            <div style="text-align:left;background:var(--acBg);border-radius:8px;padding:14px;font-size:12px;color:var(--ac);max-width:520px;margin:0 auto">
+              <b>Variables Vercel à ajouter :</b><br>
+              • <code>GOOGLE_SERVICE_ACCOUNT_JSON</code> — JSON du compte de service Google<br>
+              • <code>GA4_PROPERTY_ID</code> — ID de propriété GA4 (ex: 123456789)<br><br>
+              Voir guide complet dans la documentation.
+            </div>`);
+        } else {
+          document.getElementById('seo-kpis').innerHTML = _seoErrorHtml('❌ ' + esc(msg));
+        }
+        return;
+      }
+
+      // ── KPI cards ────────────────────────────────────────────────
+      const cur = kpi.current || {}, n1 = kpi.n1 || {};
+      const wkLabel = kpi.weekLabel || '';
+      const kpiCards = [
+        { label: 'Sessions organiques', val: _fmtNum(cur.sessions), evol: _evolBadge(cur.sessions, n1.sessions), sub: `N-1 : ${_fmtNum(n1.sessions)}` },
+        { label: 'Taux de conversion', val: _fmtPct(cur.conversionRate), evol: _evolBadge(cur.conversionRate, n1.conversionRate), sub: `N-1 : ${_fmtPct(n1.conversionRate)}` },
+        { label: 'Transactions', val: _fmtNum(cur.transactions), evol: _evolBadge(cur.transactions, n1.transactions), sub: `N-1 : ${_fmtNum(n1.transactions)}` },
+        { label: 'Période analysée', val: wkLabel, sub: 'Trafic organique uniquement', noEvol: true },
+      ];
+      document.getElementById('seo-kpis').innerHTML = kpiCards.map(k =>
+        `<div class="metric">
+          <div class="metric-label">${k.label}</div>
+          <div class="metric-value" style="font-size:22px">${k.val}${k.evol||''}</div>
+          <div class="metric-sub">${k.sub||''}</div>
+        </div>`
+      ).join('');
+
+      // ── Chart 1 : sessions par jour ──────────────────────────────
+      _destroyChart('daily');
+      const days = (daily.days || []).sort((a,b) => a.date > b.date ? 1 : -1);
+      const c1 = document.getElementById('chart-daily');
+      if (c1 && days.length) {
+        _saveChart('daily', new Chart(c1, {
+          type: 'bar',
+          data: {
+            labels: days.map(d => _dayLabel(d.date) + '\n' + d.date.slice(6,8) + '/' + d.date.slice(4,6)),
+            datasets: [{ label: 'Sessions', data: days.map(d => d.sessions), backgroundColor: _SEO_BLUE, borderRadius: 5 }],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true, grid: { color: '#f0eee9' } }, x: { grid: { display: false } } },
+          },
+        }));
+      } else if (c1) {
+        document.getElementById('wrap-daily').innerHTML = _seoErrorHtml('Aucune donnée disponible');
+      }
+
+      // ── Chart 2 : distribution horaire en % ──────────────────────
+      _destroyChart('hourly');
+      const hours = Array.from({length:24}, (_,i) => i);
+      const hourMap = {};
+      (hourly.hours || []).forEach(h => { hourMap[h.hour] = h.sessions; });
+      // Regrouper par slots de 3h
+      const slots = ['0h-3h','3h-6h','6h-9h','9h-12h','12h-15h','15h-18h','18h-21h','21h-24h'];
+      const slotValues = slots.map((_,i) => {
+        let v = 0;
+        for (let h = i*3; h < i*3+3; h++) v += hourMap[h] || 0;
+        return v;
+      });
+      const totalSessions = slotValues.reduce((a,b) => a+b, 0);
+      const slotPcts = slotValues.map(v => totalSessions > 0 ? Math.round(v / totalSessions * 1000) / 10 : 0);
+      const c2 = document.getElementById('chart-hourly');
+      if (c2 && totalSessions > 0) {
+        _saveChart('hourly', new Chart(c2, {
+          type: 'bar',
+          data: {
+            labels: slots,
+            datasets: [{ label: '% sessions', data: slotPcts, backgroundColor: slotPcts.map(v => `rgba(44,94,160,${0.3 + v/100 * 0.7})`), borderRadius: 4 }],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.raw + '%' } } },
+            scales: { y: { beginAtZero: true, ticks: { callback: v => v + '%' }, grid: { color: '#f0eee9' } }, x: { grid: { display: false } } },
+          },
+        }));
+      } else if (c2) {
+        document.getElementById('wrap-hourly').innerHTML = _seoErrorHtml('Aucune donnée disponible');
+      }
+
+      // ── Chart 3 : évolution hebdomadaire ─────────────────────────
+      _destroyChart('evolution');
+      const weeks = (evol.weeks || []).sort((a,b) => a.yearWeek > b.yearWeek ? 1 : -1);
+      const c3 = document.getElementById('chart-evolution');
+      if (c3 && weeks.length) {
+        // Label yearWeek "202522" → "S22 2025"
+        const wkLbl = yw => `S${yw.slice(4)} ${yw.slice(0,4)}`;
+        _saveChart('evolution', new Chart(c3, {
+          type: 'line',
+          data: {
+            labels: weeks.map(w => wkLbl(w.yearWeek)),
+            datasets: [{
+              label: 'Sessions organiques',
+              data: weeks.map(w => w.sessions),
+              borderColor: _SEO_BLUE, backgroundColor: _SEO_BLUE_LIGHT,
+              fill: true, tension: 0.3, pointRadius: 2, pointHoverRadius: 5,
+            }],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              y: { beginAtZero: false, grid: { color: '#f0eee9' } },
+              x: { grid: { display: false }, ticks: { maxTicksLimit: 16, maxRotation: 0 } },
+            },
+          },
+        }));
+      } else if (c3) {
+        document.getElementById('wrap-evolution').innerHTML = _seoErrorHtml('Aucune donnée disponible');
+      }
+
+    } catch(e) {
+      document.getElementById('seo-kpis').innerHTML = _seoErrorHtml('❌ ' + esc(String(e)));
+    }
+  });
+}
+
+// Mots-clés furniture à mettre en avant dans les résultats Search Console
+const SEO_KW_FILTERS = [
+  'canap','sofa','lit ','cadre de lit','tête de lit','sommier','matelas','coffre',
+  'meuble','armoire','commode','bibliothèque','bureau',
+  'table basse','table de salon','table à manger','table de jardin',
+  'fauteuil','chaise','pouf','banquette','meridienne','méridienne',
+  'salon de jardin','jardin','pergola','tonnelle','transat','bain de soleil','balancelle',
+  'canapé','convertible','d\'angle','angle',
+];
+
+async function renderSitePositionsSEO() {
+  const el = document.getElementById('content');
+  el.innerHTML = `
+    <div style="padding:24px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+        <div>
+          <div style="font-size:17px;font-weight:700;color:${_SEO_BLUE}">Positions SEO — Trafic organique</div>
+          <div id="seo-pos-period" style="font-size:12px;color:var(--txT);margin-top:2px">Chargement…</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input id="seo-pos-search" placeholder="Filtrer les requêtes…" oninput="_filterSeoPositions()" style="padding:7px 12px;border:.5px solid var(--border);border-radius:7px;font-size:12px;font-family:inherit;width:200px">
+          <label style="font-size:12px;color:var(--txS);display:flex;align-items:center;gap:5px;cursor:pointer">
+            <input type="checkbox" id="seo-pos-furniture" onchange="_filterSeoPositions()" checked style="cursor:pointer">
+            Mobilier uniquement
+          </label>
+        </div>
+      </div>
+      <div id="seo-pos-table">
+        <div style="text-align:center;padding:40px;color:var(--txT);font-size:13px">Chargement des données Search Console…</div>
+      </div>
+    </div>`;
+
+  try {
+    const data = await fetch('/api/searchconsole?type=top').then(r => r.json());
+    if (data.error) {
+      const msg = data.error;
+      document.getElementById('seo-pos-table').innerHTML = msg.includes('not configured')
+        ? _seoErrorHtml(`⚙️ Search Console non configuré.<br><br>
+            <div style="text-align:left;background:var(--acBg);border-radius:8px;padding:14px;font-size:12px;color:var(--ac);max-width:480px;margin:0 auto">
+              <b>Variables Vercel à ajouter :</b><br>
+              • <code>GOOGLE_SERVICE_ACCOUNT_JSON</code> — même JSON que pour GA4<br>
+              • <code>SEARCH_CONSOLE_SITE_URL</code> — ex: https://www.bestmobilier.fr/
+            </div>`)
+        : _seoErrorHtml('❌ ' + esc(msg));
+      return;
+    }
+    window._seoPositionsData = data.rows || [];
+    document.getElementById('seo-pos-period').textContent = data.period
+      ? `Période : ${data.period.start} → ${data.period.end} · ${data.rows.length} requêtes`
+      : '';
+    _filterSeoPositions();
+  } catch(e) {
+    document.getElementById('seo-pos-table').innerHTML = _seoErrorHtml('❌ ' + esc(String(e)));
+  }
+}
+
+function _filterSeoPositions() {
+  const rows = window._seoPositionsData || [];
+  const search = (document.getElementById('seo-pos-search')?.value || '').toLowerCase().trim();
+  const furnitureOnly = document.getElementById('seo-pos-furniture')?.checked;
+
+  let filtered = rows.filter(r => {
+    const q = (r.keys?.[0] || '').toLowerCase();
+    if (search && !q.includes(search)) return false;
+    if (furnitureOnly && !SEO_KW_FILTERS.some(kw => q.includes(kw))) return false;
+    return true;
+  });
+
+  // Trier par impressions desc
+  filtered.sort((a,b) => (b.impressions||0) - (a.impressions||0));
+
+  const tableEl = document.getElementById('seo-pos-table');
+  if (!filtered.length) {
+    tableEl.innerHTML = '<div style="padding:24px;text-align:center;color:var(--txT);font-size:13px">Aucune requête trouvée.</div>';
+    return;
+  }
+
+  const posColor = p => {
+    if (p <= 3) return 'var(--gn)';
+    if (p <= 10) return '#2c9a4a';
+    if (p <= 20) return 'var(--am)';
+    return 'var(--rd)';
+  };
+  const posBg = p => {
+    if (p <= 3) return 'var(--gnBg)';
+    if (p <= 10) return '#e8f9ee';
+    if (p <= 20) return 'var(--amBg)';
+    return 'var(--rdBg)';
+  };
+
+  tableEl.innerHTML = `
+    <div style="overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="background:var(--bg);border-bottom:1.5px solid var(--border)">
+            <th style="text-align:left;padding:8px 12px;font-weight:600;font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em">Requête</th>
+            <th style="text-align:center;padding:8px 12px;font-weight:600;font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;width:80px">Position</th>
+            <th style="text-align:right;padding:8px 12px;font-weight:600;font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;width:90px">Impressions</th>
+            <th style="text-align:right;padding:8px 12px;font-weight:600;font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;width:70px">Clics</th>
+            <th style="text-align:right;padding:8px 12px;font-weight:600;font-size:11px;color:var(--txS);text-transform:uppercase;letter-spacing:.04em;width:70px">CTR</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${filtered.slice(0, 200).map(r => {
+            const q = r.keys?.[0] || '';
+            const pos = Math.round((r.position || 99) * 10) / 10;
+            return `<tr style="border-bottom:.5px solid var(--borderL)" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
+              <td style="padding:8px 12px;font-weight:500">${esc(q)}</td>
+              <td style="padding:8px 12px;text-align:center">
+                <span style="display:inline-block;min-width:36px;padding:2px 8px;border-radius:99px;font-weight:700;font-size:12px;background:${posBg(pos)};color:${posColor(pos)}">${pos}</span>
+              </td>
+              <td style="padding:8px 12px;text-align:right;color:var(--txS)">${_fmtNum(r.impressions)}</td>
+              <td style="padding:8px 12px;text-align:right;font-weight:600">${_fmtNum(r.clicks)}</td>
+              <td style="padding:8px 12px;text-align:right;color:var(--txT)">${_fmtPct(r.ctr)}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+    ${filtered.length > 200 ? `<div style="text-align:center;padding:10px;font-size:12px;color:var(--txT)">${filtered.length - 200} requêtes supplémentaires — affinez le filtre pour les voir</div>` : ''}`;
+}
+
 // ─── Site Internet ────────────────────────────────────────────────────────────
 
 function renderSiteInternet() {
