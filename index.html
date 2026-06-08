@@ -7710,13 +7710,11 @@ function renderTDC() {
   // ── KPIs ────────────────────────────────────────────────────────
   var _nb = _rows.length;
   var _nbTotal = _allBase.length;
-  var _totalBase  = _rows.reduce(function(s,r){return s+r.base;},0);
-  var _totalEst   = _rows.reduce(function(s,r){return s+(r.commEst||0);},0);
-  var _withTheo   = _rows.filter(function(r){return r.tauxTheo!==null;});
-  var _avgTheo    = _withTheo.length ? _withTheo.reduce(function(s,r){return s+r.tauxTheo;},0)/_withTheo.length : null;
+  var _totalBase      = _rows.reduce(function(s,r){return s+r.base;},0);
+  var _totalRealComm  = _rows.reduce(function(s,r){return s+(r.commReel||0);},0);
+  var _txPeriode      = (_hasRealComm && _totalBase > 0) ? (_totalRealComm / _totalBase * 100) : null;
   var _withEcart  = _rows.filter(function(r){return r.ecart!==null;});
   var _avgEcart   = _withEcart.length ? _withEcart.reduce(function(s,r){return s+r.ecart;},0)/_withEcart.length : null;
-  var _nbAno      = _withEcart.filter(function(r){return Math.abs(r.ecart)>=2;}).length;
   var _ecartColor = _avgEcart === null ? 'var(--txT)' : (Math.abs(_avgEcart) >= 5 ? 'var(--rd)' : (Math.abs(_avgEcart) >= 2 ? '#D58000' : 'var(--gn)'));
 
   var _kpiHtml = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">'
@@ -7728,9 +7726,9 @@ function renderTDC() {
       +'<div style="font-size:20px;font-weight:700;color:var(--ac)">'+Math.round(_totalBase).toLocaleString('fr-FR')+'&nbsp;€</div>'
       +'<div style="font-size:11px;color:var(--txS);margin-top:2px">base commissionnable</div>'
     +'</div>'
-    +'<div class="card" style="padding:12px 16px"><div style="font-size:11px;color:var(--txS);margin-bottom:4px">Commission estimée</div>'
-      +'<div style="font-size:20px;font-weight:700">'+Math.round(_totalEst).toLocaleString('fr-FR')+'&nbsp;€</div>'
-      +'<div style="font-size:11px;color:var(--txS);margin-top:2px">'+(_avgTheo!==null?'taux théo. '+_avgTheo.toFixed(1)+'%':'taux non défini')+'</div>'
+    +'<div class="card" style="padding:12px 16px"><div style="font-size:11px;color:var(--txS);margin-bottom:4px">Tx de commission (période)</div>'
+      +'<div style="font-size:20px;font-weight:700;color:'+(_txPeriode!==null?'var(--ac)':'var(--txS)')+'">'+(_txPeriode!==null?_txPeriode.toFixed(2)+'%':'—')+'</div>'
+      +'<div style="font-size:11px;color:var(--txS);margin-top:2px">'+(_txPeriode!==null?'Σ comm. / Σ base TTC':'import commissions requis')+'</div>'
     +'</div>'
     +'<div class="card" style="padding:12px 16px"><div style="font-size:11px;color:var(--txS);margin-bottom:4px">'
       +(_hasRealComm ? 'Écart moyen réel/théo.' : 'Commission réelle')+'</div>'
