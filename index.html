@@ -7338,14 +7338,63 @@ function alertProductLink(sku) {
   return url ? '<a href="'+esc(url)+'" target="_blank" style="color:var(--ac);text-decoration:none;font-size:11px;white-space:nowrap">↗ Voir</a>' : '<span style="color:var(--txT);font-size:11px">—</span>';
 }
 
+// ── Persistance "traité" via localStorage + auto-archive 7j ─────────────────
+function _loadTreatedAlerts() {
+  try {
+    var raw = JSON.parse(localStorage.getItem('mkp_treated_'+MARKETPLACE) || '{}');
+    STATE._treatedAlertsTs = raw;
+    STATE._treatedAlerts = new Set(Object.keys(raw));
+  } catch(e) { STATE._treatedAlertsTs = {}; STATE._treatedAlerts = new Set(); }
+}
+
+function _saveTreatedAlerts() {
+  try { localStorage.setItem('mkp_treated_'+MARKETPLACE, JSON.stringify(STATE._treatedAlertsTs || {})); } catch(e) {}
+}
+
+function _checkStaleAlerts() {
+  var ts = STATE._treatedAlertsTs || {};
+  var weekMs = 7 * 24 * 60 * 60 * 1000;
+  var now = Date.now();
+  var stale = [];
+  Object.keys(ts).forEach(function(k) {
+    if (now - new Date(ts[k]).getTime() >= weekMs) {
+      var idx = k.indexOf('|');
+      stale.push({ key: k, alertType: k.slice(0, idx), sku: k.slice(idx+1), treatedAt: ts[k] });
+      STATE._treatedAlerts.delete(k);
+      delete ts[k];
+      if (!STATE._validatedAlerts) STATE._validatedAlerts = new Set();
+      STATE._validatedAlerts.add(k);
+    }
+  });
+  if (stale.length) _saveTreatedAlerts();
+  return stale;
+}
+
+async function _archiveStaleBatch(stale) {
+  for (var i = 0; i < stale.length; i++) {
+    var s = stale[i];
+    try {
+      await sbInsert('alert_history', { marketplace: MARKETPLACE, alert_type: s.alertType, sku: s.sku, detail: { auto_archived: true, treated_at: s.treatedAt } });
+    } catch(e) { console.warn('[Alertes] Auto-archive échoué pour', s.key, e); }
+  }
+  showAlertToast('✓ '+stale.length+' alerte(s) auto-archivée(s) après 7 jours');
+}
+
 function markAlerteTreated(alertType, sku) {
   if (!STATE._treatedAlerts) STATE._treatedAlerts = new Set();
-  STATE._treatedAlerts.add(alertType+'|'+sku);
+  if (!STATE._treatedAlertsTs) STATE._treatedAlertsTs = {};
+  var key = alertType+'|'+sku;
+  STATE._treatedAlerts.add(key);
+  STATE._treatedAlertsTs[key] = new Date().toISOString();
+  _saveTreatedAlerts();
   renderAlertes();
 }
 
 function unmarkAlerteTreated(alertType, sku) {
-  if (STATE._treatedAlerts) STATE._treatedAlerts.delete(alertType+'|'+sku);
+  var key = alertType+'|'+sku;
+  if (STATE._treatedAlerts) STATE._treatedAlerts.delete(key);
+  if (STATE._treatedAlertsTs) delete STATE._treatedAlertsTs[key];
+  _saveTreatedAlerts();
   renderAlertes();
 }
 
@@ -7368,8 +7417,11 @@ async function archiveAlerte(alertType, sku, detail, displayMsg) {
   try {
     await sbInsert('alert_history', { marketplace: MARKETPLACE, alert_type: alertType, sku: sku, detail: detail||{} });
     if (!STATE._validatedAlerts) STATE._validatedAlerts = new Set();
-    STATE._validatedAlerts.add(alertType+'|'+sku);
-    if (STATE._treatedAlerts) STATE._treatedAlerts.delete(alertType+'|'+sku);
+    var key = alertType+'|'+sku;
+    STATE._validatedAlerts.add(key);
+    if (STATE._treatedAlerts) STATE._treatedAlerts.delete(key);
+    if (STATE._treatedAlertsTs) delete STATE._treatedAlertsTs[key];
+    _saveTreatedAlerts();
     showAlertToast(displayMsg || '✓ Alerte archivée et historisée');
     renderAlertes();
   } catch(e) { alert('Erreur archivage : '+esc(e.message)); }
@@ -7383,6 +7435,11 @@ async function renderAlertes() {
 
   var TH = 'padding:7px 10px;text-align:left;font-size:11px;font-weight:600;color:var(--txS);background:var(--bg);border-bottom:1px solid var(--border);white-space:nowrap;';
   var TD = 'padding:6px 10px;font-size:12px;border-bottom:1px solid var(--borderL);vertical-align:top;';
+
+  // ── Charger état traité depuis localStorage + auto-archiver après 7j ────────
+  _loadTreatedAlerts();
+  var _stale = _checkStaleAlerts();
+  if (_stale.length) _archiveStaleBatch(_stale);
 
   // ── État alertes ─────────────────────────────────────────────────
   if (!STATE._validatedAlerts) STATE._validatedAlerts = new Set();
