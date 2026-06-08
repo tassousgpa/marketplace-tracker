@@ -474,26 +474,29 @@ function switchMarketplace(mp, btn) {
 async function loadData() {
   if (MARKETPLACE === "site_internet") {
     try {
-      const [revenueImports, revenueEntries, monthlyHistory] = await Promise.all([
+      const yr = new Date().getFullYear();
+      const [revenueImports, revenueEntries, monthlyHistory, psSalesDaily, productSalesWeekly] = await Promise.all([
         sb("revenue_imports", "marketplace=eq.site_internet&select=*&order=period_start.asc").catch(()=>[]),
         sb("revenue_entries", "marketplace=eq.site_internet&select=*&order=week_start_date.asc").catch(()=>[]),
         sb("revenue_monthly_history", "marketplace=eq.site_internet&select=year,month,revenue&order=year.asc,month.asc").catch(()=>[]),
+        sb("ps_sales_daily", `marketplace=eq.site_internet&sale_date=gte.${yr}-01-01&select=order_id,order_reference,product_ref,product_name,sale_date,quantity,revenue_ht,shipping_ht,revenue_ttc,shipping_ttc&order=sale_date.desc&limit=10000`).catch(()=>[]),
+        sb("product_sales_weekly", "marketplace=eq.site_internet&select=*&order=week_label.desc").catch(()=>[]),
       ]);
       STATE.revenueImports = revenueImports;
       STATE.revenueEntries = revenueEntries;
       STATE.monthlyHistory = monthlyHistory;
+      STATE.psSalesDaily = psSalesDaily;
+      STATE.productSalesWeekly = productSalesWeekly;
       STATE.products = [];
       STATE.allProducts = [];
-      STATE.psSalesDaily = [];
-      STATE.productSalesWeekly = [];
     } catch(e) {
       STATE.revenueImports = [];
       STATE.revenueEntries = [];
       STATE.monthlyHistory = [];
-      STATE.products = [];
-      STATE.allProducts = [];
       STATE.psSalesDaily = [];
       STATE.productSalesWeekly = [];
+      STATE.products = [];
+      STATE.allProducts = [];
     }
     renderTabs(); renderContent();
     return;
