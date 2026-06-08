@@ -6545,7 +6545,7 @@ async function openOpeDetail(id) {
 
   function buildOpeProdsTable(onlyWithSales) {
     const filtered = onlyWithSales ? prods.filter(p => salesByRef[p.ref]?.qty > 0) : prods;
-    if (!filtered.length) return '<tr><td colspan="6" style="padding:14px;text-align:center;color:var(--txT);font-size:12px">Aucun produit avec ventes sur cette période.</td></tr>';
+    if (!filtered.length) return '<tr><td colspan="7" style="padding:14px;text-align:center;color:var(--txT);font-size:12px">Aucun produit avec ventes sur cette période.</td></tr>';
     let sorted = [...filtered];
     if (window._opeSortCol === "qty") {
       sorted.sort((a,b) => { const d=(salesByRef[b.ref]?.qty||0)-(salesByRef[a.ref]?.qty||0); return window._opeSortDir==="asc"?-d:d; });
@@ -6561,6 +6561,7 @@ async function openOpeDetail(id) {
         + '<td style="padding:6px 10px;text-align:right">'+(p.taux_commission!=null?(isMM?p.taux_commission+' €':Math.round(p.taux_commission*100)+"%"):"—")+'</td>'
         + '<td style="padding:6px 10px;text-align:right;font-weight:600">'+(ps.qty>0?ps.qty:'<span style="color:var(--txT)">—</span>')+'</td>'
         + '<td style="padding:6px 10px;text-align:right;color:var(--gn);font-weight:600">'+(ps.ca_ht>0?Math.round(ps.ca_ht).toLocaleString("fr-FR")+" €":'<span style="color:var(--txT)">—</span>')+'</td>'
+        + '<td style="padding:4px 6px;text-align:center">'+(p.id?'<button onclick="deleteOpeProd('+p.id+','+id+')" title="Supprimer ce produit" style="padding:2px 7px;border:.5px solid var(--rd);border-radius:4px;font-size:11px;background:var(--rdBg);color:var(--rd);cursor:pointer;font-family:inherit;line-height:1.4">×</button>':'')+'</td>'
         + '</tr>';
     }).join("");
   }
@@ -6596,12 +6597,24 @@ async function openOpeDetail(id) {
     + '<th style="padding:6px 10px;text-align:right">'+(isMM?'Co-Financement':'Commission')+'</th>'
     + '<th id="ope-th-qty" style="padding:6px 10px;text-align:right;color:var(--ac);cursor:pointer;user-select:none">Ventes ↕</th>'
     + '<th id="ope-th-ca"  style="padding:6px 10px;text-align:right;color:var(--gn);cursor:pointer;user-select:none">CA HT ↕</th>'
+    + '<th style="padding:6px 10px;width:32px"></th>'
     + '</tr></thead><tbody id="ope-detail-tbody">'+buildOpeProdsTable(false)+'</tbody></table></div>'
     + '<div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">'
     + '<button onclick="openOpeEdit('+id+')" style="padding:7px 14px;border:.5px solid var(--ac);border-radius:6px;font-size:12px;background:var(--acBg);color:var(--ac);cursor:pointer;font-weight:600;font-family:inherit">✏️ Modifier</button>'
-    + (op.nom && op.nom.startsWith('Soldes Été') ? '<button onclick="openOpeReimport('+id+')" style="padding:7px 14px;border:.5px solid var(--pu);border-radius:6px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">📥 Ré-importer produits</button>' : '')
+    + '<button onclick="openOpeReimport('+id+')" style="padding:7px 14px;border:.5px solid var(--pu);border-radius:6px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">📥 Ré-importer produits</button>'
     + (op.nom && op.nom.startsWith('Soldes Été') ? '<button onclick="openSoldesAnalysis('+id+')" style="padding:7px 14px;border:.5px solid var(--gn);border-radius:6px;font-size:12px;background:var(--gnBg);color:var(--gn);cursor:pointer;font-weight:600;font-family:inherit">📊 Analyse Soldes J/J</button>' : '')
     + '<button onclick="deleteOpe('+id+')" style="padding:7px 14px;border:.5px solid var(--rd);border-radius:6px;font-size:12px;background:var(--rdBg);color:var(--rd);cursor:pointer;font-weight:600;font-family:inherit">🗑 Supprimer</button>'
+    + '</div>'
+    + '<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">'
+    + '<div style="font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;margin-bottom:8px">Ajouter un produit manuellement</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1.5fr 0.7fr 0.7fr auto;gap:8px;align-items:end">'
+    + '<div><label style="font-size:10px;color:var(--txS);display:block;margin-bottom:3px">Référence *</label><input id="ope-add-ref" placeholder="BES-XXXX" style="width:100%;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;box-sizing:border-box"></div>'
+    + '<div><label style="font-size:10px;color:var(--txS);display:block;margin-bottom:3px">Nom produit</label><input id="ope-add-nom" placeholder="optionnel" style="width:100%;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;box-sizing:border-box"></div>'
+    + '<div><label style="font-size:10px;color:var(--txS);display:block;margin-bottom:3px">Prix (€)</label><input id="ope-add-prix" type="number" step="0.01" placeholder="0.00" style="width:100%;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;box-sizing:border-box"></div>'
+    + '<div><label style="font-size:10px;color:var(--txS);display:block;margin-bottom:3px">'+(isMM?'Co-fin. (€)':'Commission (%)')+'</label><input id="ope-add-taux" type="number" step="0.1" placeholder="10" style="width:100%;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit;box-sizing:border-box"></div>'
+    + '<button onclick="confirmAddOpeProd('+id+')" style="padding:7px 12px;background:var(--gn);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">+ Ajouter</button>'
+    + '</div>'
+    + '<div id="ope-add-status" style="font-size:11px;min-height:14px;margin-top:6px"></div>'
     + '</div>';
 
   openModal("📋 "+esc(op.nom), html);
@@ -6629,7 +6642,11 @@ async function openOpeReimport(id) {
   const op = opeData.find(o => o.id === id);
   if (!op) return;
   openModal('📥 Ré-importer produits — '+esc(op.nom), '<div style="display:grid;gap:12px">'
-    + '<div style="background:var(--puBg);border-radius:8px;padding:10px 12px;font-size:11px;color:var(--pu)">Format attendu : colonne Ref enfant, Nom, Prix, '+(MARKETPLACE==='manomano'?'Co-financement':'Taux com')+', Opé, Début, Fin (à partir de la ligne 7).</div>'
+    + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+    + '<button onclick="downloadOpeTemplate()" style="padding:6px 12px;border:.5px solid var(--ac);border-radius:6px;font-size:11px;font-weight:600;background:var(--acBg);color:var(--ac);cursor:pointer;font-family:inherit">📋 Template d\'import</button>'
+    + '<span style="font-size:11px;color:var(--txS)">Télécharger et remplir avant d\'importer</span>'
+    + '</div>'
+    + '<div style="background:var(--puBg);border-radius:8px;padding:10px 12px;font-size:11px;color:var(--pu)">Format : col A = Ref enfant, col B = Nom, col C = Prix, col D = '+(MARKETPLACE==='manomano'?'Co-financement':'Commission (entier, ex: 10 pour 10%)')+'. Données à partir de la ligne 8.</div>'
     + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:4px">Mode *</label>'
     + '<select id="reimp-mode" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit">'
     + '<option value="replace">Écraser et remplacer tous les produits</option>'
@@ -6660,18 +6677,16 @@ async function confirmOpeReimport(id) {
           var data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
           var result = [];
           const isMM = MARKETPLACE === 'manomano';
-          for (var i = 6; i < data.length; i++) {
+          for (var i = 7; i < data.length; i++) {
             var r = data[i];
             var ref = String(r[0]||'').trim();
-            if (!ref || ref.toLowerCase() === 'ref') continue;
+            if (!ref || ref.toLowerCase() === 'ref' || ref.toLowerCase() === 'ref enfant') continue;
             result.push({
               operation_id: id, marketplace: MARKETPLACE,
               ref: ref,
               nom_produit: String(r[1]||'').trim() || null,
               prix: parseFloat(String(r[2]||'').replace(',','.')) || null,
-              taux_commission: isMM
-                ? (parseInt(r[3])||null)
-                : (parseFloat(String(r[3]||'').replace(',','.'))/100 || null)
+              taux_commission: _parseTauxOpe(r[3], isMM)
             });
           }
           resolve(result);
@@ -6681,7 +6696,7 @@ async function confirmOpeReimport(id) {
       reader.readAsArrayBuffer(file);
     });
 
-    if (!rows.length) { statusEl.innerHTML = '<span style="color:var(--rd)">Aucune ligne trouvée (données attendues à partir de la ligne 7).</span>'; return; }
+    if (!rows.length) { statusEl.innerHTML = '<span style="color:var(--rd)">Aucune ligne trouvée (données attendues à partir de la ligne 8).</span>'; return; }
 
     if (mode === 'replace') {
       statusEl.innerHTML = 'Suppression des produits existants…';
@@ -6866,7 +6881,14 @@ function openOpeCreate(defaultMonth) {
     + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Date début *</label><input id="ope-debut" type="date" value="'+defaultStart+'" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
     + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Date fin *</label><input id="ope-fin" type="date" value="'+defaultEnd+'" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
     + '</div>'
-    + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Fichier Excel produits (optionnel)</label><input id="ope-file" type="file" accept=".xls,.xlsx" style="width:100%;padding:6px;border:.5px solid var(--border);border-radius:6px;font-size:11px;font-family:inherit;background:var(--card)"></div>'
+    + '<div>'
+    + '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap">'
+    + '<label style="font-size:11px;color:var(--txS)">Fichier Excel produits (optionnel)</label>'
+    + '<button onclick="downloadOpeTemplate()" style="padding:3px 10px;border:.5px solid var(--ac);border-radius:5px;font-size:10px;font-weight:600;background:var(--acBg);color:var(--ac);cursor:pointer;font-family:inherit">📋 Template</button>'
+    + '</div>'
+    + '<input id="ope-file" type="file" accept=".xls,.xlsx" style="width:100%;padding:6px;border:.5px solid var(--border);border-radius:6px;font-size:11px;font-family:inherit;background:var(--card)">'
+    + '<div style="font-size:10px;color:var(--txS);margin-top:3px">Commission en nombre entier (ex: 10 pour 10%) — données à partir de la ligne 8</div>'
+    + '</div>'
     + '<button onclick="confirmOpeCreate()" style="padding:10px;background:var(--ac);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Créer l\'opération</button>'
     + '<div id="ope-status" style="font-size:12px;text-align:center;min-height:16px"></div>'
     + '</div>');
@@ -6910,7 +6932,11 @@ async function confirmOpeCreate() {
 
 function openOpeImport() {
   openModal("Import Excel opération", '<div style="display:grid;gap:10px">'
-    + '<div style="background:var(--puBg);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--pu)">Format attendu : colonnes Ref enfant, Nom, Prix, '+(MARKETPLACE==='manomano'?'Co-financement':'Taux com')+', Opé, Début, Fin (à partir de la ligne 7).</div>'
+    + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+    + '<button onclick="downloadOpeTemplateFull()" style="padding:6px 12px;border:.5px solid var(--ac);border-radius:6px;font-size:11px;font-weight:600;background:var(--acBg);color:var(--ac);cursor:pointer;font-family:inherit">📋 Template d\'import</button>'
+    + '<span style="font-size:11px;color:var(--txS)">Télécharger et remplir le template avant d\'importer</span>'
+    + '</div>'
+    + '<div style="background:var(--puBg);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--pu)">Format attendu : colonnes Ref enfant, Nom, Prix, '+(MARKETPLACE==='manomano'?'Co-financement':'Taux com')+', Opé, Début, Fin (à partir de la ligne 8). Commission en nombre entier ex: <strong>10</strong> pour 10%.</div>'
     + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Fichier Excel *</label><input id="ope-imp-file" type="file" accept=".xls,.xlsx" style="width:100%;padding:6px;border:.5px solid var(--border);border-radius:6px;font-size:11px;font-family:inherit;background:var(--card)"></div>'
     + '<div><label style="font-size:11px;color:var(--txS);display:block;margin-bottom:3px">Mot de passe admin *</label><input id="ope-imp-pwd" type="password" style="width:100%;padding:7px 10px;border:.5px solid var(--border);border-radius:6px;font-size:12px;font-family:inherit"></div>'
     + '<button onclick="confirmOpeImport()" style="padding:10px;background:var(--pu);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">⬆ Importer</button>'
@@ -6968,17 +6994,17 @@ async function parseOpeXLS(file) {
         console.log("Row 7 (data):", rows[6]);
         const clean = s => s ? String(s).replace(/^'+|'+$/g,"").trim() : null;
         const result = [];
-        for (let i = 6; i < rows.length; i++) {
+        for (let i = 7; i < rows.length; i++) {
           const r = rows[i];
           if (!r || !r[1]) continue;
           const refVal = clean(r[0]);
-if (!refVal) continue;
-result.push({
-  ref: refVal,
-  nom: clean(r[1]),
-  prix: r[2] ? parseFloat(String(r[2]).replace(/[€\s]/g,"").replace(",",".")) : null,
-  taux: r[3] ? parseFloat(String(r[3]).replace(/[%\s]/g,"").replace(",",".")) : null
-});
+          if (!refVal) continue;
+          result.push({
+            ref: refVal,
+            nom: clean(r[1]),
+            prix: r[2] ? parseFloat(String(r[2]).replace(/[€\s]/g,"").replace(",",".")) : null,
+            taux: _parseTauxOpe(r[3], false)
+          });
         }
         console.log("Premier produit parsé:", result[0]);
         resolve(result);
@@ -7013,7 +7039,7 @@ async function parseOpeXLSFull(file) {
         const nomOpe = clean(rows[2]?.[1]);
         const prods = [];
         let debut = null, fin = null;
-        for (let i = 6; i < rows.length; i++) {
+        for (let i = 7; i < rows.length; i++) {
           const r = rows[i];
           if (!r || !r[1]) continue;
           const d = parseDate(r[6]);
@@ -7026,12 +7052,10 @@ async function parseOpeXLSFull(file) {
             ref: refVal,
             nom: clean(r[2]),
             prix: r[3] ? parseFloat(String(r[3]).replace(/[€\s]/g,"").replace(",",".")) : null,
-            taux: r[4] ? (MARKETPLACE === 'manomano'
-              ? parseFloat(String(r[4]).replace(/[€\s]/g,"").replace(",","."))
-              : parseFloat(String(r[4]).replace(/[%\s]/g,"").replace(",","."))/100) : null
+            taux: _parseTauxOpe(r[4], MARKETPLACE === 'manomano')
           });
         }
-        const finalNom = nomOpe || (rows[6]?.[5] ? clean(rows[6][5]) : null);
+        const finalNom = nomOpe || (rows[7]?.[5] ? clean(rows[7][5]) : null);
         if (!finalNom || !debut || !fin) { resolve({ ops:[], prods:[] }); return; }
         resolve({ ops:[{ nom: finalNom, type: typeOpe, debut, fin, prods }], prods });
       } catch(e) { reject(e); }
@@ -7049,6 +7073,86 @@ async function deleteOpe(id) {
     closeModal();
     renderOpeCommerciales();
   } catch(e) { alert("Erreur : "+e.message); }
+}
+
+async function deleteOpeProd(prodId, opId) {
+  if (!confirm("Supprimer ce produit de l'opération ?")) return;
+  try {
+    await sbDelete("operation_products", "id=eq."+prodId);
+    openOpeDetail(opId);
+  } catch(e) { alert("Erreur : "+e.message); }
+}
+
+async function confirmAddOpeProd(opId) {
+  var ref  = (document.getElementById('ope-add-ref')?.value||'').trim();
+  var nom  = (document.getElementById('ope-add-nom')?.value||'').trim();
+  var prix = parseFloat((document.getElementById('ope-add-prix')?.value||'').replace(',','.')) || null;
+  var tauxRaw = document.getElementById('ope-add-taux')?.value;
+  var statusEl = document.getElementById('ope-add-status');
+  if (!ref) { if(statusEl) statusEl.innerHTML='<span style="color:var(--rd)">Référence obligatoire.</span>'; return; }
+  var isMM = MARKETPLACE === 'manomano';
+  var taux = _parseTauxOpe(tauxRaw, isMM);
+  try {
+    await sbInsert("operation_products", { operation_id: opId, marketplace: MARKETPLACE, ref, nom_produit: nom||null, prix, taux_commission: taux });
+    openOpeDetail(opId);
+  } catch(e) { if(statusEl) statusEl.innerHTML='<span style="color:var(--rd)">Erreur : '+esc(e.message)+'</span>'; }
+}
+
+// ── Parsing taux commission — gère format % Excel (0.1) et entier (10) ──────
+function _parseTauxOpe(v, isMM) {
+  if (v === null || v === undefined || v === '') return null;
+  if (isMM) return parseInt(v) || null;
+  var s = String(v).replace(/\s/g,'').replace(',','.');
+  var hasPercSign = s.indexOf('%') >= 0;
+  var n = parseFloat(s.replace('%',''));
+  if (isNaN(n) || n === 0) return null;
+  // valeur ≥ 1 ou présence du signe % → nombre humain (ex : "10" pour 10%) → /100
+  // valeur < 1 → déjà en décimal (cellule % Excel stockée 0.1) → conserver
+  return (hasPercSign || n >= 1) ? n / 100 : n;
+}
+
+function _downloadCsv(filename, rows) {
+  var csv = rows.map(function(r) {
+    return r.map(function(c) {
+      var s = c == null ? '' : String(c);
+      return (s.indexOf(',')>=0||s.indexOf('"')>=0||s.indexOf('\n')>=0) ? '"'+s.replace(/"/g,'""')+'"' : s;
+    }).join(',');
+  }).join('\r\n');
+  var blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8'});
+  var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+}
+
+function downloadOpeTemplate() {
+  var isMM = MARKETPLACE === 'manomano';
+  _downloadCsv('template_ope_produits.csv', [
+    ['# Template import produits opération commerciale'],
+    ['# Remplir à partir de la ligne 8 — ne pas modifier les lignes 1 à 7'],
+    [''],[''],[''],[''],
+    ['Ref enfant','Nom produit','Prix (€)', isMM?'Co-financement (€)':'Commission (%) — entier ex: 10 pour 10%'],
+    ['BES-EXEMPLE','Produit exemple','99.90','10'],
+  ]);
+}
+
+function downloadOpeTemplateFull() {
+  var isMM = MARKETPLACE === 'manomano';
+  var today = new Date().toISOString().slice(0,10);
+  _downloadCsv('template_ope_commerciale_full.csv', [
+    [''],
+    ['Type:','DEALS EXCLUSIFS'],
+    ['Nom:','Nom Opération'],
+    [''],[''],[''],
+    ['','Ref enfant','Nom produit','Prix (€)',isMM?'Co-financement (€)':'Commission (%) — entier ex: 10','Opération','Date début','Date fin'],
+    ['','BES-EXEMPLE','Produit exemple','99.90','10','Nom Opération',today,today],
+  ]);
+}
+
+function downloadSEAActiveTemplate() {
+  _downloadCsv('template_sea_actifs.csv', [
+    ['# Template import produits SEA actifs'],
+    ['# Colonne A = SKU produit (une ligne par SKU — pas d\'entête)'],
+    ['BES-EXEMPLE'],
+    ['BES-EXEMPLE2'],
+  ]);
 }
 
 function openOpeEdit(id) {
@@ -8781,6 +8885,10 @@ function openSEAActiveImport() {
   }
   var today = new Date().toISOString().slice(0,10);
   openModal('⚡ Produits SEA actifs — '+mpLabel, '<div style="display:grid;gap:14px">'
+    + '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'
+    + '<button onclick="downloadSEAActiveTemplate()" style="padding:6px 12px;border:.5px solid var(--am);border-radius:6px;font-size:11px;font-weight:600;background:var(--amBg);color:var(--am);cursor:pointer;font-family:inherit">📋 Template d\'import</button>'
+    + '<span style="font-size:11px;color:var(--txS)">Un SKU par ligne en colonne A</span>'
+    + '</div>'
     + '<div style="background:var(--amBg);border-radius:8px;padding:10px 12px;font-size:11px;color:var(--am)">Format : colonne A = SKU produit. Le tag ⚡ SEA sera piloté exclusivement par ces imports.</div>'
     + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0;border:.5px solid var(--border);border-radius:8px;overflow:hidden">'
     + '<label id="seaact-lbl-week" style="display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;background:var(--ac);color:#fff;font-size:12px;font-weight:600">'
