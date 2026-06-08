@@ -6616,9 +6616,10 @@ async function openOpeDetail(id) {
               var lbl = esc(p.sku)+(p.name?' — '+esc(p.name.length>55?p.name.slice(0,55)+'…':p.name):'');
               var sk = esc((p.sku+' '+(p.name||'')).toLowerCase());
               return '<label style="display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:.5px solid var(--borderL);cursor:pointer;font-size:11px" data-search="'+sk+'">'
-                +'<input type="checkbox" class="ope-cat-cb" value="'+esc(p.sku)+'" data-nom="'+esc(p.name||'')+'" style="cursor:pointer">'
+                +'<input type="checkbox" class="ope-cat-cb" value="'+esc(p.sku)+'" data-nom="'+esc(p.name||'')+'" onchange="updateOpeCatSelection()" style="cursor:pointer">'
                 +'<span>'+lbl+'</span></label>';
             }).join('');
+        var _thSt = 'padding:5px 8px;font-size:10px;font-weight:600;color:var(--txS);background:var(--bg);border-bottom:.5px solid var(--border);white-space:nowrap';
         return '<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">'
           +'<div style="font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;margin-bottom:8px">Ajouter des produits</div>'
           +'<div style="display:flex;gap:0;border:.5px solid var(--border);border-radius:7px;overflow:hidden;margin-bottom:10px;width:fit-content">'
@@ -6628,11 +6629,22 @@ async function openOpeDetail(id) {
           // ── Catalogue ──
           +'<div id="ope-add-cat">'
           +'<input id="ope-cat-search" placeholder="Rechercher par SKU ou nom…" oninput="filterOpeCat()" style="'+_inp+';margin-bottom:6px">'
-          +'<div id="ope-cat-list" style="max-height:160px;overflow-y:auto;border:.5px solid var(--border);border-radius:6px;background:var(--bg);margin-bottom:8px">'+_catRows+'</div>'
-          +'<div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end">'
-          +'<div><label style="font-size:10px;color:var(--txS);display:block;margin-bottom:3px">Prix (€) — optionnel</label><input id="ope-add-prix-cat" type="number" step="0.01" placeholder="0.00" style="'+_inp+'"></div>'
-          +'<div><label style="font-size:10px;color:var(--txS);display:block;margin-bottom:3px">'+_commLbl+'</label><input id="ope-add-taux-cat" type="number" step="0.1" placeholder="10" style="'+_inp+'"></div>'
-          +'<button onclick="confirmAddOpeProdCat('+id+')" style="padding:7px 12px;background:var(--gn);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">+ Ajouter</button>'
+          +'<div id="ope-cat-list" style="max-height:150px;overflow-y:auto;border:.5px solid var(--border);border-radius:6px;background:var(--bg);margin-bottom:8px">'+_catRows+'</div>'
+          // mini-tableau sélection (caché tant que rien n'est coché)
+          +'<div id="ope-cat-selection" style="display:none">'
+          +'<div style="font-size:10px;font-weight:600;color:var(--txS);text-transform:uppercase;margin-bottom:6px">Produits sélectionnés — saisissez prix et commission pour chaque :</div>'
+          +'<div style="overflow-x:auto;border:.5px solid var(--border);border-radius:6px;margin-bottom:8px">'
+          +'<table style="width:100%;border-collapse:collapse">'
+          +'<thead><tr>'
+          +'<th style="'+_thSt+';text-align:left">Réf</th>'
+          +'<th style="'+_thSt+';text-align:left">Nom</th>'
+          +'<th style="'+_thSt+';text-align:right">Prix (€)</th>'
+          +'<th style="'+_thSt+';text-align:right">'+_commLbl+'</th>'
+          +'<th style="'+_thSt+';width:28px"></th>'
+          +'</tr></thead>'
+          +'<tbody id="ope-cat-sel-tbody"></tbody>'
+          +'</table></div>'
+          +'<button id="ope-cat-add-btn" onclick="confirmAddOpeProdCat('+id+')" style="padding:7px 14px;background:var(--gn);color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">+ Ajouter</button>'
           +'</div></div>'
           // ── Saisie libre ──
           +'<div id="ope-add-libre" style="display:none">'
@@ -7148,16 +7160,61 @@ function filterOpeCat() {
   });
 }
 
+function updateOpeCatSelection() {
+  var tbody  = document.getElementById('ope-cat-sel-tbody');
+  var selDiv = document.getElementById('ope-cat-selection');
+  var addBtn = document.getElementById('ope-cat-add-btn');
+  if (!tbody || !selDiv) return;
+  // Conserver les valeurs saisies avant le rebuild
+  var saved = {};
+  tbody.querySelectorAll('tr[data-sku]').forEach(function(tr) {
+    saved[tr.dataset.sku] = {
+      prix: tr.querySelector('.ope-sel-prix')?.value || '',
+      taux: tr.querySelector('.ope-sel-taux')?.value || ''
+    };
+  });
+  var checked = Array.from(document.querySelectorAll('.ope-cat-cb:checked'));
+  selDiv.style.display = checked.length ? 'block' : 'none';
+  if (!checked.length) return;
+  var isMM = MARKETPLACE === 'manomano';
+  var commPh = isMM ? 'Co-fin.' : 'Com. %';
+  var inp = 'width:100%;padding:4px 6px;border:.5px solid var(--border);border-radius:5px;font-size:11px;font-family:inherit;box-sizing:border-box';
+  tbody.innerHTML = checked.map(function(cb) {
+    var sku = cb.value;
+    var nom = cb.dataset.nom || '';
+    var sv  = saved[sku] || {};
+    var skuQ = sku.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    return '<tr data-sku="'+esc(sku)+'" style="border-bottom:.5px solid var(--borderL)">'
+      +'<td style="padding:4px 8px;font-weight:600;white-space:nowrap;font-size:11px">'+esc(sku)+'</td>'
+      +'<td style="padding:4px 8px;color:var(--txS);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px" title="'+esc(nom)+'">'+esc(nom.length>40?nom.slice(0,40)+'…':nom)+'</td>'
+      +'<td style="padding:4px 6px"><input type="number" step="0.01" class="ope-sel-prix" placeholder="Prix €" value="'+esc(sv.prix)+'" style="'+inp+'"></td>'
+      +'<td style="padding:4px 6px"><input type="number" step="0.1" class="ope-sel-taux" placeholder="'+commPh+'" value="'+esc(sv.taux)+'" style="'+inp+'"></td>'
+      +'<td style="padding:4px 6px;text-align:center"><button onclick="removeOpeCatRow(\''+skuQ+'\')" style="padding:1px 6px;border:.5px solid var(--rd);border-radius:4px;font-size:11px;background:var(--rdBg);color:var(--rd);cursor:pointer;font-family:inherit">×</button></td>'
+      +'</tr>';
+  }).join('');
+  if (addBtn) addBtn.textContent = '+ Ajouter '+checked.length+' produit'+(checked.length>1?'s':'');
+}
+
+function removeOpeCatRow(sku) {
+  var cb = document.querySelector('.ope-cat-cb[value="'+sku+'"]');
+  if (cb) cb.checked = false;
+  updateOpeCatSelection();
+}
+
 async function confirmAddOpeProdCat(opId) {
   var statusEl = document.getElementById('ope-add-status');
-  var checked  = Array.from(document.querySelectorAll('.ope-cat-cb:checked'));
-  if (!checked.length) { if (statusEl) statusEl.innerHTML = '<span style="color:var(--am)">Sélectionnez au moins un produit.</span>'; return; }
-  var prix    = parseFloat((document.getElementById('ope-add-prix-cat')?.value||'').replace(',','.')) || null;
-  var tauxRaw = document.getElementById('ope-add-taux-cat')?.value;
-  var taux    = _parseTauxOpe(tauxRaw, MARKETPLACE === 'manomano');
-  var rows = checked.map(function(cb) {
-    return { operation_id: opId, marketplace: MARKETPLACE, ref: cb.value, nom_produit: cb.dataset.nom || null, prix: prix, taux_commission: taux };
+  var tbody    = document.getElementById('ope-cat-sel-tbody');
+  if (!tbody) return;
+  var isMM = MARKETPLACE === 'manomano';
+  var rows = [];
+  tbody.querySelectorAll('tr[data-sku]').forEach(function(tr) {
+    var sku  = tr.dataset.sku;
+    var prix = parseFloat((tr.querySelector('.ope-sel-prix')?.value||'').replace(',','.')) || null;
+    var taux = _parseTauxOpe(tr.querySelector('.ope-sel-taux')?.value, isMM);
+    var nom  = document.querySelector('.ope-cat-cb[value="'+sku+'"]')?.dataset.nom || null;
+    rows.push({ operation_id: opId, marketplace: MARKETPLACE, ref: sku, nom_produit: nom||null, prix: prix, taux_commission: taux });
   });
+  if (!rows.length) { if (statusEl) statusEl.innerHTML = '<span style="color:var(--am)">Aucun produit sélectionné.</span>'; return; }
   if (statusEl) statusEl.innerHTML = '<span style="color:var(--txS)">Ajout de '+rows.length+' produit(s)…</span>';
   try {
     for (var i = 0; i < rows.length; i += 200) {
