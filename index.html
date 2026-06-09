@@ -913,23 +913,26 @@ function updateAlertTabBadge(priceAlertCount) {
 
   const today = new Date().toISOString().slice(0,10);
   const validated = STATE._validatedAlerts || new Set();
+  const treated   = STATE._treatedAlerts   || new Set();
   const ad = STATE.alertData || {};
 
+  function isActive(key) { return !validated.has(key) && !treated.has(key); }
+
   // 1. SEA multi-marketplace (filtré sur la MP courante)
-  const seaMultiMpCount = (ad.seaMultiMp||[]).filter(function(r){ return r.marketplaces.includes(MARKETPLACE) && !validated.has('sea_multi_mp|'+r.sku); }).length;
+  const seaMultiMpCount = (ad.seaMultiMp||[]).filter(function(r){ return r.marketplaces.includes(MARKETPLACE) && isActive('sea_multi_mp|'+r.sku); }).length;
 
   // 2. SEA actif + délai > 30j
-  const seaDeliveryCount = (ad.seaDelivery||[]).filter(function(r){ return !validated.has('sea_delivery|'+r.sku); }).length;
+  const seaDeliveryCount = (ad.seaDelivery||[]).filter(function(r){ return isActive('sea_delivery|'+r.sku); }).length;
 
   // 3. SEA actif + opé commerciale active
-  const seaOpeCount = (ad.seaOpeDoublons||[]).filter(function(r){ return !validated.has('sea_ope_doublon|'+r.sku); }).length;
+  const seaOpeCount = (ad.seaOpeDoublons||[]).filter(function(r){ return isActive('sea_ope_doublon|'+r.sku); }).length;
 
-  // 4. Opé commerciale active + délai > 30j (nouveau type)
+  // 4. Opé commerciale active + délai > 30j
   var activeOpIds4 = new Set((STATE.activeOps||[]).filter(function(op){ return op.date_debut<=today&&op.date_fin>=today; }).map(function(op){ return op.id; }));
   var activeOpRefs4 = new Set();
   (STATE.activeOpProducts||[]).forEach(function(ap){ if (activeOpIds4.has(ap.operation_id)) activeOpRefs4.add(ap.ref); });
   const opeDeliveryCount = (STATE.products||[]).filter(function(p){
-    return p.sku && !validated.has('ope_delivery|'+p.sku) && (p._delivery||0) > 30 && activeOpRefs4.has(p.sku);
+    return p.sku && isActive('ope_delivery|'+p.sku) && (p._delivery||0) > 30 && activeOpRefs4.has(p.sku);
   }).length;
 
   const alertN = seaMultiMpCount + seaDeliveryCount + seaOpeCount + opeDeliveryCount + priceAlertCount;
@@ -958,7 +961,7 @@ function renderContent() {
   // Site Internet — page dédiée avec ses propres onglets
   if (MARKETPLACE === "site_internet") {
     switch(STATE.tab) {
-      case 0: el.innerHTML = renderSiteInternet(); break;
+      case 0: renderSiteInternet(); break;
       case 1: renderSiteSEO(); break;
       case 2: renderSitePositionsSEO(); break;
       case 3: renderSiteSEA(); break;
@@ -1622,6 +1625,7 @@ function renderProductSalesBlocks() {
     if (p.sku && p.canal_attribue) skuCanal[p.sku] = p.canal_attribue;
   });
   const DAY_FR = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
+  const showCanal = MARKETPLACE !== "site_internet";
   const today = new Date().toISOString().slice(0,10);
 
   // Calcul des 7 dates lun-dim à partir d'une date de début
@@ -1763,7 +1767,7 @@ function renderProductSalesBlocks() {
         +"<td style='padding:4px 5px;font-weight:600;white-space:nowrap;font-size:11px'>"+esc(r.ref)+"</td>"
         +"<td style='padding:4px 5px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px' title='"+esc(productName)+"'>"+esc(productName.slice(0,22))+"</td>"
         +newCell
-        +"<td style='padding:4px 5px;font-size:10px;color:var(--txS);white-space:nowrap'>"+esc(canal)+"</td>"
+        +(showCanal?"<td style='padding:4px 5px;font-size:10px;color:var(--txS);white-space:nowrap'>"+esc(canal)+"</td>":"")
         +dayCells+totalCell
         +"<td style='padding:4px 5px;text-align:center'>"+dealBadge(r.ref)+"</td>"
         +(showSea?"<td style='padding:4px 5px;text-align:center'>"+sea+"</td>":"")
@@ -1776,7 +1780,7 @@ function renderProductSalesBlocks() {
       +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS);white-space:nowrap'>Réf</th>"
       +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS)'>Produit</th>"
       +"<th style='padding:4px 4px;text-align:center;font-size:10px;color:#1a7a4c;white-space:nowrap'>🌱</th>"
-      +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS);white-space:nowrap'>Attribution</th>"
+      +(showCanal?"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS);white-space:nowrap'>Attribution</th>":"")
       +(wDates?DAY_FR.map(l=>"<th style='padding:4px 5px;text-align:right;font-size:10px;color:var(--txS);width:30px'>"+l+"</th>").join(""):"")
       +"<th style='padding:4px 6px;text-align:right;font-size:10px;font-weight:700;color:var(--ac);border-left:2px solid var(--border);width:38px'>Tot.</th>"
       +"<th style='padding:4px 5px;text-align:center;font-size:10px;color:var(--txS);white-space:nowrap'>Opé.</th>"
@@ -1798,7 +1802,7 @@ function renderProductSalesBlocks() {
           +"<td style='padding:5px 6px;font-size:11px;color:var(--txT);text-align:right'>"+(i+1)+"</td>"
           +"<td style='padding:5px 6px;font-weight:600;font-size:11px;white-space:nowrap'>"+esc(r.ref)+"</td>"
           +"<td style='padding:5px 6px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px' title='"+esc(pName)+"'>"+esc(pName.slice(0,26))+"</td>"
-          +"<td style='padding:5px 6px;font-size:10px;color:var(--txS)'>"+esc(canal)+"</td>"
+          +(showCanal?"<td style='padding:5px 6px;font-size:10px;color:var(--txS)'>"+esc(canal)+"</td>":"")
           +"<td style='padding:5px 6px;text-align:right;font-weight:700;color:var(--gn)'>"+r.qty+"</td>"
           +"<td style='padding:5px 6px;text-align:right;font-size:11px;color:var(--txS)'>"+basket+"</td>"
           +"</tr>";
@@ -1808,7 +1812,7 @@ function renderProductSalesBlocks() {
         +"<th style='padding:5px 6px;color:var(--txT);width:20px'>#</th>"
         +"<th style='padding:5px 6px;text-align:left;font-size:10px;color:var(--gn)'>Réf</th>"
         +"<th style='padding:5px 6px;text-align:left;font-size:10px;color:var(--gn)'>Produit</th>"
-        +"<th style='padding:5px 6px;text-align:left;font-size:10px;color:var(--gn)'>Attribution</th>"
+        +(showCanal?"<th style='padding:5px 6px;text-align:left;font-size:10px;color:var(--gn)'>Attribution</th>":"")
         +"<th style='padding:5px 6px;text-align:right;font-size:10px;color:var(--gn)'>Ventes</th>"
         +"<th style='padding:5px 6px;text-align:right;font-size:10px;color:var(--gn)'>PM TTC</th>"
         +"</tr></thead><tbody>"+rightRows+"</tbody></table>";
@@ -1865,7 +1869,7 @@ function renderProductSalesBlocks() {
         +"<td style='padding:4px 5px;font-weight:600;font-size:11px;white-space:nowrap'>"+esc(r.ref)+"</td>"
         +"<td style='padding:4px 5px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:130px' title='"+esc(name)+"'>"+esc(name.slice(0,20))+"</td>"
         +newCellPs
-        +"<td style='padding:4px 5px;font-size:10px;color:var(--txS)'>"+esc(canal)+"</td>"
+        +(showCanal?"<td style='padding:4px 5px;font-size:10px;color:var(--txS)'>"+esc(canal)+"</td>":"")
         +days.map(v=>"<td style='padding:4px 4px;text-align:right;font-size:11px;font-weight:"+(v>0?"700":"400")+";color:"+(v>0?"var(--tx)":"var(--txT)")+";width:30px'>"+(v>0?v:"—")+"</td>").join("")
         +"<td style='padding:4px 6px;text-align:right;font-weight:700;font-size:12px;color:"+(tot>0?"var(--ac)":"var(--txT)")+";border-left:2px solid var(--border);background:"+(tot>0?"var(--acBg)":"")+"'>"+(tot>0?tot:"—")+"</td>"
         +"<td style='padding:4px 5px;text-align:center'>"+psDealBadge(r.ref)+"</td>"
@@ -1878,14 +1882,17 @@ function renderProductSalesBlocks() {
       +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS);white-space:nowrap'>Réf</th>"
       +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS)'>Produit</th>"
       +"<th style='padding:4px 4px;text-align:center;font-size:10px;color:#1a7a4c;white-space:nowrap'>🌱</th>"
-      +"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS);white-space:nowrap'>Attribution</th>"
+      +(showCanal?"<th style='padding:4px 5px;text-align:left;font-size:10px;color:var(--txS);white-space:nowrap'>Attribution</th>":"")
       +DAY_FR.map(l=>"<th style='padding:4px 4px;text-align:right;font-size:10px;color:var(--txS);width:30px'>"+l+"</th>").join("")
       +"<th style='padding:4px 6px;text-align:right;font-size:10px;font-weight:700;color:var(--ac);border-left:2px solid var(--border);width:38px'>Tot.</th>"
       +"<th style='padding:4px 5px;text-align:center;font-size:10px;color:var(--txS);white-space:nowrap'>Opé.</th>"
       +(showSeaPs?"<th style='padding:4px 5px;text-align:center;font-size:10px;color:var(--txS)'>SEA</th>":"")
       +"</tr></thead><tbody>"+leftRows+"</tbody></table></div>";
     // Droite : Top10 nouveautés 2026 de la semaine
-    const new2026Ps = top10.filter(r=>NEW_2026_SET.has(r.ref)).slice(0,10);
+    const new2026Ps = Object.entries(wk.refs)
+      .filter(([ref])=>NEW_2026_SET.has(ref))
+      .map(([ref,v])=>({ref,qty:v.qty,ca_ht:v.ca_ht}))
+      .sort((a,b)=>b.qty-a.qty).slice(0,10);
     let rightTable2;
     if (!new2026Ps.length) {
       rightTable2 = "<div style='color:var(--txT);font-size:12px;padding:12px;text-align:center'>Aucune nouveauté 2026.</div>";
@@ -1899,7 +1906,7 @@ function renderProductSalesBlocks() {
           +"<td style='padding:5px 5px;font-size:11px;color:var(--txT);text-align:right'>"+(i+1)+"</td>"
           +"<td style='padding:5px 5px;font-weight:600;font-size:11px;white-space:nowrap'>"+esc(r.ref)+"</td>"
           +"<td style='padding:5px 5px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px' title='"+esc(nm)+"'>"+esc(nm.slice(0,22))+"</td>"
-          +"<td style='padding:5px 5px;font-size:10px;color:var(--txS)'>"+esc(canal)+"</td>"
+          +(showCanal?"<td style='padding:5px 5px;font-size:10px;color:var(--txS)'>"+esc(canal)+"</td>":"")
           +"<td style='padding:5px 5px;text-align:right;font-weight:700;color:var(--gn)'>"+r.qty+"</td>"
           +"<td style='padding:5px 5px;text-align:right;font-size:11px;color:var(--txS)'>"+basket+"</td>"
           +"</tr>";
@@ -1909,7 +1916,7 @@ function renderProductSalesBlocks() {
         +"<th style='padding:5px 5px;color:var(--txT);width:20px'>#</th>"
         +"<th style='padding:5px 5px;text-align:left;font-size:10px;color:var(--gn)'>Réf</th>"
         +"<th style='padding:5px 5px;text-align:left;font-size:10px;color:var(--gn)'>Produit</th>"
-        +"<th style='padding:5px 5px;text-align:left;font-size:10px;color:var(--gn)'>Attribution</th>"
+        +(showCanal?"<th style='padding:5px 5px;text-align:left;font-size:10px;color:var(--gn)'>Attribution</th>":"")
         +"<th style='padding:5px 5px;text-align:right;font-size:10px;color:var(--gn)'>Ventes</th>"
         +"<th style='padding:5px 5px;text-align:right;font-size:10px;color:var(--gn)'>PM TTC</th>"
         +"</tr></thead><tbody>"+rr+"</tbody></table>";
@@ -7455,6 +7462,9 @@ function markAlerteTreated(alertType, sku) {
   STATE._treatedAlerts.add(key);
   STATE._treatedAlertsTs[key] = new Date().toISOString();
   _saveTreatedAlerts();
+  // Persistance Supabase pour partage cross-navigateur
+  sbInsert('alert_history', { marketplace: MARKETPLACE, alert_type: 'treated', sku: key, detail: { treated_at: STATE._treatedAlertsTs[key] } }).catch(function(){});
+  updateAlertTabBadge(STATE._priceAlertCount || 0);
   renderAlertes();
 }
 
@@ -7463,6 +7473,9 @@ function unmarkAlerteTreated(alertType, sku) {
   if (STATE._treatedAlerts) STATE._treatedAlerts.delete(key);
   if (STATE._treatedAlertsTs) delete STATE._treatedAlertsTs[key];
   _saveTreatedAlerts();
+  // Supprimer de Supabase
+  sbDelete('alert_history', 'marketplace=eq.'+MARKETPLACE+'&alert_type=eq.treated&sku=eq.'+encodeURIComponent(key)).catch(function(){});
+  updateAlertTabBadge(STATE._priceAlertCount || 0);
   renderAlertes();
 }
 
@@ -7504,10 +7517,20 @@ async function renderAlertes() {
   var TH = 'padding:7px 10px;text-align:left;font-size:11px;font-weight:600;color:var(--txS);background:var(--bg);border-bottom:1px solid var(--border);white-space:nowrap;';
   var TD = 'padding:6px 10px;font-size:12px;border-bottom:1px solid var(--borderL);vertical-align:top;';
 
-  // ── Charger état traité depuis localStorage + auto-archiver après 7j ────────
+  // ── Charger état traité depuis localStorage + Supabase + auto-archiver après 7j ──
   _loadTreatedAlerts();
   var _stale = _checkStaleAlerts();
   if (_stale.length) _archiveStaleBatch(_stale);
+  // Sync cross-navigateur depuis Supabase
+  try {
+    var remoteTreated = await sb('alert_history', 'marketplace=eq.'+MARKETPLACE+'&alert_type=eq.treated&select=sku');
+    remoteTreated.forEach(function(r) {
+      if (r.sku && !STATE._validatedAlerts?.has(r.sku)) {
+        if (!STATE._treatedAlerts) STATE._treatedAlerts = new Set();
+        STATE._treatedAlerts.add(r.sku);
+      }
+    });
+  } catch(e) {}
 
   // ── État alertes ─────────────────────────────────────────────────
   if (!STATE._validatedAlerts) STATE._validatedAlerts = new Set();
@@ -7945,7 +7968,7 @@ async function openAlertesHistorique() {
   var mpLabel = (MARKETPLACES.find(function(m){return m.id===MARKETPLACE;})||{label:MARKETPLACE}).label;
   openModal('📋 Historique alertes — '+mpLabel, '<div style="padding:20px;text-align:center;color:var(--txS)">Chargement...</div>');
   try {
-    var hist = await sb('alert_history', 'marketplace=eq.'+MARKETPLACE+'&select=*&order=validated_at.desc&limit=200');
+    var hist = await sb('alert_history', 'marketplace=eq.'+MARKETPLACE+'&alert_type=neq.treated&select=*&order=validated_at.desc&limit=200');
     if (!hist.length) {
       document.getElementById('modal-body').innerHTML = '<div style="padding:20px;text-align:center;color:var(--txT)">Aucune alerte archivée.</div>';
       return;
@@ -10395,8 +10418,88 @@ function renderSiteHeatmap() {
   </div>`;
 }
 
-function renderSiteInternet() {
-  return renderRevenueBlock() + renderSiteHeatmap() + renderProductSalesBlocks();
+async function renderSiteInternet() {
+  const el = document.getElementById('content');
+
+  // Rendu synchrone immédiat + zones async skeleton
+  el.innerHTML =
+    `<div id="site-synth-kpis" class="metrics" style="margin-bottom:0">
+       ${[1,2,3].map(()=>`<div class="metric"><div class="metric-label" style="background:var(--borderL);border-radius:4px;width:80px;height:12px;margin-bottom:6px"></div><div class="metric-value" style="background:var(--borderL);border-radius:4px;width:60px;height:28px"></div></div>`).join('')}
+     </div>`
+    + renderRevenueBlock()
+    + renderSiteHeatmap()
+    + renderProductSalesBlocks()
+    + `<div class="card" style="margin-top:20px;min-height:220px">
+         <div class="card-title">Trafic total — évolution 53 semaines glissantes</div>
+         <div id="wrap-total-evol" style="position:relative;height:190px"><canvas id="chart-total-evol"></canvas></div>
+       </div>`;
+
+  // Chargement async GA4
+  _ensureChartJs(async function(err) {
+    if (err) {
+      document.getElementById('site-synth-kpis').innerHTML = '<div style="color:var(--txT);font-size:12px;padding:8px">Impossible de charger Chart.js</div>';
+      return;
+    }
+    try {
+      const [kpi, evol] = await Promise.all([
+        fetch('/api/ga4?type=total_kpi').then(r => r.json()),
+        fetch('/api/ga4?type=total_evolution').then(r => r.json()),
+      ]);
+
+      // KPI cards
+      const kpiEl = document.getElementById('site-synth-kpis');
+      if (kpiEl) {
+        if (kpi.error) {
+          kpiEl.innerHTML = `<div style="color:var(--txT);font-size:12px;padding:8px">GA4 : ${esc(kpi.error)}</div>`;
+        } else {
+          const cur = kpi.current || {}, n1 = kpi.n1 || {};
+          kpiEl.innerHTML = [
+            { label: 'Sessions totales',   val: _fmtNum(cur.sessions),       evol: _evolBadge(cur.sessions, n1.sessions),             sub: `N-1 : ${_fmtNum(n1.sessions)}` },
+            { label: 'Taux de conversion', val: _fmtPct(cur.conversionRate), evol: _evolBadge(cur.conversionRate, n1.conversionRate),  sub: `N-1 : ${_fmtPct(n1.conversionRate)}` },
+            { label: 'Transactions',       val: _fmtNum(cur.transactions),   evol: _evolBadge(cur.transactions, n1.transactions),      sub: `N-1 : ${_fmtNum(n1.transactions)}` },
+          ].map(k => `<div class="metric">
+            <div class="metric-label">${k.label}</div>
+            <div class="metric-value" style="font-size:22px">${k.val}${k.evol||''}</div>
+            <div class="metric-sub">${k.sub||''}</div>
+          </div>`).join('');
+        }
+      }
+
+      // Graphe évolution 53 semaines
+      _destroyChart('total-evol');
+      const weeks = (evol.weeks || []).sort((a,b) => a.yearWeek > b.yearWeek ? 1 : -1);
+      const c = document.getElementById('chart-total-evol');
+      if (c && weeks.length) {
+        const wkLbl = yw => `S${yw.slice(4)} ${yw.slice(0,4)}`;
+        _saveChart('total-evol', new Chart(c, {
+          type: 'line',
+          data: {
+            labels: weeks.map(w => wkLbl(w.yearWeek)),
+            datasets: [{
+              label: 'Sessions totales',
+              data: weeks.map(w => w.sessions),
+              borderColor: '#6c757d',
+              backgroundColor: 'rgba(108,117,125,0.10)',
+              fill: true, tension: 0.3, pointRadius: 1, pointHoverRadius: 4,
+            }],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              y: { beginAtZero: false, grid: { color: '#f0eee9' } },
+              x: { grid: { display: false }, ticks: { maxTicksLimit: 18, maxRotation: 0 } },
+            },
+          },
+        }));
+      } else if (c) {
+        document.getElementById('wrap-total-evol').innerHTML = '<div style="text-align:center;padding:40px;color:var(--txT);font-size:12px">Aucune donnée GA4 disponible</div>';
+      }
+    } catch(e) {
+      const kpiEl = document.getElementById('site-synth-kpis');
+      if (kpiEl) kpiEl.innerHTML = `<div style="color:var(--txT);font-size:12px;padding:8px">Erreur GA4 : ${esc(String(e))}</div>`;
+    }
+  });
 }
 
 // IDs des bases de données Notion — à renseigner après configuration

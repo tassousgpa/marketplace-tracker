@@ -320,6 +320,47 @@ module.exports = async function handler(req, res) {
       });
     }
 
+    // ── Trafic total — KPIs semaine vs N-1 (tous canaux) ─────────────
+    if (type === 'total_kpi') {
+      const wk   = lastWeek();
+      const wkN1 = lastWeekN1();
+      const metrics = [
+        { name: 'sessions' },
+        { name: 'transactions' },
+        { name: 'sessionConversionRate' },
+      ];
+      const [curData, n1Data] = await Promise.all([
+        runReport(token, propertyId, { dateRanges: [{ startDate: wk.start, endDate: wk.end }], metrics }),
+        runReport(token, propertyId, { dateRanges: [{ startDate: wkN1.start, endDate: wkN1.end }], metrics }),
+      ]);
+      const getTotal = (data, idx) => {
+        const t = data.totals?.[0]?.metricValues?.[idx];
+        if (t) return parseFloat(t.value) || 0;
+        return sumMetrics(data, idx);
+      };
+      res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=300');
+      return res.status(200).json({
+        current: { sessions: getTotal(curData, 0), transactions: getTotal(curData, 1), conversionRate: getTotal(curData, 2) },
+        n1:      { sessions: getTotal(n1Data, 0), transactions: getTotal(n1Data, 1), conversionRate: getTotal(n1Data, 2) },
+        weekLabel: wk.label,
+        week: wk,
+      });
+    }
+
+    // ── Trafic total — évolution 53 semaines (tous canaux) ────────────
+    if (type === 'total_evolution') {
+      const data = await runReport(token, propertyId, {
+        dateRanges: [{ startDate: '370daysAgo', endDate: 'yesterday' }],
+        dimensions: [{ name: 'yearWeek' }],
+        metrics: [{ name: 'sessions' }],
+        orderBys: [{ dimension: { dimensionName: 'yearWeek' } }],
+      });
+      res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=300');
+      return res.status(200).json({
+        weeks: parseRows(data).map(r => ({ yearWeek: r.dims[0], sessions: r.mets[0] })),
+      });
+    }
+
     return res.status(400).json({ error: `Unknown type: ${type}` });
   } catch (e) {
     return res.status(500).json({ error: e.message });
