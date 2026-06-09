@@ -126,6 +126,13 @@ tr.stripe{background:var(--bg)}
 .home-banner-label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--txS);margin-bottom:8px;font-weight:700}
 .home-banner-value{font-size:28px;font-weight:700;letter-spacing:-0.01em}
 .home-banner-sub{font-size:12px;color:var(--txS);margin-top:8px;display:flex;gap:16px;flex-wrap:wrap}
+.home-banner-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.home-banner-cell.mkp-side{background:#fdf6ec}
+.home-banner-cell.site-side{background:#f0f6ff}
+.home-col.mkp-side{background:#fdf6ec}
+.home-col.site-side{background:#f0f6ff}
+.home-accede-btn{flex-shrink:0;padding:7px 14px;border:1px solid var(--tx);background:var(--tx);color:#fff;font-weight:600;font-size:11px;cursor:pointer;font-family:inherit;letter-spacing:.04em;text-transform:uppercase;border-radius:0}
+.home-accede-btn:hover{opacity:.85}
 .home-grid{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--border);border-top:none}
 .home-col{padding:20px}
 .home-col:first-child{border-right:1px solid var(--border)}
@@ -134,6 +141,7 @@ tr.stripe{background:var(--bg)}
 .home-table th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--txS);padding:6px 8px;border-bottom:1px solid var(--tx)}
 .home-table td{padding:6px 8px;border-bottom:1px solid var(--borderL)}
 .home-table tbody tr:last-child td{border-bottom:1px solid var(--tx)}
+.home-table tr.bm-row td{background:var(--amBg);font-weight:700}
 .home-kpi-row{display:flex;border:1px solid var(--border);margin-bottom:14px}
 .home-kpi{flex:1;padding:10px 12px}
 .home-kpi:first-child{border-right:1px solid var(--border)}
@@ -552,12 +560,12 @@ async function renderHome() {
       </div>`).join('')}
     </div>
     <div class="home-grid">
-      <div class="home-col">
+      <div class="home-col mkp-side">
         <div class="home-col-title">Marketplaces</div>
         <div id="home-mkp-content"><div class="loading"><div class="loading-spinner"></div></div></div>
         <button class="home-enter-btn" onclick="enterMarketplaces()">Voir le détail →</button>
       </div>
-      <div class="home-col">
+      <div class="home-col site-side">
         <div class="home-col-title">Site Internet</div>
         <div id="home-site-content"><div class="loading"><div class="loading-spinner"></div></div></div>
         <button class="home-enter-btn" onclick="enterSiteInternet()">Voir le détail →</button>
@@ -589,12 +597,16 @@ async function loadHomeData() {
     const yr = new Date().getFullYear();
     const inList = ids => `(${ids.join(',')})`;
 
-    const [imports, entries, psDaily, opsAll, opProdsAll] = await Promise.all([
+    const COMPETITOR_MPS = ['conforama','maisonsdumonde','cdiscount','amazon','laredoute','but'];
+
+    const [imports, entries, psDaily, opsAll, opProdsAll, trackedSellersAll, sellerStatsAll] = await Promise.all([
       sb('revenue_imports', `marketplace=in.${inList(allIds)}&select=marketplace,period_label,revenue,period_start,period_end,year_type`).catch(()=>[]),
       sb('revenue_entries', `marketplace=in.${inList(allIds)}&select=marketplace,week_label,revenue,week_start_date`).catch(()=>[]),
       sb('ps_sales_daily', `marketplace=in.${inList(psMarketplaceIds)}&sale_date=gte.${yr}-01-01&select=marketplace,product_ref,order_reference,sale_date,quantity,revenue_ht,shipping_ht,revenue_ttc`).catch(()=>[]),
       sb('commercial_operations', `marketplace=in.${inList(mpIds)}&select=*`).catch(()=>[]),
       sb('operation_products', `marketplace=in.${inList(mpIds)}&select=marketplace,ref,operation_id,prix`).catch(()=>[]),
+      sb('tracked_sellers', `marketplace=in.${inList(COMPETITOR_MPS)}&active=eq.true&select=marketplace,seller_name`).catch(()=>[]),
+      sb('seller_stats', `marketplace=in.${inList(COMPETITOR_MPS)}&select=marketplace,date,seller,seller_sales,seller_ratings_count&order=date.asc&limit=20000`).catch(()=>[]),
     ]);
 
     function makeGetWeekCA(mpImports, mpEntries, mpPs) {
@@ -676,10 +688,13 @@ async function loadHomeData() {
     const bannerEl = document.getElementById('home-banner');
     if (bannerEl) {
       bannerEl.innerHTML = [
-        { label: `CA Marketplaces — Semaine ${lastWk.label}`, last: mkpCaLast, lastN1: mkpCaLastN1, ytd: mkpCaYtdN, ytdN1: mkpCaYtdN1 },
-        { label: `CA Site Internet — Semaine ${lastWk.label}`, last: siteCaLast, lastN1: siteCaLastN1, ytd: siteYtdN, ytdN1: siteYtdN1 },
-      ].map(c => `<div class="home-banner-cell">
-          <div class="home-banner-label">${c.label}</div>
+        { label: `CA Marketplaces — Semaine ${lastWk.label}`, last: mkpCaLast, lastN1: mkpCaLastN1, ytd: mkpCaYtdN, ytdN1: mkpCaYtdN1, side: 'mkp-side', action: 'enterMarketplaces()' },
+        { label: `CA Site Internet — Semaine ${lastWk.label}`, last: siteCaLast, lastN1: siteCaLastN1, ytd: siteYtdN, ytdN1: siteYtdN1, side: 'site-side', action: 'enterSiteInternet()' },
+      ].map(c => `<div class="home-banner-cell ${c.side}">
+          <div class="home-banner-top">
+            <div class="home-banner-label">${c.label}</div>
+            <button class="home-accede-btn" onclick="${c.action}">Accéder</button>
+          </div>
           <div class="home-banner-value">${fmtCAHome(c.last)} ${fmtPctEvolHome(c.last, c.lastN1)}</div>
           <div class="home-banner-sub">
             <span>YTD ${lastWkParsed.year} : <b>${fmtCAHome(c.ytd)}</b> ${fmtPctEvolHome(c.ytd, c.ytdN1)}</span>
@@ -707,11 +722,11 @@ async function loadHomeData() {
           <thead><tr><th>Marketplace</th><th style="text-align:right">CA ${lastWk.label}</th><th style="text-align:right">CA YTD ${lastWkParsed.year}</th><th style="text-align:right">YTD vs N-1</th><th style="text-align:center">Tendance 6 sem.</th></tr></thead>
           <tbody>${tableRows}</tbody>
         </table>
-        <div id="home-alerts-table">Chargement des alertes…</div>`;
+        <div id="home-competitors-tables">Chargement des concurrents…</div>`;
     }
 
-    // ── Alertes par marketplace (alertes prix sur opérations actives) ──
-    loadHomeAlerts(mpIds, opsAll, opProdsAll, psDaily);
+    // ── Top 10 concurrents (ventes cumulées + tendance) ──
+    loadHomeCompetitors(trackedSellersAll, sellerStatsAll);
 
     // ── Colonne Site Internet ──
     renderHomeSiteInternet(lastWk, lastWkParsed, siteCaLast, sitePs, fmtCAHome);
@@ -723,40 +738,96 @@ async function loadHomeData() {
   }
 }
 
-async function loadHomeAlerts(mpIds, opsAll, opProdsAll, psDaily) {
-  const el = document.getElementById('home-alerts-table');
+function isHomeBmSeller(name) {
+  if (!name) return false;
+  if (BM_NAMES_SET.has(name)) return true;
+  const norm = String(name).toLowerCase().replace(/[\s\-_]/g, "");
+  return [...BM_NAMES_SET].some(n => n.toLowerCase().replace(/[\s\-_]/g, "") === norm);
+}
+
+async function loadHomeCompetitors(trackedSellersAll, sellerStatsAll) {
+  const el = document.getElementById('home-competitors-tables');
   if (!el) return;
   try {
-    const today = new Date().toISOString().slice(0,10);
-    const badSkusByMp = {};
-    mpIds.forEach(mp => badSkusByMp[mp] = new Set());
-    const activeOps = (opsAll||[]).filter(op=>op.date_debut<=today&&op.date_fin>=today);
-    activeOps.forEach(op => {
-      const opProds = (opProdsAll||[]).filter(ap=>ap.operation_id===op.id && ap.marketplace===op.marketplace && ap.prix && ap.prix>0);
-      if (!opProds.length) return;
-      const opPrixBySku = {};
-      opProds.forEach(ap=>{ opPrixBySku[ap.ref]=ap.prix; });
-      psDaily.filter(s=>s.marketplace===op.marketplace && s.sale_date>=op.date_debut && s.sale_date<=op.date_fin).forEach(s => {
-        const opPrix = opPrixBySku[s.product_ref];
-        if (!opPrix) return;
-        const qty = s.quantity||1, revTtc = parseFloat(s.revenue_ttc)||0;
-        if (revTtc<=0) return;
-        const ecart = (revTtc/qty - opPrix)/opPrix;
-        if (Math.abs(ecart) >= 0.02) badSkusByMp[op.marketplace].add(s.product_ref);
-      });
+    const CUMUL_MPS = new Set(['conforama','maisonsdumonde']);
+    const LTM_MPS = new Set(['cdiscount','amazon','laredoute','but']);
+
+    // Ensembles de noms de vendeurs suivis par marketplace (normalisés)
+    const trackedByMp = {};
+    (trackedSellersAll||[]).forEach(t => {
+      if (!trackedByMp[t.marketplace]) trackedByMp[t.marketplace] = new Set();
+      trackedByMp[t.marketplace].add(String(t.seller_name||'').toLowerCase().replace(/[\s\-_]/g, ""));
+    });
+    const norm = s => String(s||'').toLowerCase().replace(/[\s\-_]/g, "");
+
+    // Regroupe seller_stats par (marketplace, seller), trié ASC par date
+    const byKey = {};
+    (sellerStatsAll||[]).forEach(s => {
+      if (!s.seller) return;
+      const key = s.marketplace + '|' + s.seller;
+      if (!byKey[key]) byKey[key] = [];
+      byKey[key].push(s);
     });
 
-    const rows = mpIds.map(mp => ({
-      label: (MARKETPLACES.find(m=>m.id===mp)||{}).label || mp,
-      n: badSkusByMp[mp].size,
-    })).sort((a,b)=>b.n-a.n);
+    const cumulRows = [];
+    const trendRows = [];
 
-    el.innerHTML = `<table class="home-table" style="margin-bottom:0">
-        <thead><tr><th>Alertes prix actives</th><th style="text-align:right">Nb produits</th></tr></thead>
-        <tbody>${rows.map(r=>`<tr><td>${esc(r.label)}</td><td style="text-align:right;font-weight:700;${r.n>0?'color:var(--rd)':'color:var(--txT)'}">${r.n}</td></tr>`).join('')}</tbody>
-      </table>`;
+    Object.entries(byKey).forEach(([key, rows]) => {
+      const [mp, seller] = key.split('|');
+      const tracked = trackedByMp[mp];
+      if (tracked && !tracked.has(norm(seller))) return;
+      const sorted = rows.slice().sort((a,b)=> a.date < b.date ? -1 : 1);
+      const mpLabel = (MARKETPLACES.find(m=>m.id===mp)||{}).label || mp;
+      const isBM = isHomeBmSeller(seller);
+
+      if (CUMUL_MPS.has(mp)) {
+        const valid = sorted.filter(r => r.seller_sales != null);
+        if (valid.length < 2) return;
+        const latest = valid[valid.length-1], prev = valid[valid.length-2];
+        const delta = latest.seller_sales - prev.seller_sales;
+        if (delta <= 0) return;
+        cumulRows.push({ seller, mpLabel, delta, isBM });
+      } else if (LTM_MPS.has(mp)) {
+        let latest, prev;
+        if (mp === 'amazon' || mp === 'but') {
+          const valid = sorted.filter(r => r.seller_ratings_count != null);
+          if (valid.length < 2) return;
+          latest = valid[valid.length-1]; prev = valid[valid.length-2];
+          const prevVal = prev.seller_ratings_count||0, curVal = latest.seller_ratings_count||0;
+          if (prevVal <= 0) return;
+          const pct = (curVal-prevVal)/prevVal*100;
+          trendRows.push({ seller, mpLabel, pct, isBM });
+        } else {
+          const valid = sorted.filter(r => r.seller_sales != null);
+          if (valid.length < 2) return;
+          latest = valid[valid.length-1]; prev = valid[valid.length-2];
+          const prevVal = prev.seller_sales||0, curVal = latest.seller_sales||0;
+          if (prevVal <= 0) return;
+          const pct = (curVal-prevVal)/prevVal*100;
+          trendRows.push({ seller, mpLabel, pct, isBM });
+        }
+      }
+    });
+
+    cumulRows.sort((a,b)=>b.delta-a.delta);
+    trendRows.sort((a,b)=>b.pct-a.pct);
+    const top10Cumul = cumulRows.slice(0,10);
+    const top10Trend = trendRows.slice(0,10);
+
+    const tableHtml = (title, rows, valueFmt) => {
+      if (!rows.length) return '';
+      return `<table class="home-table" style="margin-bottom:12px">
+          <thead><tr><th>${title}</th><th>Marketplace</th><th style="text-align:right">Variation</th></tr></thead>
+          <tbody>${rows.map(r=>{ const v=valueFmt(r); return `<tr${r.isBM?' class="bm-row"':''}><td>${esc(r.seller)}</td><td>${esc(r.mpLabel)}</td><td style="text-align:right;font-weight:700;color:${v.col}">${v.txt}</td></tr>`; }).join('')}</tbody>
+        </table>`;
+    };
+
+    let html = '';
+    html += tableHtml('Top 10 ventes (depuis dernier scraping)', top10Cumul, r => ({ txt: '+'+Math.round(r.delta), col: 'var(--gn)' }));
+    html += tableHtml('Top 10 tendance vs N-1 (% évolution)', top10Trend, r => ({ txt: (r.pct>=0?'+':'')+Math.round(r.pct)+'%', col: r.pct>=0?'var(--gn)':'var(--rd)' }));
+    el.innerHTML = html || `<div style="color:var(--txT);font-size:12px">Données concurrents indisponibles</div>`;
   } catch(e) {
-    el.innerHTML = `<div style="color:var(--txT);font-size:12px">Alertes indisponibles</div>`;
+    el.innerHTML = `<div style="color:var(--txT);font-size:12px">Données concurrents indisponibles</div>`;
   }
 }
 
