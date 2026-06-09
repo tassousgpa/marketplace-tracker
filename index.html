@@ -7846,7 +7846,7 @@ async function renderAlertes() {
       return orders.map(function(o,i) {
         var ecartColor = Math.abs(o.ecartPct) >= 10 ? 'var(--rd)' : 'var(--am)';
         var signe = o.ecartPct >= 0 ? '+' : '';
-        var fmtDate = new Date(o.saleDate+'T12:00:00Z').toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'});
+        var fmtDate = new Date(String(o.saleDate).slice(0,10)+'T12:00:00Z').toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'2-digit'});
         var rowBg = isTreated ? 'background:#f9f9f9;' : (i%2?'background:var(--bg);':'');
         return '<tr style="'+rowBg+'border-bottom:1px solid var(--borderL)">'
           +'<td style="'+TD+'font-size:11px;color:var(--txS)">'+fmtDate+'</td>'
@@ -10133,11 +10133,11 @@ function renderSiteHeatmap() {
   const nowHour  = nowUTC.getUTCHours();
   const todayIdx = weekDates.indexOf(todayStr);
 
-  // Couleur de cellule : intensité bleue selon valeur
+  // Couleur de cellule : rouge clair si 0 ou 1 commande, bleu si ≥ 2
   function cellStyle(si, di, val) {
     const isFuture = di > todayIdx || (di === todayIdx && SLOTS[si].from > nowHour);
     if (isFuture) return 'background:#f7f6f4;color:var(--txT)';
-    if (val === 0) return 'background:#fafaf8;color:var(--txT)';
+    if (val <= 1) return 'background:#fff0ee;color:#c0392b';
     const intensity = val / maxCell;
     const alpha = 0.12 + intensity * 0.75;
     const textColor = intensity > 0.55 ? '#fff' : 'var(--tx)';
