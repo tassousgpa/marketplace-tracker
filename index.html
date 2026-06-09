@@ -482,7 +482,14 @@ function getTabNames() {
   return TAB_NAMES;
 }
 
+const SITE_INTERNET_PASSWORD = "site!";
 function switchMarketplace(mp, btn) {
+  if (mp === 'site_internet' && localStorage.getItem('site_internet_unlocked') !== '1') {
+    const pwd = prompt("Mot de passe pour accéder à Site Internet :");
+    if (pwd === null) return;
+    if (pwd !== SITE_INTERNET_PASSWORD) { alert("Mot de passe incorrect."); return; }
+    localStorage.setItem('site_internet_unlocked', '1');
+  }
   HOME_VIEW = false;
   var tabsEl = document.getElementById('tabs');
   if (tabsEl) tabsEl.style.display = '';
