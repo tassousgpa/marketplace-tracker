@@ -376,6 +376,31 @@ module.exports = async function handler(req, res) {
       });
     }
 
+    // ── Trafic total — conversion 3 derniers jours vs moyenne YTD (tous canaux) ──
+    if (type === 'total_conv_recent') {
+      const now = new Date();
+      const endD = new Date(now); endD.setUTCDate(endD.getUTCDate() - 1); // hier
+      const startD = new Date(endD); startD.setUTCDate(startD.getUTCDate() - 2); // 3 jours
+      const fmt = d => d.toISOString().slice(0, 10);
+      const ytdStart = `${now.getUTCFullYear()}-01-01`;
+      const metrics = [{ name: 'sessions' }, { name: 'transactions' }, { name: 'sessionConversionRate' }];
+      const [recentData, ytdData] = await Promise.all([
+        runReport(token, propertyId, { dateRanges: [{ startDate: fmt(startD), endDate: fmt(endD) }], metrics }),
+        runReport(token, propertyId, { dateRanges: [{ startDate: ytdStart, endDate: fmt(endD) }], metrics }),
+      ]);
+      const getTotal = (data, idx) => {
+        const t = data.totals?.[0]?.metricValues?.[idx];
+        if (t) return parseFloat(t.value) || 0;
+        return sumMetrics(data, idx);
+      };
+      res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=300');
+      return res.status(200).json({
+        recent: { sessions: getTotal(recentData, 0), transactions: getTotal(recentData, 1), conversionRate: getTotal(recentData, 2) },
+        ytd:    { sessions: getTotal(ytdData, 0), transactions: getTotal(ytdData, 1), conversionRate: getTotal(ytdData, 2) },
+        period: { start: fmt(startD), end: fmt(endD) },
+      });
+    }
+
     return res.status(400).json({ error: `Unknown type: ${type}` });
   } catch (e) {
     return res.status(500).json({ error: e.message });

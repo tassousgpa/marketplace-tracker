@@ -118,6 +118,36 @@ tr.stripe{background:var(--bg)}
 .mp-panel-badge-live{background:#fef9ec;color:#a35f00;border:.5px solid #e9c97a}
 .mp-panel-badge-ok{background:var(--gnBg);color:var(--gn);border:.5px solid #9fd4b8}
 .mp-panel-badge-none{background:var(--borderL);color:var(--txT);border:.5px solid var(--border)}
+/* ── Page d'accueil (split Marketplaces / Site Internet) ── */
+.home-wrap{display:flex;flex-direction:column}
+.home-banner{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--tx)}
+.home-banner-cell{padding:18px 22px;border-right:1px solid var(--tx)}
+.home-banner-cell:last-child{border-right:none}
+.home-banner-label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--txS);margin-bottom:8px;font-weight:700}
+.home-banner-value{font-size:28px;font-weight:700;letter-spacing:-0.01em}
+.home-banner-sub{font-size:12px;color:var(--txS);margin-top:8px;display:flex;gap:16px;flex-wrap:wrap}
+.home-grid{display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--border);border-top:none}
+.home-col{padding:20px}
+.home-col:first-child{border-right:1px solid var(--border)}
+.home-col-title{font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid var(--tx)}
+.home-table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px}
+.home-table th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--txS);padding:6px 8px;border-bottom:1px solid var(--tx)}
+.home-table td{padding:6px 8px;border-bottom:1px solid var(--borderL)}
+.home-table tbody tr:last-child td{border-bottom:1px solid var(--tx)}
+.home-kpi-row{display:flex;border:1px solid var(--border);margin-bottom:14px}
+.home-kpi{flex:1;padding:10px 12px}
+.home-kpi:first-child{border-right:1px solid var(--border)}
+.home-kpi-label{font-size:10px;text-transform:uppercase;color:var(--txS);letter-spacing:.04em;margin-bottom:4px}
+.home-kpi-value{font-size:17px;font-weight:700}
+.home-enter-btn{display:block;width:100%;margin-top:6px;padding:10px;border:1px solid var(--tx);background:var(--tx);color:#fff;font-weight:600;font-size:12px;cursor:pointer;font-family:inherit;letter-spacing:.04em;text-transform:uppercase;border-radius:0}
+.home-enter-btn:hover{opacity:.85}
+@media (max-width:860px){
+  .home-banner{grid-template-columns:1fr}
+  .home-banner-cell{border-right:none;border-bottom:1px solid var(--tx)}
+  .home-banner-cell:last-child{border-bottom:none}
+  .home-grid{grid-template-columns:1fr}
+  .home-col:first-child{border-right:none;border-bottom:1px solid var(--border)}
+}
 </style>
   <!-- Vercel Web Analytics -->
   <script defer src="/_vercel/insights/script.js"></script>
@@ -141,6 +171,7 @@ tr.stripe{background:var(--bg)}
       <div class="mp-active-date subtitle" id="header-subtitle">Chargement...</div>
     </div>
     <div class="header-right">
+      <button class="btn-changer" onclick="goHome()" id="btn-home" style="margin-right:6px">Accueil</button>
       <button class="btn-changer" onclick="toggleMpPanel()" id="btn-changer">Changer</button>
       <div class="mp-panel hidden" id="mp-panel"></div>
     </div>
@@ -168,6 +199,7 @@ const ACCESS_CODE = "MKP2026!";
 const SB_URL = "https://pmxsthzdxubqbemdgtbr.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBteHN0aHpkeHVicWJlbWRndGJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk4NDQsImV4cCI6MjA5MDAyNTg0NH0.GpfAw91eJ8D7RIeZLFIejCt9DTwGpXvOGcxYlhZS78I";
 let MARKETPLACE = "cdiscount";
+let HOME_VIEW = true;
 
 // Marketplaces disponibles
 const MARKETPLACES = [
@@ -451,6 +483,11 @@ function getTabNames() {
 }
 
 function switchMarketplace(mp, btn) {
+  HOME_VIEW = false;
+  var tabsEl = document.getElementById('tabs');
+  if (tabsEl) tabsEl.style.display = '';
+  var btnChangerEl = document.getElementById('btn-changer');
+  if (btnChangerEl) btnChangerEl.style.display = '';
   MARKETPLACE = mp;
   // cleanup old "mp-btn" active state if present
   try {
@@ -469,6 +506,322 @@ function switchMarketplace(mp, btn) {
   try { closeMpPanel(); } catch(e){}
   STATE.tab = 0;
   loadData();
+}
+
+// =============================================
+// PAGE D'ACCUEIL — split Marketplaces / Site Internet
+// =============================================
+function goHome() {
+  HOME_VIEW = true;
+  try { closeMpPanel(); } catch(e){}
+  var tabsEl = document.getElementById('tabs');
+  if (tabsEl) { tabsEl.innerHTML = ''; tabsEl.style.display = 'none'; }
+  var btnChangerEl = document.getElementById('btn-changer');
+  if (btnChangerEl) btnChangerEl.style.display = 'none';
+  var nameEl = document.getElementById('mp-active-name');
+  if (nameEl) { nameEl.textContent = 'Tableau de bord'; nameEl.style.color = 'var(--tx)'; }
+  var subEl = document.getElementById('header-subtitle');
+  if (subEl) subEl.textContent = "Vue d'ensemble — Marketplaces & Site Internet";
+  var header = document.querySelector('.header');
+  if (header) { header.style.borderTop = '4px solid var(--tx)'; header.style.background = 'var(--card)'; }
+  renderHome();
+}
+
+function enterMarketplaces() {
+  switchMarketplace('cdiscount');
+}
+
+function enterSiteInternet() {
+  switchMarketplace('site_internet');
+}
+
+async function renderHome() {
+  const el = document.getElementById('content');
+  el.innerHTML = `<div class="home-wrap">
+    <div class="home-banner" id="home-banner">
+      ${[1,2].map(()=>`<div class="home-banner-cell">
+        <div class="home-banner-label" style="background:var(--borderL);width:160px;height:11px;border-radius:2px"></div>
+        <div class="home-banner-value" style="background:var(--borderL);width:120px;height:28px;border-radius:2px;margin-top:8px"></div>
+      </div>`).join('')}
+    </div>
+    <div class="home-grid">
+      <div class="home-col">
+        <div class="home-col-title">Marketplaces</div>
+        <div id="home-mkp-content"><div class="loading"><div class="loading-spinner"></div></div></div>
+        <button class="home-enter-btn" onclick="enterMarketplaces()">Voir le détail →</button>
+      </div>
+      <div class="home-col">
+        <div class="home-col-title">Site Internet</div>
+        <div id="home-site-content"><div class="loading"><div class="loading-spinner"></div></div></div>
+        <button class="home-enter-btn" onclick="enterSiteInternet()">Voir le détail →</button>
+      </div>
+    </div>
+  </div>`;
+
+  await loadHomeData();
+}
+
+async function loadHomeData() {
+  const fmtCAHome = v => {
+    if (v == null || isNaN(v) || v === 0) return "—";
+    if (Math.abs(v) >= 1000000) return (v/1000000).toFixed(2).replace(".",",") + "M€";
+    if (Math.abs(v) >= 1000) return (v/1000).toFixed(1).replace(".",",") + "k€";
+    return Math.round(v) + "€";
+  };
+  const fmtPctEvolHome = (cur, prev) => {
+    if (!prev) return '<span style="color:var(--txT)">—</span>';
+    const pct = Math.round((cur-prev)/prev*100);
+    const col = pct>=0 ? 'var(--gn)' : 'var(--rd)';
+    return `<span style="color:${col};font-weight:700">${pct>=0?'+':''}${pct}%</span>`;
+  };
+
+  try {
+    const mpIds = MARKETPLACES.filter(m => m.id !== 'site_internet').map(m => m.id);
+    const allIds = mpIds.concat(['site_internet']);
+    const psMarketplaceIds = mpIds.concat(['site']);
+    const yr = new Date().getFullYear();
+    const inList = ids => `(${ids.join(',')})`;
+
+    const [imports, entries, psDaily, opsAll, opProdsAll] = await Promise.all([
+      sb('revenue_imports', `marketplace=in.${inList(allIds)}&select=marketplace,period_label,revenue,period_start,period_end,year_type`).catch(()=>[]),
+      sb('revenue_entries', `marketplace=in.${inList(allIds)}&select=marketplace,week_label,revenue,week_start_date`).catch(()=>[]),
+      sb('ps_sales_daily', `marketplace=in.${inList(psMarketplaceIds)}&sale_date=gte.${yr}-01-01&select=marketplace,product_ref,order_reference,sale_date,quantity,revenue_ht,shipping_ht,revenue_ttc`).catch(()=>[]),
+      sb('commercial_operations', `marketplace=in.${inList(mpIds)}&select=*`).catch(()=>[]),
+      sb('operation_products', `marketplace=in.${inList(mpIds)}&select=marketplace,ref,operation_id,prix`).catch(()=>[]),
+    ]);
+
+    function makeGetWeekCA(mpImports, mpEntries, mpPs) {
+      function getPsWeekCA(weekLabel) {
+        const parsed = parseWeekLabel(weekLabel);
+        if (!parsed) return 0;
+        const startStr = isoWeekStartFromNum(parsed.year, parsed.week);
+        const startD = new Date(startStr+"T00:00:00Z");
+        const weekDates = new Set();
+        for (let i=0;i<7;i++){ const d=new Date(startD); d.setUTCDate(startD.getUTCDate()+i); weekDates.add(d.toISOString().slice(0,10)); }
+        let total=0;
+        mpPs.forEach(s=>{ if(weekDates.has(String(s.sale_date||"").slice(0,10))) total += (s.revenue_ht||0)+(s.shipping_ht||0); });
+        return Math.round(total);
+      }
+      return function getWeekCA(weekLabel) {
+        const odoo = mpImports.find(i=>i.period_label===weekLabel && i.year_type==="N" && (new Date(i.period_end)-new Date(i.period_start))/86400000<=14);
+        if (odoo && odoo.revenue>0) return odoo.revenue;
+        const entry = mpEntries.find(e=>e.week_label===weekLabel);
+        if (entry && entry.revenue>0) return entry.revenue;
+        const ps = getPsWeekCA(weekLabel);
+        if (ps>0) return ps;
+        const hist = mpImports.find(i=>i.period_label===weekLabel && i.year_type==="hist");
+        if (hist && hist.revenue>0) return hist.revenue;
+        return 0;
+      };
+    }
+
+    const now = new Date();
+    const dow = now.getUTCDay()||7;
+    const lastSunD = new Date(now); lastSunD.setUTCDate(now.getUTCDate()-(dow===7?0:dow));
+    const lastWk = isoWeekLabel(lastSunD.toISOString().slice(0,10));
+    const lastWkParsed = parseWeekLabel(lastWk.label);
+
+    const mpRows = mpIds.map(mpId => {
+      const mpImports = imports.filter(i=>i.marketplace===mpId);
+      const mpEntries = entries.filter(e=>e.marketplace===mpId);
+      const mpPs = psDaily.filter(s=>s.marketplace===mpId);
+      const getWeekCA = makeGetWeekCA(mpImports, mpEntries, mpPs);
+
+      const caLast = getWeekCA(lastWk.label);
+      const caLastN1 = getWeekCA(`S${lastWkParsed.week} ${lastWkParsed.year-1}`);
+      let caYtdN=0, caYtdN1=0;
+      for (let w=1; w<=lastWkParsed.week; w++){
+        caYtdN += getWeekCA(`S${w} ${lastWkParsed.year}`);
+        caYtdN1 += getWeekCA(`S${w} ${lastWkParsed.year-1}`);
+      }
+      let trendCur=0, trendPrev=0;
+      for (let i=0;i<6;i++){ const w=lastWkParsed.week-i; const yr2=w>0?lastWkParsed.year:lastWkParsed.year-1; const ww=w>0?w:w+52; trendCur+=getWeekCA(`S${ww} ${yr2}`); }
+      for (let i=6;i<12;i++){ const w=lastWkParsed.week-i; const yr2=w>0?lastWkParsed.year:lastWkParsed.year-1; const ww=w>0?w:w+52; trendPrev+=getWeekCA(`S${ww} ${yr2}`); }
+      let trend = '—', trendCol = 'var(--txT)';
+      if (trendPrev > 0) {
+        const pct = (trendCur-trendPrev)/trendPrev;
+        if (pct > 0.03) { trend = '↑'; trendCol = 'var(--gn)'; }
+        else if (pct < -0.03) { trend = '↓'; trendCol = 'var(--rd)'; }
+        else { trend = '→'; trendCol = 'var(--txT)'; }
+      }
+      return { id: mpId, label: (MARKETPLACES.find(m=>m.id===mpId)||{}).label || mpId, caLast, caLastN1, caYtdN, caYtdN1, trend, trendCol };
+    });
+
+    // ── Site Internet : CA ──
+    const siteImports = imports.filter(i=>i.marketplace==='site_internet');
+    const siteEntries = entries.filter(e=>e.marketplace==='site_internet');
+    const sitePs = psDaily.filter(s=>s.marketplace==='site');
+    const getWeekCASite = makeGetWeekCA(siteImports, siteEntries, sitePs);
+    const siteCaLast = getWeekCASite(lastWk.label);
+    const siteCaLastN1 = getWeekCASite(`S${lastWkParsed.week} ${lastWkParsed.year-1}`);
+    let siteYtdN=0, siteYtdN1=0;
+    for (let w=1; w<=lastWkParsed.week; w++){
+      siteYtdN += getWeekCASite(`S${w} ${lastWkParsed.year}`);
+      siteYtdN1 += getWeekCASite(`S${w} ${lastWkParsed.year-1}`);
+    }
+
+    // ── Bandeau : CA Marketplaces vs CA Site Internet ──
+    const mkpCaLast = mpRows.reduce((s,r)=>s+r.caLast,0);
+    const mkpCaLastN1 = mpRows.reduce((s,r)=>s+r.caLastN1,0);
+    const mkpCaYtdN = mpRows.reduce((s,r)=>s+r.caYtdN,0);
+    const mkpCaYtdN1 = mpRows.reduce((s,r)=>s+r.caYtdN1,0);
+
+    const bannerEl = document.getElementById('home-banner');
+    if (bannerEl) {
+      bannerEl.innerHTML = [
+        { label: `CA Marketplaces — Semaine ${lastWk.label}`, last: mkpCaLast, lastN1: mkpCaLastN1, ytd: mkpCaYtdN, ytdN1: mkpCaYtdN1 },
+        { label: `CA Site Internet — Semaine ${lastWk.label}`, last: siteCaLast, lastN1: siteCaLastN1, ytd: siteYtdN, ytdN1: siteYtdN1 },
+      ].map(c => `<div class="home-banner-cell">
+          <div class="home-banner-label">${c.label}</div>
+          <div class="home-banner-value">${fmtCAHome(c.last)} ${fmtPctEvolHome(c.last, c.lastN1)}</div>
+          <div class="home-banner-sub">
+            <span>YTD ${lastWkParsed.year} : <b>${fmtCAHome(c.ytd)}</b> ${fmtPctEvolHome(c.ytd, c.ytdN1)}</span>
+            <span>YTD ${lastWkParsed.year-1} : ${fmtCAHome(c.ytdN1)}</span>
+          </div>
+        </div>`).join('');
+    }
+
+    // ── Colonne Marketplaces ──
+    const mkpEl = document.getElementById('home-mkp-content');
+    if (mkpEl) {
+      const sorted = mpRows.slice().sort((a,b)=>b.caYtdN-a.caYtdN);
+      const tableRows = sorted.map(r => {
+        const ytdPct = r.caYtdN1>0 ? Math.round((r.caYtdN-r.caYtdN1)/r.caYtdN1*100) : null;
+        const ytdCol = ytdPct==null ? 'var(--txT)' : (ytdPct>=0?'var(--gn)':'var(--rd)');
+        return `<tr>
+          <td style="font-weight:600">${esc(r.label)}</td>
+          <td style="text-align:right">${fmtCAHome(r.caLast)}</td>
+          <td style="text-align:right">${fmtCAHome(r.caYtdN)}</td>
+          <td style="text-align:right;color:${ytdCol};font-weight:700">${ytdPct==null?'—':(ytdPct>=0?'+':'')+ytdPct+'%'}</td>
+          <td style="text-align:center;color:${r.trendCol};font-weight:700;font-size:15px">${r.trend}</td>
+        </tr>`;
+      }).join('');
+      mkpEl.innerHTML = `<table class="home-table">
+          <thead><tr><th>Marketplace</th><th style="text-align:right">CA ${lastWk.label}</th><th style="text-align:right">CA YTD ${lastWkParsed.year}</th><th style="text-align:right">YTD vs N-1</th><th style="text-align:center">Tendance 6 sem.</th></tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+        <div id="home-alerts-table">Chargement des alertes…</div>`;
+    }
+
+    // ── Alertes par marketplace (alertes prix sur opérations actives) ──
+    loadHomeAlerts(mpIds, opsAll, opProdsAll, psDaily);
+
+    // ── Colonne Site Internet ──
+    renderHomeSiteInternet(lastWk, lastWkParsed, siteCaLast, sitePs, fmtCAHome);
+
+  } catch(e) {
+    console.error('loadHomeData', e);
+    const mkpEl = document.getElementById('home-mkp-content');
+    if (mkpEl) mkpEl.innerHTML = `<div style="color:var(--txT);font-size:12px">Erreur : ${esc(String(e))}</div>`;
+  }
+}
+
+async function loadHomeAlerts(mpIds, opsAll, opProdsAll, psDaily) {
+  const el = document.getElementById('home-alerts-table');
+  if (!el) return;
+  try {
+    const today = new Date().toISOString().slice(0,10);
+    const badSkusByMp = {};
+    mpIds.forEach(mp => badSkusByMp[mp] = new Set());
+    const activeOps = (opsAll||[]).filter(op=>op.date_debut<=today&&op.date_fin>=today);
+    activeOps.forEach(op => {
+      const opProds = (opProdsAll||[]).filter(ap=>ap.operation_id===op.id && ap.marketplace===op.marketplace && ap.prix && ap.prix>0);
+      if (!opProds.length) return;
+      const opPrixBySku = {};
+      opProds.forEach(ap=>{ opPrixBySku[ap.ref]=ap.prix; });
+      psDaily.filter(s=>s.marketplace===op.marketplace && s.sale_date>=op.date_debut && s.sale_date<=op.date_fin).forEach(s => {
+        const opPrix = opPrixBySku[s.product_ref];
+        if (!opPrix) return;
+        const qty = s.quantity||1, revTtc = parseFloat(s.revenue_ttc)||0;
+        if (revTtc<=0) return;
+        const ecart = (revTtc/qty - opPrix)/opPrix;
+        if (Math.abs(ecart) >= 0.02) badSkusByMp[op.marketplace].add(s.product_ref);
+      });
+    });
+
+    const rows = mpIds.map(mp => ({
+      label: (MARKETPLACES.find(m=>m.id===mp)||{}).label || mp,
+      n: badSkusByMp[mp].size,
+    })).sort((a,b)=>b.n-a.n);
+
+    el.innerHTML = `<table class="home-table" style="margin-bottom:0">
+        <thead><tr><th>Alertes prix actives</th><th style="text-align:right">Nb produits</th></tr></thead>
+        <tbody>${rows.map(r=>`<tr><td>${esc(r.label)}</td><td style="text-align:right;font-weight:700;${r.n>0?'color:var(--rd)':'color:var(--txT)'}">${r.n}</td></tr>`).join('')}</tbody>
+      </table>`;
+  } catch(e) {
+    el.innerHTML = `<div style="color:var(--txT);font-size:12px">Alertes indisponibles</div>`;
+  }
+}
+
+async function renderHomeSiteInternet(lastWk, lastWkParsed, siteCaLast, sitePs, fmtCAHome) {
+  const el = document.getElementById('home-site-content');
+  if (!el) return;
+  try {
+    const [kpi, evol, convRecent, seoTop] = await Promise.all([
+      fetch('/api/ga4?type=total_kpi').then(r=>r.json()).catch(()=>({})),
+      fetch('/api/ga4?type=total_evolution').then(r=>r.json()).catch(()=>({})),
+      fetch('/api/ga4?type=total_conv_recent').then(r=>r.json()).catch(()=>({})),
+      fetch('/api/searchconsole?type=top').then(r=>r.json()).catch(()=>({})),
+    ]);
+
+    const cur = kpi.current||{}, n1 = kpi.n1||{};
+    const fmtNumLocal = n => n==null ? '—' : Math.round(n).toLocaleString('fr-FR');
+    const fmtPctLocal = n => n==null ? '—' : (n*100).toFixed(1).replace('.',',')+'%';
+    const fmtPctEvolHome = (curV, prevV) => {
+      if (!prevV) return '<span style="color:var(--txT)">—</span>';
+      const pct = Math.round((curV-prevV)/prevV*100);
+      const col = pct>=0?'var(--gn)':'var(--rd)';
+      return `<span style="color:${col};font-weight:700">${pct>=0?'+':''}${pct}%</span>`;
+    };
+
+    // Trafic 4 dernières semaines complètes vs N-1 (mêmes numéros de semaine)
+    const weeks = (evol.weeks||[]).slice().sort((a,b)=>a.yearWeek>b.yearWeek?1:-1);
+    const last4 = weeks.slice(-4);
+    const last4Nums = last4.map(w=>w.yearWeek.slice(4));
+    const monthCur = last4.reduce((s,w)=>s+w.sessions,0);
+    const yearN1 = String(lastWkParsed.year-1);
+    const monthN1 = weeks.filter(w=>w.yearWeek.slice(0,4)===yearN1 && last4Nums.includes(w.yearWeek.slice(4))).reduce((s,w)=>s+w.sessions,0);
+
+    const conv = convRecent.recent||{}, convYtd = convRecent.ytd||{};
+
+    const seoRows = (seoTop.rows||[]).slice().sort((a,b)=>(b.impressions||0)-(a.impressions||0)).slice(0,3);
+
+    // Commandes : hier vs moyenne journalière depuis le 1er janvier
+    const yesterday = new Date(); yesterday.setUTCDate(yesterday.getUTCDate()-1);
+    const yStr = yesterday.toISOString().slice(0,10);
+    const ordersYesterday = new Set(sitePs.filter(s=>String(s.sale_date).slice(0,10)===yStr).map(s=>s.order_reference)).size;
+    const ordersByDay = {};
+    sitePs.forEach(s => {
+      const d = String(s.sale_date).slice(0,10);
+      if (!ordersByDay[d]) ordersByDay[d] = new Set();
+      ordersByDay[d].add(s.order_reference);
+    });
+    const dayKeys = Object.keys(ordersByDay);
+    const avgOrdersPerDay = dayKeys.length ? dayKeys.reduce((s,d)=>s+ordersByDay[d].size,0)/dayKeys.length : 0;
+    const ordersDelta = avgOrdersPerDay>0 ? Math.round((ordersYesterday-avgOrdersPerDay)/avgOrdersPerDay*100) : null;
+    const ordersCol = ordersDelta==null?'var(--txT)':(ordersDelta>=0?'var(--gn)':'var(--rd)');
+
+    el.innerHTML = `
+      <div class="home-kpi-row">
+        <div class="home-kpi"><div class="home-kpi-label">Trafic semaine ${lastWk.label}</div><div class="home-kpi-value">${fmtNumLocal(cur.sessions)} ${fmtPctEvolHome(cur.sessions, n1.sessions)}</div></div>
+        <div class="home-kpi"><div class="home-kpi-label">Trafic 4 dern. semaines</div><div class="home-kpi-value">${fmtNumLocal(monthCur)} ${fmtPctEvolHome(monthCur, monthN1)}</div></div>
+      </div>
+      <div class="home-kpi-row">
+        <div class="home-kpi"><div class="home-kpi-label">Conv. 3 derniers jours</div><div class="home-kpi-value">${fmtPctLocal(conv.conversionRate)}</div></div>
+        <div class="home-kpi"><div class="home-kpi-label">Conv. moyenne ${lastWkParsed.year}</div><div class="home-kpi-value">${fmtPctLocal(convYtd.conversionRate)}</div></div>
+      </div>
+      <div class="home-kpi-row">
+        <div class="home-kpi"><div class="home-kpi-label">CA semaine ${lastWk.label}</div><div class="home-kpi-value">${fmtCAHome(siteCaLast)}</div></div>
+        <div class="home-kpi"><div class="home-kpi-label">Commandes hier</div><div class="home-kpi-value">${ordersYesterday} ${ordersDelta==null?'':`<span style="color:${ordersCol};font-weight:700;font-size:11px">${ordersDelta>=0?'+':''}${ordersDelta}% vs moy.</span>`}</div></div>
+      </div>
+      <table class="home-table" style="margin-bottom:0">
+        <thead><tr><th>Top requêtes SEO (28j)</th><th style="text-align:right">Impressions</th><th style="text-align:right">Position moy.</th></tr></thead>
+        <tbody>${seoRows.length ? seoRows.map(r=>`<tr><td>${esc((r.keys&&r.keys[0])||'')}</td><td style="text-align:right">${Math.round(r.impressions||0)}</td><td style="text-align:right">${(r.position||0).toFixed(1)}</td></tr>`).join('') : '<tr><td colspan="3" style="color:var(--txT)">Aucune donnée</td></tr>'}</tbody>
+      </table>
+    `;
+  } catch(e) {
+    el.innerHTML = `<div style="color:var(--txT);font-size:12px">Erreur GA4 / Search Console : ${esc(String(e))}</div>`;
+  }
 }
 
 async function loadData() {
@@ -10626,7 +10979,6 @@ if (!accessGranted) {
   throw new Error("ACCESS");
 }
 loadScrapingIndicators();
-applyMpTheme(MARKETPLACE);
-loadData();</script>
+goHome();</script>
 </body>
 </html>
