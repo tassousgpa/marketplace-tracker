@@ -10427,12 +10427,12 @@ async function renderSiteInternet() {
        ${[1,2,3].map(()=>`<div class="metric"><div class="metric-label" style="background:var(--borderL);border-radius:4px;width:80px;height:12px;margin-bottom:6px"></div><div class="metric-value" style="background:var(--borderL);border-radius:4px;width:60px;height:28px"></div></div>`).join('')}
      </div>`
     + renderRevenueBlock()
-    + renderSiteHeatmap()
-    + renderProductSalesBlocks()
     + `<div class="card" style="margin-top:20px;min-height:220px">
-         <div class="card-title">Trafic total — évolution 53 semaines glissantes</div>
+         <div class="card-title">Trafic total — évolution 18 mois glissants</div>
          <div id="wrap-total-evol" style="position:relative;height:190px"><canvas id="chart-total-evol"></canvas></div>
-       </div>`;
+       </div>`
+    + renderSiteHeatmap()
+    + renderProductSalesBlocks();
 
   // Chargement async GA4
   _ensureChartJs(async function(err) {
@@ -10453,10 +10453,11 @@ async function renderSiteInternet() {
           kpiEl.innerHTML = `<div style="color:var(--txT);font-size:12px;padding:8px">GA4 : ${esc(kpi.error)}</div>`;
         } else {
           const cur = kpi.current || {}, n1 = kpi.n1 || {};
+          const wkLabel = kpi.weekLabel ? `Semaine ${kpi.weekLabel}` : '';
           kpiEl.innerHTML = [
-            { label: 'Sessions totales',   val: _fmtNum(cur.sessions),       evol: _evolBadge(cur.sessions, n1.sessions),             sub: `N-1 : ${_fmtNum(n1.sessions)}` },
-            { label: 'Taux de conversion', val: _fmtPct(cur.conversionRate), evol: _evolBadge(cur.conversionRate, n1.conversionRate),  sub: `N-1 : ${_fmtPct(n1.conversionRate)}` },
-            { label: 'Transactions',       val: _fmtNum(cur.transactions),   evol: _evolBadge(cur.transactions, n1.transactions),      sub: `N-1 : ${_fmtNum(n1.transactions)}` },
+            { label: 'Sessions totales',   val: _fmtNum(cur.sessions),       evol: _evolBadge(cur.sessions, n1.sessions),             sub: `${wkLabel} · N-1 : ${_fmtNum(n1.sessions)}` },
+            { label: 'Taux de conversion', val: _fmtPct(cur.conversionRate), evol: _evolBadge(cur.conversionRate, n1.conversionRate),  sub: `${wkLabel} · N-1 : ${_fmtPct(n1.conversionRate)}` },
+            { label: 'Transactions (GA4)', val: _fmtNum(cur.transactions),   evol: _evolBadge(cur.transactions, n1.transactions),      sub: `${wkLabel} · N-1 : ${_fmtNum(n1.transactions)}<br><span style="opacity:0.7">Donnée GA4, peut différer de Prestashop</span>` },
           ].map(k => `<div class="metric">
             <div class="metric-label">${k.label}</div>
             <div class="metric-value" style="font-size:22px">${k.val}${k.evol||''}</div>

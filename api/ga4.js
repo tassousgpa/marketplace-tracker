@@ -347,10 +347,10 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // ── Trafic total — évolution 53 semaines (tous canaux) ────────────
+    // ── Trafic total — évolution 18 mois (tous canaux) ────────────
     if (type === 'total_evolution') {
       const data = await runReport(token, propertyId, {
-        dateRanges: [{ startDate: '370daysAgo', endDate: 'yesterday' }],
+        dateRanges: [{ startDate: '546daysAgo', endDate: 'yesterday' }],
         dimensions: [{ name: 'yearWeek' }],
         metrics: [{ name: 'sessions' }],
         orderBys: [{ dimension: { dimensionName: 'yearWeek' } }],
