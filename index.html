@@ -10133,15 +10133,12 @@ function renderSiteHeatmap() {
   const nowHour  = nowUTC.getUTCHours();
   const todayIdx = weekDates.indexOf(todayStr);
 
-  // Couleur de cellule : rouge clair si 0 ou 1 commande, bleu si ≥ 2
+  // Couleur de cellule : rouge clair si 0 ou 1, neutre sinon
   function cellStyle(si, di, val) {
     const isFuture = di > todayIdx || (di === todayIdx && SLOTS[si].from > nowHour);
     if (isFuture) return 'background:#f7f6f4;color:var(--txT)';
     if (val <= 1) return 'background:#fff0ee;color:#c0392b';
-    const intensity = val / maxCell;
-    const alpha = 0.12 + intensity * 0.75;
-    const textColor = intensity > 0.55 ? '#fff' : 'var(--tx)';
-    return `background:rgba(44,94,160,${alpha.toFixed(2)});color:${textColor}`;
+    return 'background:var(--card);color:var(--tx)';
   }
 
   const headerCells = weekDates.map((d, di) => {
