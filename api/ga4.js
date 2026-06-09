@@ -86,19 +86,43 @@ function lastWeekN1() {
   return { start: s.toISOString().slice(0, 10), end: e.toISOString().slice(0, 10) };
 }
 
-export default async function handler(req, res) {
-  const saJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-  const propertyId = process.env.GA4_PROPERTY_ID;
+async function getTokenFromRefreshToken(clientId, clientSecret, refreshToken) {
+  const r = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    }).toString(),
+  });
+  const d = await r.json();
+  if (!d.access_token) throw new Error('OAuth2 refresh failed: ' + JSON.stringify(d));
+  return d.access_token;
+}
 
-  if (!saJson || !propertyId) {
+module.exports = async function handler(req, res) {
+  const propertyId   = process.env.GA4_PROPERTY_ID;
+  const clientId     = process.env.GOOGLE_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+  const refreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
+  const saJson       = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+
+  const hasOAuth = clientId && clientSecret && refreshToken;
+  const hasSA    = !!saJson;
+
+  if (!propertyId || (!hasOAuth && !hasSA)) {
     return res.status(500).json({
-      error: 'GA4 not configured (GOOGLE_SERVICE_ACCOUNT_JSON or GA4_PROPERTY_ID missing)',
+      error: 'GA4 not configured — GA4_PROPERTY_ID + identifiants OAuth2 requis',
     });
   }
 
   let token;
   try {
-    token = await getGoogleToken(saJson, 'https://www.googleapis.com/auth/analytics.readonly');
+    token = hasOAuth
+      ? await getTokenFromRefreshToken(clientId, clientSecret, refreshToken)
+      : await getGoogleToken(saJson, 'https://www.googleapis.com/auth/analytics.readonly');
   } catch (e) {
     return res.status(500).json({ error: 'Auth error: ' + e.message });
   }

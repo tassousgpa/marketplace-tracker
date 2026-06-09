@@ -1,12 +1,13 @@
 const crypto = require('crypto');
 
-async function getGoogleToken(serviceAccountJson, scope) {
+// Service account JWT (fallback)
+async function getTokenFromServiceAccount(serviceAccountJson) {
   const sa = JSON.parse(serviceAccountJson);
   const now = Math.floor(Date.now() / 1000);
   const h = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
   const c = Buffer.from(JSON.stringify({
     iss: sa.client_email,
-    scope,
+    scope: 'https://www.googleapis.com/auth/webmasters.readonly',
     aud: 'https://oauth2.googleapis.com/token',
     exp: now + 3600,
     iat: now,
@@ -23,23 +24,48 @@ async function getGoogleToken(serviceAccountJson, scope) {
     body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,
   });
   const d = await r.json();
-  if (!d.access_token) throw new Error('Auth failed: ' + JSON.stringify(d));
+  if (!d.access_token) throw new Error('SA auth failed: ' + JSON.stringify(d));
   return d.access_token;
 }
 
-export default async function handler(req, res) {
-  const saJson   = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-  const siteUrl  = process.env.SEARCH_CONSOLE_SITE_URL;
+// OAuth2 refresh token (preferred for Search Console — uses admin account)
+async function getTokenFromRefreshToken(clientId, clientSecret, refreshToken) {
+  const r = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    }).toString(),
+  });
+  const d = await r.json();
+  if (!d.access_token) throw new Error('OAuth2 refresh failed: ' + JSON.stringify(d));
+  return d.access_token;
+}
 
-  if (!saJson || !siteUrl) {
+module.exports = async function handler(req, res) {
+  const siteUrl      = process.env.SEARCH_CONSOLE_SITE_URL;
+  const clientId     = process.env.GOOGLE_OAUTH_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+  const refreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
+  const saJson       = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+
+  const hasOAuth = clientId && clientSecret && refreshToken;
+  const hasSA    = !!saJson;
+
+  if (!siteUrl || (!hasOAuth && !hasSA)) {
     return res.status(500).json({
-      error: 'Search Console not configured (GOOGLE_SERVICE_ACCOUNT_JSON or SEARCH_CONSOLE_SITE_URL missing)',
+      error: 'Search Console not configured — voir guide de configuration (SEARCH_CONSOLE_SITE_URL + identifiants OAuth2 requis)',
     });
   }
 
   let token;
   try {
-    token = await getGoogleToken(saJson, 'https://www.googleapis.com/auth/webmasters.readonly');
+    token = hasOAuth
+      ? await getTokenFromRefreshToken(clientId, clientSecret, refreshToken)
+      : await getTokenFromServiceAccount(saJson);
   } catch (e) {
     return res.status(500).json({ error: 'Auth error: ' + e.message });
   }
@@ -55,23 +81,18 @@ export default async function handler(req, res) {
       startD.setUTCDate(startD.getUTCDate() - 27); // last 28 days
       const fmt = d => d.toISOString().slice(0, 10);
 
-      const body = {
-        startDate: fmt(startD),
-        endDate: fmt(endD),
-        dimensions: ['query'],
-        rowLimit: 1000,
-        startRow: 0,
-      };
-
       const r = await fetch(
         `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`,
         {
           method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(body),
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            startDate: fmt(startD),
+            endDate: fmt(endD),
+            dimensions: ['query'],
+            rowLimit: 1000,
+            startRow: 0,
+          }),
         }
       );
 
@@ -92,4 +113,4 @@ export default async function handler(req, res) {
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
-}
+};
