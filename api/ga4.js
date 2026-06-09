@@ -137,7 +137,7 @@ module.exports = async function handler(req, res) {
       const metrics = [
         { name: 'sessions' },
         { name: 'transactions' },
-        { name: 'purchaseToVisitRate' },
+        { name: 'sessionConversionRate' },
       ];
       const [curData, n1Data] = await Promise.all([
         runReport(token, propertyId, {
