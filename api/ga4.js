@@ -93,13 +93,16 @@ function lastWeekN1() {
   return { start: s.toISOString().slice(0, 10), end: e.toISOString().slice(0, 10) };
 }
 
-// Plage 18 mois (~78 semaines complètes), se terminant au dimanche de la dernière semaine complète (S-1)
+// Plage 18 mois (~78 semaines complètes). GA4 "yearWeek" découpe les semaines du dimanche
+// au samedi : on arrête donc la plage au samedi (veille du dimanche de fin de S-1) pour
+// ne jamais inclure un seul jour de la semaine en cours (qui ferait chuter la courbe).
 function evolRange() {
   const wk = lastWeek();
   const endD = new Date(wk.end);
+  endD.setUTCDate(endD.getUTCDate() - 1); // samedi
   const startD = new Date(endD);
   startD.setUTCDate(startD.getUTCDate() - 545);
-  return { start: startD.toISOString().slice(0, 10), end: wk.end };
+  return { start: startD.toISOString().slice(0, 10), end: endD.toISOString().slice(0, 10) };
 }
 
 async function getTokenFromRefreshToken(clientId, clientSecret, refreshToken) {
