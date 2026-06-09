@@ -93,6 +93,15 @@ function lastWeekN1() {
   return { start: s.toISOString().slice(0, 10), end: e.toISOString().slice(0, 10) };
 }
 
+// Plage 18 mois (~78 semaines complètes), se terminant au dimanche de la dernière semaine complète (S-1)
+function evolRange() {
+  const wk = lastWeek();
+  const endD = new Date(wk.end);
+  const startD = new Date(endD);
+  startD.setUTCDate(startD.getUTCDate() - 545);
+  return { start: startD.toISOString().slice(0, 10), end: wk.end };
+}
+
 async function getTokenFromRefreshToken(clientId, clientSecret, refreshToken) {
   const r = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -214,10 +223,11 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // ── Évolution hebdomadaire — 52 dernières semaines ────────────
+    // ── Évolution hebdomadaire — 18 mois (semaines complètes) ─────
     if (type === 'evolution') {
+      const range = evolRange();
       const data = await runReport(token, propertyId, {
-        dateRanges: [{ startDate: '364daysAgo', endDate: 'yesterday' }],
+        dateRanges: [{ startDate: range.start, endDate: range.end }],
         dimensions: [{ name: 'yearWeek' }],
         metrics: [{ name: 'sessions' }],
         dimensionFilter: ORGANIC_FILTER,
@@ -280,10 +290,11 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // ── SEA évolution hebdomadaire — 52 semaines ──────────────────
+    // ── SEA évolution hebdomadaire — 18 mois (semaines complètes) ─
     if (type === 'sea_evolution') {
+      const range = evolRange();
       const data = await runReport(token, propertyId, {
-        dateRanges: [{ startDate: '364daysAgo', endDate: 'yesterday' }],
+        dateRanges: [{ startDate: range.start, endDate: range.end }],
         dimensions: [{ name: 'yearWeek' }],
         metrics: [{ name: 'sessions' }],
         dimensionFilter: PAID_FILTER,
@@ -347,10 +358,11 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // ── Trafic total — évolution 18 mois (tous canaux) ────────────
+    // ── Trafic total — évolution 18 mois (tous canaux, semaines complètes) ──
     if (type === 'total_evolution') {
+      const range = evolRange();
       const data = await runReport(token, propertyId, {
-        dateRanges: [{ startDate: '546daysAgo', endDate: 'yesterday' }],
+        dateRanges: [{ startDate: range.start, endDate: range.end }],
         dimensions: [{ name: 'yearWeek' }],
         metrics: [{ name: 'sessions' }],
         orderBys: [{ dimension: { dimensionName: 'yearWeek' } }],
