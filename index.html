@@ -126,6 +126,7 @@ tr.stripe{background:var(--bg)}
 .home-banner-label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--txS);margin-bottom:8px;font-weight:700}
 .home-banner-value{font-size:28px;font-weight:700;letter-spacing:-0.01em}
 .home-banner-sub{font-size:12px;color:var(--txS);margin-top:8px;display:flex;gap:16px;flex-wrap:wrap}
+.home-banner-note{font-size:11px;color:var(--am);margin-top:8px;font-style:italic}
 .home-banner-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
 .home-banner-cell.mkp-side{background:#fdf6ec}
 .home-banner-cell.site-side{background:#f0f6ff}
@@ -688,8 +689,8 @@ async function loadHomeData() {
     const bannerEl = document.getElementById('home-banner');
     if (bannerEl) {
       bannerEl.innerHTML = [
-        { label: `CA Marketplaces — Semaine ${lastWk.label}`, last: mkpCaLast, lastN1: mkpCaLastN1, ytd: mkpCaYtdN, ytdN1: mkpCaYtdN1, side: 'mkp-side', action: 'enterMarketplaces()' },
-        { label: `CA Site Internet — Semaine ${lastWk.label}`, last: siteCaLast, lastN1: siteCaLastN1, ytd: siteYtdN, ytdN1: siteYtdN1, side: 'site-side', action: 'enterSiteInternet()' },
+        { label: `CA Marketplaces — Semaine ${lastWk.label}`, last: mkpCaLast, lastN1: mkpCaLastN1, ytd: mkpCaYtdN, ytdN1: mkpCaYtdN1, side: 'mkp-side', action: 'enterMarketplaces()', note: false },
+        { label: `CA Site Internet — Semaine ${lastWk.label}`, last: siteCaLast, lastN1: siteCaLastN1, ytd: siteYtdN, ytdN1: siteYtdN1, side: 'site-side', action: 'enterSiteInternet()', note: true },
       ].map(c => `<div class="home-banner-cell ${c.side}">
           <div class="home-banner-top">
             <div class="home-banner-label">${c.label}</div>
@@ -700,6 +701,7 @@ async function loadHomeData() {
             <span>YTD ${lastWkParsed.year} : <b>${fmtCAHome(c.ytd)}</b> ${fmtPctEvolHome(c.ytd, c.ytdN1)}</span>
             <span>YTD ${lastWkParsed.year-1} : ${fmtCAHome(c.ytdN1)}</span>
           </div>
+          ${c.note ? `<div class="home-banner-note">⚠ Historique YTD / N-1 en cours de complétion : les données seront affinées au fur et à mesure de l'implémentation.</div>` : ''}
         </div>`).join('');
     }
 
