@@ -754,19 +754,25 @@ async function loadHomeCompetitors(trackedSellersAll, sellerStatsAll) {
     const CUMUL_MPS = new Set(['conforama','maisonsdumonde']);
     const LTM_MPS = new Set(['cdiscount','amazon','laredoute','but']);
 
-    // Ensembles de noms de vendeurs suivis par marketplace (normalisés)
-    const trackedByMp = {};
-    (trackedSellersAll||[]).forEach(t => {
-      if (!trackedByMp[t.marketplace]) trackedByMp[t.marketplace] = new Set();
-      trackedByMp[t.marketplace].add(String(t.seller_name||'').toLowerCase().replace(/[\s\-_]/g, ""));
-    });
     const norm = s => String(s||'').toLowerCase().replace(/[\s\-_]/g, "");
 
-    // Regroupe seller_stats par (marketplace, seller), trié ASC par date
+    // Mapping (marketplace -> normName -> nom d'affichage canonique) à partir de tracked_sellers
+    const trackedByMp = {};
+    (trackedSellersAll||[]).forEach(t => {
+      if (!trackedByMp[t.marketplace]) trackedByMp[t.marketplace] = new Map();
+      trackedByMp[t.marketplace].set(norm(t.seller_name), t.seller_name);
+    });
+
+    // Regroupe seller_stats par (marketplace, normName du vendeur suivi), en fusionnant
+    // toutes les variantes d'orthographe du nom raw, triées ASC par date
     const byKey = {};
     (sellerStatsAll||[]).forEach(s => {
       if (!s.seller) return;
-      const key = s.marketplace + '|' + s.seller;
+      const trackedMap = trackedByMp[s.marketplace];
+      if (!trackedMap) return;
+      const normSeller = norm(s.seller);
+      if (!trackedMap.has(normSeller)) return;
+      const key = s.marketplace + '|' + normSeller;
       if (!byKey[key]) byKey[key] = [];
       byKey[key].push(s);
     });
@@ -775,9 +781,8 @@ async function loadHomeCompetitors(trackedSellersAll, sellerStatsAll) {
     const trendRows = [];
 
     Object.entries(byKey).forEach(([key, rows]) => {
-      const [mp, seller] = key.split('|');
-      const tracked = trackedByMp[mp];
-      if (tracked && !tracked.has(norm(seller))) return;
+      const [mp, normSeller] = key.split('|');
+      const seller = trackedByMp[mp].get(normSeller);
       const sorted = rows.slice().sort((a,b)=> a.date < b.date ? -1 : 1);
       const mpLabel = (MARKETPLACES.find(m=>m.id===mp)||{}).label || mp;
       const isBM = isHomeBmSeller(seller);
