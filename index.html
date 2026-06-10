@@ -788,22 +788,22 @@ async function loadHomeCompetitors(trackedSellersAll, sellerStatsAll) {
         if (delta <= 0) return;
         cumulRows.push({ seller, mpLabel, delta, isBM });
       } else if (LTM_MPS.has(mp)) {
-        let latest, prev;
+        // Tendance = dernier scraping vs 1er scraping disponible
         if (mp === 'amazon' || mp === 'but') {
           const valid = sorted.filter(r => r.seller_ratings_count != null);
           if (valid.length < 2) return;
-          latest = valid[valid.length-1]; prev = valid[valid.length-2];
-          const prevVal = prev.seller_ratings_count||0, curVal = latest.seller_ratings_count||0;
-          if (prevVal <= 0) return;
-          const pct = (curVal-prevVal)/prevVal*100;
+          const first = valid[0], latest = valid[valid.length-1];
+          const firstVal = first.seller_ratings_count||0, curVal = latest.seller_ratings_count||0;
+          if (firstVal <= 0) return;
+          const pct = (curVal-firstVal)/firstVal*100;
           trendRows.push({ seller, mpLabel, pct, isBM });
         } else {
           const valid = sorted.filter(r => r.seller_sales != null);
           if (valid.length < 2) return;
-          latest = valid[valid.length-1]; prev = valid[valid.length-2];
-          const prevVal = prev.seller_sales||0, curVal = latest.seller_sales||0;
-          if (prevVal <= 0) return;
-          const pct = (curVal-prevVal)/prevVal*100;
+          const first = valid[0], latest = valid[valid.length-1];
+          const firstVal = first.seller_sales||0, curVal = latest.seller_sales||0;
+          if (firstVal <= 0) return;
+          const pct = (curVal-firstVal)/firstVal*100;
           trendRows.push({ seller, mpLabel, pct, isBM });
         }
       }
