@@ -464,6 +464,39 @@ module.exports = async function handler(req, res) {
       });
     }
 
+    // ── SEA par page de destination — 28 derniers jours ───────────
+    // Permet de regrouper le trafic payant par catégorie produit
+    // (canapés, salons de jardin…) plutôt que par nom de campagne brut.
+    if (type === 'sea_landing_pages') {
+      const endD = new Date(); endD.setUTCDate(endD.getUTCDate() - 1);
+      const startD = new Date(endD); startD.setUTCDate(startD.getUTCDate() - 27);
+      const fmt = d => d.toISOString().slice(0, 10);
+      const data = await runReport(token, propertyId, {
+        dateRanges: [{ startDate: fmt(startD), endDate: fmt(endD) }],
+        dimensions: [{ name: 'landingPagePlusQueryString' }],
+        metrics: [
+          { name: 'sessions' },
+          { name: 'transactions' },
+          { name: 'sessionConversionRate' },
+          { name: 'totalRevenue' },
+        ],
+        dimensionFilter: PAID_FILTER,
+        orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+        limit: 500,
+      });
+      res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=300');
+      return res.status(200).json({
+        rows: parseRows(data).map(r => ({
+          page: r.dims[0],
+          sessions: r.mets[0],
+          transactions: r.mets[1],
+          conversionRate: r.mets[2],
+          revenue: r.mets[3],
+        })),
+        period: { start: fmt(startD), end: fmt(endD) },
+      });
+    }
+
     // ── Trafic total — KPIs semaine vs N-1 (tous canaux) ─────────────
     if (type === 'total_kpi') {
       const wk   = lastWeek();

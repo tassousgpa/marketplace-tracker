@@ -10238,6 +10238,48 @@ const _SEA_ORANGE_LIGHT = 'rgba(212,96,10,0.12)';
 
 function _fmtPct(v) { return v == null ? '—' : (v * 100).toFixed(2).replace('.', ',') + '%'; }
 function _fmtNum(v) { return v == null ? '—' : Math.round(v).toLocaleString('fr-FR'); }
+function _fmtEUR(v) {
+  if (v == null) return '—';
+  if (Math.abs(v) >= 1e6) return (v/1e6).toFixed(2).replace('.', ',') + 'M€';
+  if (Math.abs(v) >= 1e3) return (v/1e3).toFixed(1).replace('.', ',') + 'k€';
+  return Math.round(v).toLocaleString('fr-FR') + '€';
+}
+
+// ─── Catégorisation des pages de destination SEA ───────────────────────────
+// Permet de regrouper le trafic payant par catégorie produit (lisible côté
+// business) plutôt que par nom de campagne brut (PMAX_xxx, peu parlant).
+const SEA_LANDING_CATEGORIES = [
+  { label: "Canapés d'angle",                         slugs: ['canape-d-angle', 'canape-angle'] },
+  { label: 'Canapés panoramiques',                    slugs: ['panoramique'] },
+  { label: 'Canapés convertibles / clic-clac',        slugs: ['convertible', 'clic-clac'] },
+  { label: 'Canapés droits / modulables',             slugs: ['canape-droit', 'canape-modulable', 'canape', 'sofa'] },
+  { label: 'Salons de jardin / mobilier extérieur',   slugs: ['salon-de-jardin', 'salons-de-jardin', 'mobilier-de-jardin', 'pergola', 'transat', 'balancelle', 'bain-de-soleil', 'tonnelle', 'jardin'] },
+  { label: 'Tables basses',                           slugs: ['table-basse'] },
+  { label: 'Tables à manger',                         slugs: ['table-a-manger', 'table-manger'] },
+  { label: 'Chaises',                                 slugs: ['chaise'] },
+  { label: 'Meubles TV',                              slugs: ['meuble-tv'] },
+  { label: 'Lits coffre',                             slugs: ['lit-coffre', 'lit-'] },
+  { label: 'Buffets',                                 slugs: ['buffet'] },
+  { label: 'Fauteuils relax',                         slugs: ['relax'] },
+  { label: 'Banquettes',                              slugs: ['banquette'] },
+];
+const SEA_OTHER_CATEGORY = 'Autres pages';
+
+function _normSeaSlug(path) {
+  const noQuery = String(path||'').split('?')[0];
+  const NFD = noQuery.toLowerCase().normalize('NFD');
+  const noDiacritics = NFD.replace(new RegExp('[\\u0300-\\u036f]','g'), '');
+  return noDiacritics.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+function categorizeSeaLandingPage(path) {
+  const slug = _normSeaSlug(path);
+  if (slug === '' || slug === 'fr' || slug === 'index') return SEA_OTHER_CATEGORY;
+  for (const cat of SEA_LANDING_CATEGORIES) {
+    if (cat.slugs.some(kw => slug.includes(kw))) return cat.label;
+  }
+  return SEA_OTHER_CATEGORY;
+}
 function _pctEvol(cur, prev) {
   if (!prev) return null;
   return ((cur - prev) / prev * 100).toFixed(1);
@@ -10734,25 +10776,43 @@ async function renderSitePositionsSEA() {
     <div style="padding:24px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px">
         <div>
-          <div style="font-size:17px;font-weight:700;color:${_SEA_ORANGE}">Campagnes SEA — Trafic payant</div>
+          <div style="font-size:17px;font-weight:700;color:${_SEA_ORANGE}">SEA — Performance par catégorie produit</div>
           <div id="sea-pos-period" style="font-size:12px;color:var(--txT);margin-top:2px">Chargement…</div>
         </div>
-        <input id="sea-camp-search" placeholder="Filtrer les campagnes…" oninput="_filterSeaCampaigns()" style="padding:7px 12px;border:.5px solid var(--border);border-radius:7px;font-size:12px;font-family:inherit;width:220px">
+        <input id="sea-camp-search" placeholder="Filtrer les catégories…" oninput="_filterSeaCampaigns()" style="padding:7px 12px;border:.5px solid var(--border);border-radius:7px;font-size:12px;font-family:inherit;width:220px">
       </div>
       <div id="sea-camp-table">
-        <div style="text-align:center;padding:40px;color:var(--txT);font-size:13px">Chargement des données campagnes…</div>
+        <div style="text-align:center;padding:40px;color:var(--txT);font-size:13px">Chargement des données…</div>
       </div>
     </div>`;
 
   try {
-    const data = await fetch('/api/ga4?type=sea_campaigns').then(r => r.json());
+    const data = await fetch('/api/ga4?type=sea_landing_pages').then(r => r.json());
     if (data.error) {
       document.getElementById('sea-camp-table').innerHTML = _seoErrorHtml('❌ ' + esc(data.error));
       return;
     }
-    window._seaCampaignsData = data.rows || [];
+    // Regroupe les pages de destination par catégorie produit
+    const byCat = {};
+    (data.rows || []).forEach(r => {
+      const cat = categorizeSeaLandingPage(r.page);
+      if (!byCat[cat]) byCat[cat] = { category: cat, sessions: 0, transactions: 0, revenue: 0, pages: [] };
+      const c = byCat[cat];
+      c.sessions += r.sessions || 0;
+      c.transactions += r.transactions || 0;
+      c.revenue += r.revenue || 0;
+      c.pages.push(r);
+    });
+    const rows = Object.values(byCat).map(c => ({
+      ...c,
+      conversionRate: c.sessions > 0 ? c.transactions / c.sessions : 0,
+      aov: c.transactions > 0 ? c.revenue / c.transactions : null,
+    }));
+    rows.sort((a,b) => b.sessions - a.sessions);
+
+    window._seaCampaignsData = rows;
     document.getElementById('sea-pos-period').textContent = data.period
-      ? `Période : ${data.period.start} → ${data.period.end} · ${data.rows.length} campagnes`
+      ? `Période : ${data.period.start} → ${data.period.end} · ${rows.length} catégories (${(data.rows||[]).length} pages)`
       : '';
     _filterSeaCampaigns();
   } catch(e) {
@@ -10763,11 +10823,11 @@ async function renderSitePositionsSEA() {
 function _filterSeaCampaigns() {
   const rows = window._seaCampaignsData || [];
   const search = (document.getElementById('sea-camp-search')?.value || '').toLowerCase().trim();
-  const filtered = rows.filter(r => !search || r.campaign.toLowerCase().includes(search));
+  const filtered = rows.filter(r => !search || r.category.toLowerCase().includes(search));
 
   const tableEl = document.getElementById('sea-camp-table');
   if (!filtered.length) {
-    tableEl.innerHTML = '<div style="padding:24px;text-align:center;color:var(--txT);font-size:13px">Aucune campagne trouvée.</div>';
+    tableEl.innerHTML = '<div style="padding:24px;text-align:center;color:var(--txT);font-size:13px">Aucune catégorie trouvée.</div>';
     return;
   }
 
@@ -10779,21 +10839,25 @@ function _filterSeaCampaigns() {
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead>
           <tr style="border-bottom:1.5px solid var(--border);background:var(--bg)">
-            <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--txS)">Campagne</th>
+            <th style="padding:10px 12px;text-align:left;font-weight:600;color:var(--txS)">Catégorie produit</th>
             <th style="padding:10px 12px;text-align:right;font-weight:600;color:var(--txS)">Sessions</th>
             <th style="padding:10px 12px;text-align:right;font-weight:600;color:var(--txS)">Transactions</th>
             <th style="padding:10px 12px;text-align:center;font-weight:600;color:var(--txS)">Taux conv.</th>
+            <th style="padding:10px 12px;text-align:right;font-weight:600;color:var(--txS)">CA généré</th>
+            <th style="padding:10px 12px;text-align:right;font-weight:600;color:var(--txS)">Panier moyen</th>
           </tr>
         </thead>
         <tbody>
           ${filtered.map(r => `
             <tr style="border-bottom:.5px solid var(--borderL)" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
-              <td style="padding:8px 12px;font-weight:500">${esc(r.campaign || '(non défini)')}</td>
+              <td style="padding:8px 12px;font-weight:500">${esc(r.category)}${r.category===SEA_OTHER_CATEGORY ? `<span style="color:var(--txT);font-weight:400;font-size:11px"> (${r.pages.length} pages non catégorisées)</span>` : ''}</td>
               <td style="padding:8px 12px;text-align:right">${_fmtNum(r.sessions)}</td>
               <td style="padding:8px 12px;text-align:right;font-weight:600">${_fmtNum(r.transactions)}</td>
               <td style="padding:8px 12px;text-align:center">
                 <span style="display:inline-block;min-width:48px;padding:2px 8px;border-radius:99px;font-weight:700;font-size:12px;background:${crBg(r.conversionRate)};color:${crColor(r.conversionRate)}">${_fmtPct(r.conversionRate)}</span>
               </td>
+              <td style="padding:8px 12px;text-align:right">${_fmtEUR(r.revenue)}</td>
+              <td style="padding:8px 12px;text-align:right">${_fmtEUR(r.aov)}</td>
             </tr>`).join('')}
         </tbody>
       </table>
