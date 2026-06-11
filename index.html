@@ -11102,22 +11102,38 @@ async function renderSiteInternet() {
 // IDs des bases de données Notion — à renseigner après configuration
 const NOTION_DATABASES = [
   { id: "marronnier_commercial", label: "Marronnier commercial",                    dbId: "33561fa6330d80c692c9e955a33cf43c" },
-  { id: "fiches_produits",   label: "Création fiches produits en cours",        dbId: "" },
+  { id: "fiches_produits",   label: "Création fiches produits en cours",        dbId: "32961fa6330d8075aaa9de58bd8d9a22" },
   { id: "plan_photos",       label: "Plan clean photos",                         dbId: "" },
   { id: "contenu_visuels",   label: "Création contenu / visuels réseaux sociaux", dbId: "" },
   { id: "partenariats",      label: "Partenariats influence réseaux sociaux",    dbId: "" },
 ];
+
+function toggleNotionBlock(id) {
+  const content = document.getElementById('notion-content-' + id);
+  const arrow = document.getElementById('notion-arrow-' + id);
+  if (!content) return;
+  const isHidden = content.style.display === 'none';
+  content.style.display = isHidden ? 'block' : 'none';
+  if (arrow) arrow.style.transform = isHidden ? 'rotate(90deg)' : 'rotate(0deg)';
+}
+
+function _normStatus(s) {
+  return String(s || '').toLowerCase().normalize('NFD').replace(new RegExp('[\\u0300-\\u036f]','g'), '').trim();
+}
 
 async function renderSiteBacklog() {
   const el = document.getElementById("content");
   el.innerHTML = `<div style="padding:24px">
     <div style="font-size:18px;font-weight:700;color:#004c99;margin-bottom:4px">Projets / Backlog</div>
     <div style="font-size:13px;color:#6b6a65;margin-bottom:24px">Données synchronisées depuis Notion</div>
-    <div id="notion-backlogs" style="display:flex;flex-direction:column;gap:32px">
+    <div id="notion-backlogs" style="display:flex;flex-direction:column;gap:12px">
       ${NOTION_DATABASES.map(db => `
         <div class="card" id="notion-block-${db.id}">
-          <div style="font-weight:600;font-size:15px;margin-bottom:12px;color:#004c99">${esc(db.label)}</div>
-          <div id="notion-content-${db.id}" style="font-size:13px;color:#6b6a65">
+          <div onclick="toggleNotionBlock('${db.id}')" style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;font-size:15px;color:#004c99">
+            <span id="notion-arrow-${db.id}" style="display:inline-block;transition:transform .15s;font-size:11px">▶</span>
+            <span>${esc(db.label)}</span>
+          </div>
+          <div id="notion-content-${db.id}" style="font-size:13px;color:#6b6a65;margin-top:12px;display:none">
             ${db.dbId ? 'Chargement…' : '<em>Base de données Notion non configurée — voir guide de configuration.</em>'}
           </div>
         </div>`).join('')}
@@ -11132,9 +11148,16 @@ async function renderSiteBacklog() {
       const res = await fetch("/api/notion?db=" + encodeURIComponent(db.dbId));
       if (!res.ok) throw new Error("HTTP " + res.status);
       const data = await res.json();
+      let results = data.results || [];
+      if (db.id === "fiches_produits") {
+        results = results.filter(item => {
+          const st = _normStatus(_notionStatus(item.properties || {}));
+          return st === 'en cours' || st === 'a faire';
+        });
+      }
       target.innerHTML = db.id === "marronnier_commercial"
-        ? renderMarronnierItems(data.results || [])
-        : renderNotionItems(data.results || []);
+        ? renderMarronnierItems(results)
+        : renderNotionItems(results);
     } catch(e) {
       target.innerHTML = `<span style="color:#b5312c">Erreur de chargement : ${esc(String(e))}</span>`;
     }
