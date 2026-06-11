@@ -11237,49 +11237,137 @@ const _NOTION_STATUS_COLORS = {
   'Annulée': { bg: '#fde8e8', fg: '#c0392b' },
 };
 
+function _notionFiles(props, key) {
+  const p = props[key];
+  if (!p || p.type !== "files" || !p.files) return [];
+  return p.files.map(f => ({
+    name: f.name || '',
+    url: f.type === 'external' ? f.external?.url : f.file?.url,
+  })).filter(f => f.url);
+}
+
+function _notionRichText(props, key) {
+  const p = props[key];
+  if (!p || p.type !== "rich_text" || !p.rich_text) return '';
+  return p.rich_text.map(t => t.plain_text || '').join('');
+}
+
+// Carte cliquable pour une campagne, ouvrant les détails dans une modale
+function _marronnierCard(item) {
+  const props = item.properties || {};
+  const title = _notionTitle(props);
+  const period = _notionDateRange(props);
+  const status = _notionSelect(props, "Statut");
+  const sc = _NOTION_STATUS_COLORS[status] || { bg: '#eef0f2', fg: '#5a6068' };
+  return `<div onclick="showMarronnierDetail('${item.id}')" style="cursor:pointer;border:1px solid #e8e6e1;border-radius:8px;padding:8px 10px;background:#fff;transition:box-shadow .15s" onmouseover="this.style.boxShadow='0 2px 8px rgba(0,0,0,.08)'" onmouseout="this.style.boxShadow='none'">
+    <div style="font-weight:600;font-size:12.5px;margin-bottom:4px">${esc(title)}</div>
+    <div style="font-size:11px;color:#999;margin-bottom:4px">${esc(period)}</div>
+    ${status ? `<span style="background:${sc.bg};color:${sc.fg};border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600">${esc(status)}</span>` : ''}
+  </div>`;
+}
+
 function renderMarronnierItems(items) {
   if (!items.length) return '<em style="color:#aaa">Aucune campagne.</em>';
-  // Trie par date de début, les plus récentes/futures en premier
-  const sorted = items.slice().sort((a, b) => {
-    const da = a.properties?.["Dates"]?.date?.start || '';
-    const db_ = b.properties?.["Dates"]?.date?.start || '';
+
+  // Stocke les items pour la modale de détail
+  window._marronnierItems = {};
+  items.forEach(it => { window._marronnierItems[it.id] = it; });
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  const todayStr = today.toISOString().slice(0,10);
+
+  const upcoming = [];
+  const past = [];
+  items.forEach(item => {
+    const d = item.properties?.["Dates"]?.date;
+    const end = d?.end || d?.start;
+    if (end && end < todayStr) past.push(item);
+    else upcoming.push(item);
+  });
+
+  // 12 colonnes mensuelles à partir du mois en cours
+  const months = [];
+  for (let i = 0; i < 12; i++) months.push(new Date(today.getFullYear(), today.getMonth() + i, 1));
+  const monthKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+
+  const byMonth = {};
+  months.forEach(m => byMonth[monthKey(m)] = []);
+  const overflow = [];
+  upcoming.forEach(item => {
+    const d = item.properties?.["Dates"]?.date;
+    let start = d?.start ? new Date(d.start) : new Date(today);
+    if (start < today) start = new Date(today); // campagne en cours -> mois actuel
+    const key = monthKey(start);
+    if (byMonth[key]) byMonth[key].push(item);
+    else overflow.push(item);
+  });
+  if (overflow.length) byMonth[monthKey(months[months.length-1])].push(...overflow);
+
+  const calendarHtml = `
+    <div style="font-weight:700;font-size:13px;color:#004c99;margin-bottom:10px">📅 Calendrier — 12 prochains mois</div>
+    <div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:10px">
+      ${months.map(m => `
+        <div style="min-width:170px;flex:0 0 auto">
+          <div style="font-weight:700;font-size:12px;color:#004c99;text-transform:capitalize;margin-bottom:8px;padding-bottom:4px;border-bottom:2px solid #d8e8ff">${m.toLocaleDateString('fr-FR',{month:'long',year:'numeric'})}</div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            ${(byMonth[monthKey(m)].length ? byMonth[monthKey(m)].map(_marronnierCard).join('') : '<div style="color:#ccc;font-size:11px">—</div>')}
+          </div>
+        </div>`).join('')}
+    </div>`;
+
+  const sortedPast = past.slice().sort((a,b) => {
+    const da = a.properties?.["Dates"]?.date?.end || a.properties?.["Dates"]?.date?.start || '';
+    const db_ = b.properties?.["Dates"]?.date?.end || b.properties?.["Dates"]?.date?.start || '';
     return da < db_ ? 1 : da > db_ ? -1 : 0;
   });
-  return `<table style="width:100%;border-collapse:collapse;font-size:13px">
-    <thead>
-      <tr style="background:#f0f6ff">
-        <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">Campagne</th>
-        <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">Type</th>
-        <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">Période</th>
-        <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">Statut</th>
-        <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">Catégories</th>
-        <th style="text-align:right;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">CA</th>
-        <th style="text-align:right;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">Ventes</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${sorted.map(item => {
-        const props = item.properties || {};
-        const title = _notionTitle(props);
-        const type = _notionSelect(props, "Type d'animation");
-        const period = _notionDateRange(props);
-        const status = _notionSelect(props, "Statut");
-        const cats = _notionMultiSelect(props, "Catégories concernées");
-        const ca = _notionNumber(props, "Chiffre d'affaires");
-        const ventes = _notionNumber(props, "Nombre de ventes");
-        const sc = _NOTION_STATUS_COLORS[status] || { bg: '#eef0f2', fg: '#5a6068' };
-        return `<tr style="border-bottom:1px solid #f0f0ee">
-          <td style="padding:7px 10px;font-weight:500">${esc(title)}</td>
-          <td style="padding:7px 10px;color:#888">${esc(type)}</td>
-          <td style="padding:7px 10px;color:#888;white-space:nowrap">${esc(period)}</td>
-          <td style="padding:7px 10px">${status ? `<span style="background:${sc.bg};color:${sc.fg};border-radius:4px;padding:2px 7px;font-size:12px;font-weight:600">${esc(status)}</span>` : ''}</td>
-          <td style="padding:7px 10px;color:#888">${cats.map(c => `<span style="background:#f0f6ff;color:#004c99;border-radius:4px;padding:1px 6px;font-size:11px;margin-right:3px;display:inline-block;margin-bottom:2px">${esc(c)}</span>`).join('')}</td>
-          <td style="padding:7px 10px;text-align:right">${ca != null ? _fmtEUR(ca) : ''}</td>
-          <td style="padding:7px 10px;text-align:right">${ventes != null ? _fmtNum(ventes) : ''}</td>
-        </tr>`;
-      }).join('')}
-    </tbody>
-  </table>`;
+
+  const historyHtml = sortedPast.length ? `
+    <div style="margin-top:24px">
+      <div style="font-weight:700;font-size:13px;color:#888;margin-bottom:10px">🗄️ Historique — campagnes terminées (${sortedPast.length})</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px">
+        ${sortedPast.map(_marronnierCard).join('')}
+      </div>
+    </div>` : '';
+
+  return calendarHtml + historyHtml;
+}
+
+function showMarronnierDetail(itemId) {
+  const item = (window._marronnierItems || {})[itemId];
+  if (!item) return;
+  const props = item.properties || {};
+  const title = _notionTitle(props);
+  const type = _notionSelect(props, "Type d'animation");
+  const period = _notionDateRange(props);
+  const status = _notionSelect(props, "Statut");
+  const cats = _notionMultiSelect(props, "Catégories concernées");
+  const ca = _notionNumber(props, "Chiffre d'affaires");
+  const ventes = _notionNumber(props, "Nombre de ventes");
+  const code = _notionRichText(props, "Code");
+  const responsables = (props["Responsable"]?.people || []).map(u => u.name || '').join(', ');
+  const files = _notionFiles(props, "Offre");
+  const sc = _NOTION_STATUS_COLORS[status] || { bg: '#eef0f2', fg: '#5a6068' };
+
+  const row = (label, content) => content ? `
+    <div style="display:flex;padding:8px 0;border-bottom:1px solid #f0f0ee">
+      <div style="width:140px;flex-shrink:0;font-weight:600;color:#888;font-size:12px">${esc(label)}</div>
+      <div style="font-size:13px">${content}</div>
+    </div>` : '';
+
+  const html = `
+    <div style="font-size:16px;font-weight:700;margin-bottom:4px">${esc(title)}</div>
+    ${status ? `<span style="background:${sc.bg};color:${sc.fg};border-radius:4px;padding:2px 8px;font-size:12px;font-weight:600">${esc(status)}</span>` : ''}
+    <div style="margin-top:12px">
+      ${row('Période', esc(period))}
+      ${row("Type d'animation", esc(type))}
+      ${row('Catégories', cats.map(c => `<span style="background:#f0f6ff;color:#004c99;border-radius:4px;padding:1px 7px;font-size:11px;margin-right:3px;display:inline-block;margin-bottom:2px">${esc(c)}</span>`).join(''))}
+      ${row('Code promo', code ? `<code style="background:#f5f5f3;padding:2px 6px;border-radius:4px">${esc(code)}</code>` : '')}
+      ${row("Chiffre d'affaires", ca != null ? _fmtEUR(ca) : '')}
+      ${row('Nombre de ventes', ventes != null ? _fmtNum(ventes) : '')}
+      ${row('Responsable', esc(responsables))}
+      ${row('Fichiers / Offre', files.map(f => `<a href="${esc(f.url)}" target="_blank" rel="noopener" style="color:var(--ac)">${esc(f.name || 'Fichier')}</a>`).join('<br>'))}
+    </div>`;
+  openModal(title, html);
 }
 
 // ─── Fin Site Internet ────────────────────────────────────────────────────────
