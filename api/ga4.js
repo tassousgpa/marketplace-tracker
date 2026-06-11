@@ -115,6 +115,103 @@ function evolRange() {
   return { start: startD.toISOString().slice(0, 10), end: endD.toISOString().slice(0, 10) };
 }
 
+// ── Cache Supabase pour les séries d'évolution hebdomadaire ────────────
+// Évite de re-demander 18 mois d'historique à GA4 à chaque chargement :
+// on ne récupère que les semaines manquantes/récentes et on stocke le
+// reste en base.
+const SB_URL = "https://pmxsthzdxubqbemdgtbr.supabase.co";
+const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBteHN0aHpkeHVicWJlbWRndGJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ0NDk4NDQsImV4cCI6MjA5MDAyNTg0NH0.GpfAw91eJ8D7RIeZLFIejCt9DTwGpXvOGcxYlhZS78I";
+
+async function sbSelect(table, query) {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?${query}`, {
+    headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` },
+  });
+  if (!r.ok) throw new Error(`Supabase select ${r.status}: ${await r.text()}`);
+  return r.json();
+}
+
+async function sbUpsert(table, data, onConflict) {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?on_conflict=${encodeURIComponent(onConflict)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: SB_KEY,
+      Authorization: `Bearer ${SB_KEY}`,
+      Prefer: 'resolution=merge-duplicates,return=minimal',
+    },
+    body: JSON.stringify(data),
+  });
+  if (!r.ok) throw new Error(`Supabase upsert ${r.status}: ${await r.text()}`);
+}
+
+// Récupère la série hebdomadaire "yearWeek -> sessions" pour un canal donné,
+// en s'appuyant sur un cache Supabase (table ga4_weekly_stats + ga4_sync_meta).
+// Ne questionne GA4 que pour les semaines manquantes depuis le dernier sync.
+async function getCachedEvolution(token, propertyId, channel, dimensionFilter) {
+  const range = evolRange();
+
+  let lastEnd = null;
+  try {
+    const meta = await sbSelect('ga4_sync_meta', `channel=eq.${channel}&select=last_end_date`);
+    lastEnd = meta[0]?.last_end_date || null;
+  } catch (e) {
+    // table absente ou erreur réseau -> on retombe sur un fetch GA4 complet
+    lastEnd = null;
+  }
+
+  let fetchStart = range.start;
+  let needsFetch = true;
+  if (lastEnd) {
+    if (lastEnd >= range.end) {
+      needsFetch = false;
+    } else {
+      // Re-fetch des 7 derniers jours connus + la nouvelle plage, au cas où
+      // GA4 ait mis à jour des données encore "fraîches" (lag de traitement).
+      const d = new Date(lastEnd);
+      d.setUTCDate(d.getUTCDate() - 6);
+      const minStart = new Date(range.start);
+      fetchStart = (d < minStart ? minStart : d).toISOString().slice(0, 10);
+    }
+  }
+
+  if (needsFetch) {
+    const body = {
+      dateRanges: [{ startDate: fetchStart, endDate: range.end }],
+      dimensions: [{ name: 'yearWeek' }],
+      metrics: [{ name: 'sessions' }],
+      orderBys: [{ dimension: { dimensionName: 'yearWeek' } }],
+    };
+    if (dimensionFilter) body.dimensionFilter = dimensionFilter;
+    const data = await runReport(token, propertyId, body);
+    const rows = parseRows(data)
+      .map(r => ({ channel, year_week: r.dims[0], sessions: r.mets[0] }))
+      .filter(r => r.year_week);
+    try {
+      if (rows.length) await sbUpsert('ga4_weekly_stats', rows, 'channel,year_week');
+      await sbUpsert('ga4_sync_meta', [{ channel, last_end_date: range.end }], 'channel');
+    } catch (e) {
+      // Si l'écriture cache échoue, on renvoie quand même les données fraîches
+      return rows.map(r => ({ yearWeek: r.year_week, sessions: r.sessions }));
+    }
+  }
+
+  try {
+    const cached = await sbSelect('ga4_weekly_stats', `channel=eq.${channel}&select=year_week,sessions&order=year_week.asc&limit=120`);
+    if (cached.length) return cached.map(r => ({ yearWeek: r.year_week, sessions: r.sessions }));
+  } catch (e) { /* ignore, fallback ci-dessous */ }
+
+  // Fallback : si tout le cache échoue, fetch direct GA4 (ancien comportement)
+  const body = {
+    dateRanges: [{ startDate: range.start, endDate: range.end }],
+    dimensions: [{ name: 'yearWeek' }],
+    metrics: [{ name: 'sessions' }],
+    orderBys: [{ dimension: { dimensionName: 'yearWeek' } }],
+  };
+  if (dimensionFilter) body.dimensionFilter = dimensionFilter;
+  const data = await runReport(token, propertyId, body);
+  return parseRows(data).map(r => ({ yearWeek: r.dims[0], sessions: r.mets[0] }));
+}
+
 // Cache du token au niveau du module : réutilisé entre invocations tant que
 // l'instance serverless reste "chaude", pour éviter un aller-retour OAuth
 // (souvent 200-500ms) à chaque appel de l'API GA4.
@@ -249,19 +346,9 @@ module.exports = async function handler(req, res) {
 
     // ── Évolution hebdomadaire — 18 mois (semaines complètes) ─────
     if (type === 'evolution') {
-      const range = evolRange();
-      const data = await runReport(token, propertyId, {
-        dateRanges: [{ startDate: range.start, endDate: range.end }],
-        dimensions: [{ name: 'yearWeek' }],
-        metrics: [{ name: 'sessions' }],
-        dimensionFilter: ORGANIC_FILTER,
-        orderBys: [{ dimension: { dimensionName: 'yearWeek' } }],
-      });
-      const rows = parseRows(data);
+      const weeks = await getCachedEvolution(token, propertyId, 'organic', ORGANIC_FILTER);
       res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=300');
-      return res.status(200).json({
-        weeks: rows.map(r => ({ yearWeek: r.dims[0], sessions: r.mets[0] })),
-      });
+      return res.status(200).json({ weeks });
     }
 
     // ── SEA KPIs : last completed week vs N-1 ─────────────────────
@@ -316,18 +403,9 @@ module.exports = async function handler(req, res) {
 
     // ── SEA évolution hebdomadaire — 18 mois (semaines complètes) ─
     if (type === 'sea_evolution') {
-      const range = evolRange();
-      const data = await runReport(token, propertyId, {
-        dateRanges: [{ startDate: range.start, endDate: range.end }],
-        dimensions: [{ name: 'yearWeek' }],
-        metrics: [{ name: 'sessions' }],
-        dimensionFilter: PAID_FILTER,
-        orderBys: [{ dimension: { dimensionName: 'yearWeek' } }],
-      });
+      const weeks = await getCachedEvolution(token, propertyId, 'sea', PAID_FILTER);
       res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=300');
-      return res.status(200).json({
-        weeks: parseRows(data).map(r => ({ yearWeek: r.dims[0], sessions: r.mets[0] })),
-      });
+      return res.status(200).json({ weeks });
     }
 
     // ── SEA par campagne — 28 derniers jours ──────────────────────
@@ -384,17 +462,9 @@ module.exports = async function handler(req, res) {
 
     // ── Trafic total — évolution 18 mois (tous canaux, semaines complètes) ──
     if (type === 'total_evolution') {
-      const range = evolRange();
-      const data = await runReport(token, propertyId, {
-        dateRanges: [{ startDate: range.start, endDate: range.end }],
-        dimensions: [{ name: 'yearWeek' }],
-        metrics: [{ name: 'sessions' }],
-        orderBys: [{ dimension: { dimensionName: 'yearWeek' } }],
-      });
+      const weeks = await getCachedEvolution(token, propertyId, 'total', null);
       res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=300');
-      return res.status(200).json({
-        weeks: parseRows(data).map(r => ({ yearWeek: r.dims[0], sessions: r.mets[0] })),
-      });
+      return res.status(200).json({ weeks });
     }
 
     // ── Trafic total — conversion 3 derniers jours vs moyenne YTD (tous canaux) ──
