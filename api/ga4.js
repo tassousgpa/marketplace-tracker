@@ -175,23 +175,31 @@ async function getCachedEvolution(token, propertyId, channel, dimensionFilter) {
   }
 
   if (needsFetch) {
-    // Découpe la plage à récupérer en tranches de ~120 jours, interrogées en
-    // parallèle : un premier backfill de 18 mois en une seule requête GA4
-    // peut dépasser le timeout, alors que plusieurs requêtes plus courtes
-    // en parallèle restent rapides.
+    // Découpe la plage à récupérer en tranches de ~60 jours, traitées
+    // séquentiellement avec sauvegarde du progrès après chaque tranche.
+    // Pour un premier backfill (18 mois), une seule requête est trop lente
+    // (>20s) : on avance tranche par tranche et on s'arrête avant la limite
+    // de temps de la fonction, en laissant `last_end_date` à la dernière
+    // tranche traitée. La page suivante reprendra là où on s'est arrêté,
+    // jusqu'à couverture complète de l'historique.
     const chunks = [];
     let curStart = new Date(fetchStart);
     const end = new Date(range.end);
     while (curStart <= end) {
       const curEnd = new Date(curStart);
-      curEnd.setUTCDate(curEnd.getUTCDate() + 119);
+      curEnd.setUTCDate(curEnd.getUTCDate() + 59);
       if (curEnd > end) curEnd.setTime(end.getTime());
       chunks.push({ start: curStart.toISOString().slice(0, 10), end: curEnd.toISOString().slice(0, 10) });
       curStart = new Date(curEnd);
       curStart.setUTCDate(curStart.getUTCDate() + 1);
     }
 
-    const results = await Promise.all(chunks.map(c => {
+    const startTime = Date.now();
+    const DEADLINE_MS = 45000; // marge sous maxDuration=60s
+    let progressed = false;
+
+    for (const c of chunks) {
+      if (Date.now() - startTime > DEADLINE_MS) break;
       const body = {
         dateRanges: [{ startDate: c.start, endDate: c.end }],
         dimensions: [{ name: 'yearWeek' }],
@@ -199,25 +207,20 @@ async function getCachedEvolution(token, propertyId, channel, dimensionFilter) {
         orderBys: [{ dimension: { dimensionName: 'yearWeek' } }],
       };
       if (dimensionFilter) body.dimensionFilter = dimensionFilter;
-      return runReport(token, propertyId, body, 28000);
-    }));
-
-    const rows = [];
-    const seen = new Set();
-    results.forEach(data => {
-      parseRows(data).forEach(r => {
-        if (!r.dims[0] || seen.has(r.dims[0])) return;
-        seen.add(r.dims[0]);
-        rows.push({ channel, year_week: r.dims[0], sessions: r.mets[0] });
-      });
-    });
-
-    try {
-      if (rows.length) await sbUpsert('ga4_weekly_stats', rows, 'channel,year_week');
-      await sbUpsert('ga4_sync_meta', [{ channel, last_end_date: range.end }], 'channel');
-    } catch (e) {
-      // Si l'écriture cache échoue, on renvoie quand même les données fraîches
-      return rows.map(r => ({ yearWeek: r.year_week, sessions: r.sessions }));
+      const data = await runReport(token, propertyId, body, 20000);
+      const rows = parseRows(data)
+        .map(r => ({ channel, year_week: r.dims[0], sessions: r.mets[0] }))
+        .filter(r => r.year_week);
+      try {
+        if (rows.length) await sbUpsert('ga4_weekly_stats', rows, 'channel,year_week');
+        await sbUpsert('ga4_sync_meta', [{ channel, last_end_date: c.end }], 'channel');
+        progressed = true;
+      } catch (e) {
+        break; // écriture cache impossible, on s'arrête et on retombe sur le fallback
+      }
+    }
+    if (!progressed) {
+      // Aucune tranche n'a pu être sauvegardée : fallback direct GA4 plus bas
     }
   }
 
