@@ -81,6 +81,16 @@ const PAID_FILTER = {
   },
 };
 
+// Réseaux sociaux : organique + payant (Organic Social, Paid Social)
+const SOCIAL_FILTER = {
+  orGroup: {
+    expressions: [
+      { filter: { fieldName: 'sessionDefaultChannelGroup', stringFilter: { matchType: 'EXACT', value: 'Organic Social' } } },
+      { filter: { fieldName: 'sessionDefaultChannelGroup', stringFilter: { matchType: 'EXACT', value: 'Paid Social' } } },
+    ],
+  },
+};
+
 // Last completed calendar week Mon–Sun
 function lastWeek() {
   const now = new Date();
@@ -492,6 +502,88 @@ module.exports = async function handler(req, res) {
           transactions: r.mets[1],
           conversionRate: r.mets[2],
           revenue: r.mets[3],
+        })),
+        period: { start: fmt(startD), end: fmt(endD) },
+      });
+    }
+
+    // ── Social KPIs : last completed week vs N-1 ──────────────────
+    if (type === 'social_kpi') {
+      const wk   = lastWeek();
+      const wkN1 = lastWeekN1();
+      const metrics = [
+        { name: 'sessions' },
+        { name: 'transactions' },
+        { name: 'sessionConversionRate' },
+      ];
+      const [curData, n1Data] = await Promise.all([
+        runReport(token, propertyId, {
+          dateRanges: [{ startDate: wk.start, endDate: wk.end }],
+          metrics,
+          dimensionFilter: SOCIAL_FILTER,
+        }),
+        runReport(token, propertyId, {
+          dateRanges: [{ startDate: wkN1.start, endDate: wkN1.end }],
+          metrics,
+          dimensionFilter: SOCIAL_FILTER,
+        }),
+      ]);
+      const getTotal = (data, idx) => {
+        const t = data.totals?.[0]?.metricValues?.[idx];
+        if (t) return parseFloat(t.value) || 0;
+        return sumMetrics(data, idx);
+      };
+      res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=300');
+      return res.status(200).json({
+        current: { sessions: getTotal(curData, 0), transactions: getTotal(curData, 1), conversionRate: getTotal(curData, 2) },
+        n1:      { sessions: getTotal(n1Data, 0), transactions: getTotal(n1Data, 1), conversionRate: getTotal(n1Data, 2) },
+        weekLabel: wk.label,
+        week: wk,
+      });
+    }
+
+    // ── Social sessions par jour — 7 derniers jours ───────────────
+    if (type === 'social_daily') {
+      const data = await runReport(token, propertyId, {
+        dateRanges: [{ startDate: '7daysAgo', endDate: 'yesterday' }],
+        dimensions: [{ name: 'date' }],
+        metrics: [{ name: 'sessions' }],
+        dimensionFilter: SOCIAL_FILTER,
+        orderBys: [{ dimension: { dimensionName: 'date' } }],
+      });
+      res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=300');
+      return res.status(200).json({
+        days: parseRows(data).map(r => ({ date: r.dims[0], sessions: r.mets[0] })),
+      });
+    }
+
+    // ── Social évolution hebdomadaire — 18 mois (semaines complètes) ─
+    if (type === 'social_evolution') {
+      const weeks = await getCachedEvolution(token, propertyId, 'social', SOCIAL_FILTER);
+      res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=300');
+      return res.status(200).json({ weeks });
+    }
+
+    // ── Social par réseau — 28 derniers jours ─────────────────────
+    if (type === 'social_networks') {
+      const endD = new Date(); endD.setUTCDate(endD.getUTCDate() - 1);
+      const startD = new Date(endD); startD.setUTCDate(startD.getUTCDate() - 27);
+      const fmt = d => d.toISOString().slice(0, 10);
+      const data = await runReport(token, propertyId, {
+        dateRanges: [{ startDate: fmt(startD), endDate: fmt(endD) }],
+        dimensions: [{ name: 'sessionSourceMedium' }],
+        metrics: [{ name: 'sessions' }, { name: 'transactions' }, { name: 'sessionConversionRate' }],
+        dimensionFilter: SOCIAL_FILTER,
+        orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+        limit: 50,
+      });
+      res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=300');
+      return res.status(200).json({
+        rows: parseRows(data).map(r => ({
+          sourceMedium: r.dims[0],
+          sessions: r.mets[0],
+          transactions: r.mets[1],
+          conversionRate: r.mets[2],
         })),
         period: { start: fmt(startD), end: fmt(endD) },
       });

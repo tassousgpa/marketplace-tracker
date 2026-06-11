@@ -458,7 +458,7 @@ const TAB_NAMES_LIGHT_SEA = ["Synthèse","Produits","Historique","Alertes","Audi
 const TAB_NAMES_MINIMAL     = ["Synthèse","Alertes","Audit","Opé. Commerciales","TDC"];
 const TAB_NAMES_MINIMAL_SEA = ["Synthèse","Alertes","Audit","Opé. Commerciales","TDC","SEA"];
 const LAREDOUTE_TABS = ["Synthèse","Positions","Concurrents","Alertes","Audit","Opé. Commerciales","TDC"];
-const TAB_NAMES_SITE = ["Synthèse", "Trafic SEO", "Positions SEO", "Trafic SEA", "Projets/Backlog"];
+const TAB_NAMES_SITE = ["Synthèse", "Trafic SEO", "Positions SEO", "Trafic SEA", "Trafic Social", "Projets/Backlog"];
 const MINIMAL_MP = new Set(["leroymerlin"]);
 const SEA_MP = new Set(["cdiscount","but","maisonsdumonde","conforama","manomano"]);
 
@@ -1409,7 +1409,8 @@ function renderContent() {
       case 1: renderSiteSEO(); break;
       case 2: renderSitePositionsSEO(); break;
       case 3: renderSiteSEA(); break;
-      case 4: renderSiteBacklog(); break;
+      case 4: renderSiteSocial(); break;
+      case 5: renderSiteBacklog(); break;
       default: el.innerHTML = '';
     }
     return;
@@ -10234,6 +10235,8 @@ const _SEO_BLUE = '#2c5ea0';
 const _SEO_BLUE_LIGHT = 'rgba(44,94,160,0.12)';
 const _SEA_ORANGE = '#d4600a';
 const _SEA_ORANGE_LIGHT = 'rgba(212,96,10,0.12)';
+const _SOCIAL_PURPLE = '#9c2c8f';
+const _SOCIAL_PURPLE_LIGHT = 'rgba(156,44,143,0.12)';
 
 function _fmtPct(v) { return v == null ? '—' : (v * 100).toFixed(2).replace('.', ',') + '%'; }
 function _fmtNum(v) { return v == null ? '—' : Math.round(v).toLocaleString('fr-FR'); }
@@ -10765,6 +10768,136 @@ async function renderSiteSEA() {
 
     } catch(e) {
       document.getElementById('sea-kpis').innerHTML = _seoErrorHtml('❌ ' + esc(String(e)));
+    }
+  });
+}
+
+async function renderSiteSocial() {
+  const el = document.getElementById('content');
+  el.innerHTML = `
+    <div style="padding:24px;display:flex;flex-direction:column;gap:20px">
+      <div id="social-kpis" class="metrics" style="margin-bottom:0">
+        ${[1,2,3,4].map(()=>`<div class="metric"><div class="metric-label" style="background:var(--borderL);border-radius:4px;width:80px;height:12px;margin-bottom:6px"></div><div class="metric-value" style="background:var(--borderL);border-radius:4px;width:50px;height:28px"></div></div>`).join('')}
+      </div>
+      <div class="card" style="min-height:200px">
+        <div class="card-title">Sessions réseaux sociaux — 7 derniers jours</div>
+        <div id="wrap-social-daily" style="position:relative;height:180px"><canvas id="chart-social-daily"></canvas></div>
+      </div>
+      <div class="card" style="min-height:200px">
+        <div class="card-title">Évolution trafic réseaux sociaux (52 semaines)</div>
+        <div id="wrap-social-evolution" style="position:relative;height:180px"><canvas id="chart-social-evolution"></canvas></div>
+      </div>
+      <div class="card" style="min-height:120px">
+        <div class="card-title">Répartition par réseau — 28 derniers jours</div>
+        <div id="social-networks-table"><div style="text-align:center;padding:24px;color:var(--txT);font-size:13px">Chargement…</div></div>
+      </div>
+    </div>`;
+
+  _ensureChartJs(async (err) => {
+    if (err) { document.getElementById('social-kpis').innerHTML = _seoErrorHtml('Impossible de charger Chart.js'); return; }
+    try {
+      const [kpi, daily, evol, networks] = await Promise.all([
+        fetch('/api/ga4?type=social_kpi').then(r => r.json()),
+        fetch('/api/ga4?type=social_daily').then(r => r.json()),
+        fetch('/api/ga4?type=social_evolution').then(r => r.json()),
+        fetch('/api/ga4?type=social_networks').then(r => r.json()),
+      ]);
+
+      if (kpi.error) {
+        document.getElementById('social-kpis').innerHTML = _seoErrorHtml('❌ ' + esc(kpi.error));
+        return;
+      }
+
+      const cur = kpi.current || {}, n1 = kpi.n1 || {};
+      document.getElementById('social-kpis').innerHTML = [
+        { label: 'Sessions sociales',   val: _fmtNum(cur.sessions),       evol: _evolBadge(cur.sessions, n1.sessions),             sub: `N-1 : ${_fmtNum(n1.sessions)}` },
+        { label: 'Taux de conversion',  val: _fmtPct(cur.conversionRate), evol: _evolBadge(cur.conversionRate, n1.conversionRate),  sub: `N-1 : ${_fmtPct(n1.conversionRate)}` },
+        { label: 'Transactions',        val: _fmtNum(cur.transactions),   evol: _evolBadge(cur.transactions, n1.transactions),      sub: `N-1 : ${_fmtNum(n1.transactions)}` },
+        { label: 'Période analysée',    val: kpi.weekLabel || '',         sub: 'Réseaux sociaux (organique + payant)', noEvol: true },
+      ].map(k => `<div class="metric">
+        <div class="metric-label">${k.label}</div>
+        <div class="metric-value" style="font-size:22px">${k.val}${k.evol||''}</div>
+        <div class="metric-sub">${k.sub||''}</div>
+      </div>`).join('');
+
+      // Chart 1 : sessions par jour
+      _destroyChart('social-daily');
+      const days = (daily.days || []).sort((a,b) => a.date > b.date ? 1 : -1);
+      const c1 = document.getElementById('chart-social-daily');
+      if (c1 && days.length) {
+        _saveChart('social-daily', new Chart(c1, {
+          type: 'bar',
+          data: {
+            labels: days.map(d => _dayLabel(d.date) + '\n' + d.date.slice(6,8) + '/' + d.date.slice(4,6)),
+            datasets: [{ label: 'Sessions', data: days.map(d => d.sessions), backgroundColor: _SOCIAL_PURPLE, borderRadius: 5 }],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true, grid: { color: '#f0eee9' } }, x: { grid: { display: false } } },
+          },
+        }));
+      } else if (c1) {
+        document.getElementById('wrap-social-daily').innerHTML = _seoErrorHtml('Aucune donnée disponible — pas de trafic social sur cette période');
+      }
+
+      // Chart 2 : évolution hebdomadaire
+      _destroyChart('social-evolution');
+      const weeks = (evol.weeks || []).sort((a,b) => a.yearWeek > b.yearWeek ? 1 : -1);
+      const c2 = document.getElementById('chart-social-evolution');
+      if (c2 && weeks.length) {
+        const wkLbl = yw => `S${yw.slice(4)} ${yw.slice(0,4)}`;
+        _saveChart('social-evolution', new Chart(c2, {
+          type: 'line',
+          data: {
+            labels: weeks.map(w => wkLbl(w.yearWeek)),
+            datasets: [{
+              label: 'Sessions sociales',
+              data: weeks.map(w => w.sessions),
+              borderColor: _SOCIAL_PURPLE, backgroundColor: _SOCIAL_PURPLE_LIGHT,
+              fill: true, tension: 0.3, pointRadius: 2, pointHoverRadius: 5,
+            }],
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              y: { beginAtZero: false, grid: { color: '#f0eee9' } },
+              x: { grid: { display: false }, ticks: { maxTicksLimit: 16, maxRotation: 0 } },
+            },
+          },
+        }));
+      } else if (c2) {
+        document.getElementById('wrap-social-evolution').innerHTML = _seoErrorHtml('Aucune donnée disponible');
+      }
+
+      // Tableau : répartition par réseau
+      const rows = networks.rows || [];
+      if (!rows.length) {
+        document.getElementById('social-networks-table').innerHTML = _seoErrorHtml('Aucune donnée disponible — pas de trafic social sur cette période');
+      } else {
+        document.getElementById('social-networks-table').innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="background:#f6eef5">
+              <th style="text-align:left;padding:6px 12px;border-bottom:1px solid #ecd9ea;font-weight:600">Réseau (source / support)</th>
+              <th style="text-align:right;padding:6px 12px;border-bottom:1px solid #ecd9ea;font-weight:600">Sessions</th>
+              <th style="text-align:right;padding:6px 12px;border-bottom:1px solid #ecd9ea;font-weight:600">Transactions</th>
+              <th style="text-align:right;padding:6px 12px;border-bottom:1px solid #ecd9ea;font-weight:600">Taux conv.</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(r => `<tr style="border-bottom:1px solid #f0f0ee">
+              <td style="padding:7px 12px;font-weight:500">${esc(r.sourceMedium || '(non défini)')}</td>
+              <td style="padding:7px 12px;text-align:right">${_fmtNum(r.sessions)}</td>
+              <td style="padding:7px 12px;text-align:right">${_fmtNum(r.transactions)}</td>
+              <td style="padding:7px 12px;text-align:right">${_fmtPct(r.conversionRate)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>`;
+      }
+
+    } catch(e) {
+      document.getElementById('social-kpis').innerHTML = _seoErrorHtml('❌ ' + esc(String(e)));
     }
   });
 }
