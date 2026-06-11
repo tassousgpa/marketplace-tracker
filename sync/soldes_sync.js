@@ -43,7 +43,11 @@ if (!SB_URL || !SB_KEY) {
 async function sbGet(table, params = "") {
   let allRows = [];
   let offset = 0;
-  const PAGE = 10000;
+  // NB: l'instance Postgrest plafonne les réponses à 5500 lignes (db-max-rows),
+  // quel que soit le Range demandé. On utilise donc une PAGE < 5500 pour que
+  // la pagination fonctionne correctement (sinon la 1ère page tronquée à 5500
+  // est confondue avec "dernière page" et les données suivantes sont perdues).
+  const PAGE = 1000;
   while (true) {
     const r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, {
       headers: {
