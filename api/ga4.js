@@ -27,9 +27,9 @@ async function getGoogleToken(serviceAccountJson, scope) {
   return d.access_token;
 }
 
-async function runReport(token, propertyId, body) {
+async function runReport(token, propertyId, body, timeoutMs = 20000) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const r = await fetch(
       `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`,
@@ -46,7 +46,7 @@ async function runReport(token, propertyId, body) {
     }
     return await r.json();
   } catch (e) {
-    if (e.name === 'AbortError') throw new Error('GA4 timeout (20s) — la requête a pris trop de temps');
+    if (e.name === 'AbortError') throw new Error(`GA4 timeout (${Math.round(timeoutMs/1000)}s) — la requête a pris trop de temps`);
     throw e;
   } finally {
     clearTimeout(timeout);
@@ -175,17 +175,43 @@ async function getCachedEvolution(token, propertyId, channel, dimensionFilter) {
   }
 
   if (needsFetch) {
-    const body = {
-      dateRanges: [{ startDate: fetchStart, endDate: range.end }],
-      dimensions: [{ name: 'yearWeek' }],
-      metrics: [{ name: 'sessions' }],
-      orderBys: [{ dimension: { dimensionName: 'yearWeek' } }],
-    };
-    if (dimensionFilter) body.dimensionFilter = dimensionFilter;
-    const data = await runReport(token, propertyId, body);
-    const rows = parseRows(data)
-      .map(r => ({ channel, year_week: r.dims[0], sessions: r.mets[0] }))
-      .filter(r => r.year_week);
+    // Découpe la plage à récupérer en tranches de ~120 jours, interrogées en
+    // parallèle : un premier backfill de 18 mois en une seule requête GA4
+    // peut dépasser le timeout, alors que plusieurs requêtes plus courtes
+    // en parallèle restent rapides.
+    const chunks = [];
+    let curStart = new Date(fetchStart);
+    const end = new Date(range.end);
+    while (curStart <= end) {
+      const curEnd = new Date(curStart);
+      curEnd.setUTCDate(curEnd.getUTCDate() + 119);
+      if (curEnd > end) curEnd.setTime(end.getTime());
+      chunks.push({ start: curStart.toISOString().slice(0, 10), end: curEnd.toISOString().slice(0, 10) });
+      curStart = new Date(curEnd);
+      curStart.setUTCDate(curStart.getUTCDate() + 1);
+    }
+
+    const results = await Promise.all(chunks.map(c => {
+      const body = {
+        dateRanges: [{ startDate: c.start, endDate: c.end }],
+        dimensions: [{ name: 'yearWeek' }],
+        metrics: [{ name: 'sessions' }],
+        orderBys: [{ dimension: { dimensionName: 'yearWeek' } }],
+      };
+      if (dimensionFilter) body.dimensionFilter = dimensionFilter;
+      return runReport(token, propertyId, body, 28000);
+    }));
+
+    const rows = [];
+    const seen = new Set();
+    results.forEach(data => {
+      parseRows(data).forEach(r => {
+        if (!r.dims[0] || seen.has(r.dims[0])) return;
+        seen.add(r.dims[0]);
+        rows.push({ channel, year_week: r.dims[0], sessions: r.mets[0] });
+      });
+    });
+
     try {
       if (rows.length) await sbUpsert('ga4_weekly_stats', rows, 'channel,year_week');
       await sbUpsert('ga4_sync_meta', [{ channel, last_end_date: range.end }], 'channel');
