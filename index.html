@@ -11104,7 +11104,7 @@ const NOTION_DATABASES = [
   { id: "marronnier_commercial", label: "Marronnier commercial",                    dbId: "33561fa6330d80c692c9e955a33cf43c" },
   { id: "fiches_produits",   label: "Création fiches produits en cours",        dbId: "32961fa6330d8075aaa9de58bd8d9a22" },
   { id: "plan_photos",       label: "Plan clean photos — Journal des tests",     dbId: "37361fa6330d8050b5d7ee6d0127bd10" },
-  { id: "contenu_visuels",   label: "Création contenu / visuels réseaux sociaux", dbId: "" },
+  { id: "contenu_visuels",   label: "Calendrier éditorial réseaux sociaux",      dbId: "5b661fa6330d823ca646010341ec23d4" },
   { id: "partenariats",      label: "Partenariats influence réseaux sociaux",    dbId: "" },
 ];
 
@@ -11158,6 +11158,7 @@ async function renderSiteBacklog() {
       target.innerHTML = db.id === "marronnier_commercial" ? renderMarronnierItems(results)
         : db.id === "fiches_produits" ? renderFichesProduitsItems(results)
         : db.id === "plan_photos" ? renderGenericNotionTable(results)
+        : db.id === "contenu_visuels" ? renderSocialCalendar(results)
         : renderNotionItems(results);
     } catch(e) {
       target.innerHTML = `<span style="color:#b5312c">Erreur de chargement : ${esc(String(e))}</span>`;
@@ -11420,7 +11421,129 @@ const _NOTION_STATUS_COLORS = {
   'En cours': { bg: '#fff4e0', fg: '#b06a00' },
   'Planifiée': { bg: '#eef0f2', fg: '#5a6068' },
   'Annulée': { bg: '#fde8e8', fg: '#c0392b' },
+  'Programmé': { bg: '#e6f4ea', fg: '#1e7e34' },
+  'Publié': { bg: '#e6f4ea', fg: '#1e7e34' },
+  'Brouillon': { bg: '#eef0f2', fg: '#5a6068' },
+  'À faire': { bg: '#eef0f2', fg: '#5a6068' },
 };
+
+// ─── Rendu spécifique "Calendrier réseaux sociaux" ─────────────────────────
+const _SOCIAL_PLATFORM_ICONS = {
+  Instagram: '📸', Facebook: '📘', TikTok: '🎵', LinkedIn: '💼', YouTube: '▶️', Pinterest: '📌', X: '✖️',
+};
+
+function _socialPostCard(item) {
+  const props = item.properties || {};
+  const title = _notionTitle(props);
+  const plateforme = _notionSelect(props, "Plateforme");
+  const format = _notionSelect(props, "Format");
+  const status = _notionStatus(props);
+  const sc = _NOTION_STATUS_COLORS[status] || { bg: '#eef0f2', fg: '#5a6068' };
+  const icon = _SOCIAL_PLATFORM_ICONS[plateforme] || '📱';
+  return `<div onclick="showSocialPostDetail('${item.id}')" style="cursor:pointer;border:1px solid #e8e6e1;border-radius:6px;padding:4px 6px;margin-bottom:4px;background:#fff;font-size:11px;transition:box-shadow .15s" onmouseover="this.style.boxShadow='0 2px 6px rgba(0,0,0,.08)'" onmouseout="this.style.boxShadow='none'">
+    <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${icon} ${esc(title)}</div>
+    <div style="color:#999">${esc(format)}</div>
+    ${status ? `<span style="background:${sc.bg};color:${sc.fg};border-radius:4px;padding:0 4px;font-size:10px">${esc(status)}</span>` : ''}
+  </div>`;
+}
+
+function renderSocialCalendar(items) {
+  window._socialCalItems = items;
+  if (!window._socialCalDate) {
+    const today = new Date();
+    window._socialCalDate = { year: today.getFullYear(), month: today.getMonth() };
+  }
+  return _renderSocialCalendarGrid();
+}
+
+function _renderSocialCalendarGrid() {
+  const items = window._socialCalItems || [];
+  const { year, month } = window._socialCalDate;
+  const first = new Date(year, month, 1);
+  const monthLabel = first.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+
+  const byDate = {};
+  items.forEach(item => {
+    const raw = _notionDateRaw(item.properties || {}, "Date publication");
+    if (!raw) return;
+    const key = raw.slice(0, 10);
+    (byDate[key] = byDate[key] || []).push(item);
+  });
+
+  const firstWeekday = (first.getDay() + 6) % 7; // 0 = lundi
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < firstWeekday; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  const dayNames = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  return `
+    <div style="display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:12px">
+      <button onclick="_socialCalNav(-1)" style="border:1px solid #d8d6d1;border-radius:4px;background:#fff;cursor:pointer;padding:4px 12px;font-size:14px;font-weight:700">‹</button>
+      <div style="font-weight:700;font-size:14px;color:#004c99;text-transform:capitalize;min-width:160px;text-align:center">${monthLabel}</div>
+      <button onclick="_socialCalNav(1)" style="border:1px solid #d8d6d1;border-radius:4px;background:#fff;cursor:pointer;padding:4px 12px;font-size:14px;font-weight:700">›</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px">
+      ${dayNames.map(d => `<div style="text-align:center;font-weight:700;font-size:11px;color:#888;padding:4px 0">${d}</div>`).join('')}
+      ${cells.map(d => {
+        if (d === null) return `<div style="background:#fafaf8;border-radius:6px;min-height:90px"></div>`;
+        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const isToday = dateStr === todayStr;
+        const posts = byDate[dateStr] || [];
+        return `<div style="border:1px solid #eee;border-radius:6px;min-height:90px;padding:4px;${isToday ? 'background:#f0f6ff;border-color:#bcd9ff' : ''}">
+          <div style="font-size:11px;font-weight:600;color:${isToday ? '#004c99' : '#999'};margin-bottom:3px">${d}</div>
+          ${posts.map(_socialPostCard).join('')}
+        </div>`;
+      }).join('')}
+    </div>`;
+}
+
+function _socialCalNav(delta) {
+  let { year, month } = window._socialCalDate;
+  month += delta;
+  if (month < 0) { month = 11; year--; }
+  if (month > 11) { month = 0; year++; }
+  window._socialCalDate = { year, month };
+  const target = document.getElementById('notion-content-contenu_visuels');
+  if (target) target.innerHTML = _renderSocialCalendarGrid();
+}
+
+function showSocialPostDetail(itemId) {
+  const item = (window._socialCalItems || []).find(i => i.id === itemId);
+  if (!item) return;
+  const props = item.properties || {};
+  const title = _notionTitle(props);
+  const status = _notionStatus(props);
+  const plateforme = _notionSelect(props, "Plateforme");
+  const format = _notionSelect(props, "Format");
+  const pilier = _notionMultiSelect(props, "Pilier Edito");
+  const cible = _notionMultiSelect(props, "Cible");
+  const date = _notionDateSingle(props, "Date publication");
+  const media = _notionFiles(props, "Média");
+  const sc = _NOTION_STATUS_COLORS[status] || { bg: '#eef0f2', fg: '#5a6068' };
+
+  const row = (label, content) => content ? `
+    <div style="display:flex;padding:8px 0;border-bottom:1px solid #f0f0ee">
+      <div style="width:140px;flex-shrink:0;font-weight:600;color:#888;font-size:12px">${esc(label)}</div>
+      <div style="font-size:13px">${content}</div>
+    </div>` : '';
+
+  const html = `
+    <div style="font-size:16px;font-weight:700;margin-bottom:4px">${esc(title)}</div>
+    ${status ? `<span style="background:${sc.bg};color:${sc.fg};border-radius:4px;padding:2px 8px;font-size:12px;font-weight:600">${esc(status)}</span>` : ''}
+    <div style="margin-top:12px">
+      ${row('Date de publication', esc(date))}
+      ${row('Plateforme', esc(plateforme))}
+      ${row('Format', esc(format))}
+      ${row('Pilier édito', pilier.map(c => `<span style="background:#f0f6ff;color:#004c99;border-radius:4px;padding:1px 7px;font-size:11px;margin-right:3px;display:inline-block;margin-bottom:2px">${esc(c)}</span>`).join(''))}
+      ${row('Cible', cible.map(c => `<span style="background:#f0f6ff;color:#004c99;border-radius:4px;padding:1px 7px;font-size:11px;margin-right:3px;display:inline-block;margin-bottom:2px">${esc(c)}</span>`).join(''))}
+      ${row('Média', media.map(f => `<a href="${esc(f.url)}" target="_blank" rel="noopener" style="color:var(--ac)">${esc(f.name || 'Fichier')}</a>`).join('<br>'))}
+    </div>`;
+  openModal(title, html);
+}
 
 function _notionFiles(props, key) {
   const p = props[key];
