@@ -7111,10 +7111,8 @@ async function renderSoldesOpeBlock(op) {
   const dateOf = (start, d) => { const dt = new Date(start); dt.setUTCDate(dt.getUTCDate()+d-1); return dt.toISOString().slice(0,10); };
 
   const rowDates = days.map(d => {
-    const d26 = dateOf(start2026, d);
-    const d25 = start2025 ? dateOf(start2025, d) : null;
     const future = d > dayToday;
-    return '<td style="padding:5px 8px;text-align:center;'+(future?'color:var(--txT)':'')+'"><div style="font-weight:600">J'+d+'</div><div style="font-size:10px;color:var(--txS)">'+fmtD(d26)+(d25?' / '+fmtD(d25):'')+'</div></td>';
+    return '<td style="padding:5px 8px;text-align:center;'+(future?'color:var(--txT)':'')+'"><div style="font-weight:600">J'+d+'</div></td>';
   }).join("");
 
   const rowVentes = days.map(d => {
@@ -7187,10 +7185,8 @@ async function openProductSoldesDetail(opId, sku, nom) {
   const dateOf = (start, d) => { const dt = new Date(start); dt.setUTCDate(dt.getUTCDate()+d-1); return dt.toISOString().slice(0,10); };
 
   const rowDates = days.map(d => {
-    const d26 = dateOf(start2026, d);
-    const d25 = start2025 ? dateOf(start2025, d) : null;
     const future = d > dayToday;
-    return '<td style="padding:5px 8px;text-align:center;'+(future?'color:var(--txT)':'')+'"><div style="font-weight:600">J'+d+'</div><div style="font-size:10px;color:var(--txS)">'+fmtD(d26)+(d25?' / '+fmtD(d25):'')+'</div></td>';
+    return '<td style="padding:5px 8px;text-align:center;'+(future?'color:var(--txT)':'')+'"><div style="font-weight:600">J'+d+'</div></td>';
   }).join("");
 
   const rowVentes = days.map(d => {
