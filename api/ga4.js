@@ -187,7 +187,7 @@ async function getCachedEvolution(token, propertyId, channel, dimensionFilter) {
     const end = new Date(range.end);
     while (curStart <= end) {
       const curEnd = new Date(curStart);
-      curEnd.setUTCDate(curEnd.getUTCDate() + 59);
+      curEnd.setUTCDate(curEnd.getUTCDate() + 29);
       if (curEnd > end) curEnd.setTime(end.getTime());
       chunks.push({ start: curStart.toISOString().slice(0, 10), end: curEnd.toISOString().slice(0, 10) });
       curStart = new Date(curEnd);
@@ -207,7 +207,12 @@ async function getCachedEvolution(token, propertyId, channel, dimensionFilter) {
         orderBys: [{ dimension: { dimensionName: 'yearWeek' } }],
       };
       if (dimensionFilter) body.dimensionFilter = dimensionFilter;
-      const data = await runReport(token, propertyId, body, 20000);
+      let data;
+      try {
+        data = await runReport(token, propertyId, body, 25000);
+      } catch (e) {
+        break; // requête trop lente pour cette tranche : on s'arrête, le cache existant est renvoyé
+      }
       const rows = parseRows(data)
         .map(r => ({ channel, year_week: r.dims[0], sessions: r.mets[0] }))
         .filter(r => r.year_week);
@@ -218,9 +223,6 @@ async function getCachedEvolution(token, propertyId, channel, dimensionFilter) {
       } catch (e) {
         break; // écriture cache impossible, on s'arrête et on retombe sur le fallback
       }
-    }
-    if (!progressed) {
-      // Aucune tranche n'a pu être sauvegardée : fallback direct GA4 plus bas
     }
   }
 
