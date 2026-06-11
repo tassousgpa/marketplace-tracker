@@ -11155,8 +11155,8 @@ async function renderSiteBacklog() {
           return st === 'en cours' || st === 'a faire';
         });
       }
-      target.innerHTML = db.id === "marronnier_commercial"
-        ? renderMarronnierItems(results)
+      target.innerHTML = db.id === "marronnier_commercial" ? renderMarronnierItems(results)
+        : db.id === "fiches_produits" ? renderFichesProduitsItems(results)
         : renderNotionItems(results);
     } catch(e) {
       target.innerHTML = `<span style="color:#b5312c">Erreur de chargement : ${esc(String(e))}</span>`;
@@ -11236,6 +11236,67 @@ function _notionMultiSelect(props, key) {
   const p = props[key];
   if (!p || p.type !== "multi_select" || !p.multi_select) return [];
   return p.multi_select.map(o => o.name);
+}
+
+function _notionPeople(props, key) {
+  const p = props[key];
+  if (!p || p.type !== "people" || !p.people) return "";
+  return p.people.map(u => u.name || "").join(", ");
+}
+
+function _notionDateSingle(props, key) {
+  const p = props[key];
+  if (!p || p.type !== "date" || !p.date || !p.date.start) return "";
+  return new Date(p.date.start).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+// ─── Rendu spécifique "Backlog fiches produits" ────────────────────────────
+function renderFichesProduitsItems(items) {
+  if (!items.length) return '<em style="color:#aaa">Aucun élément.</em>';
+  const _NOTION_PRIORITY_COLORS = {
+    'Urgent':  { bg: '#fde8e8', fg: '#c0392b' },
+    'Haute':   { bg: '#fff4e0', fg: '#b06a00' },
+    'Moyenne': { bg: '#eef0f2', fg: '#5a6068' },
+    'Basse':   { bg: '#e6f4ea', fg: '#1e7e34' },
+  };
+  return `<table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead>
+      <tr style="background:#f0f6ff">
+        <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">Titre</th>
+        <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">Collections</th>
+        <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">Type de demande</th>
+        <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">Priorité</th>
+        <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">Statut</th>
+        <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">Demandeur</th>
+        <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">Responsable</th>
+        <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">Date de la demande</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${items.map(item => {
+        const props = item.properties || {};
+        const title = _notionTitle(props);
+        const collections = _notionMultiSelect(props, "Collections");
+        const typeDemande = _notionSelect(props, "Type de demande");
+        const priorite = _notionSelect(props, "Priorité");
+        const status = _notionStatus(props);
+        const demandeur = _notionPeople(props, "Demandeur");
+        const responsable = _notionPeople(props, "Responsable");
+        const dateDemande = _notionDateSingle(props, "Date de la demande");
+        const pc = _NOTION_PRIORITY_COLORS[priorite] || { bg: '#eef0f2', fg: '#5a6068' };
+        return `<tr style="border-bottom:1px solid #f0f0ee">
+          <td style="padding:7px 10px;font-weight:500">${esc(title)}</td>
+          <td style="padding:7px 10px;color:#888">${collections.map(c => `<span style="background:#f0f6ff;color:#004c99;border-radius:4px;padding:1px 6px;font-size:11px;margin-right:3px;display:inline-block;margin-bottom:2px">${esc(c)}</span>`).join('')}</td>
+          <td style="padding:7px 10px;color:#888">${esc(typeDemande)}</td>
+          <td style="padding:7px 10px">${priorite ? `<span style="background:${pc.bg};color:${pc.fg};border-radius:4px;padding:2px 7px;font-size:12px;font-weight:600">${esc(priorite)}</span>` : ''}</td>
+          <td style="padding:7px 10px">${status ? `<span style="background:#e8f4ff;color:#004c99;border-radius:4px;padding:2px 7px;font-size:12px">${esc(status)}</span>` : ''}</td>
+          <td style="padding:7px 10px;color:#888">${esc(demandeur)}</td>
+          <td style="padding:7px 10px;color:#888">${esc(responsable)}</td>
+          <td style="padding:7px 10px;color:#888;white-space:nowrap">${esc(dateDemande)}</td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>`;
 }
 
 function _notionSelect(props, key) {
