@@ -11245,10 +11245,18 @@ function _notionPeople(props, key) {
   return p.people.map(u => u.name || "").join(", ");
 }
 
-function _notionDateSingle(props, key) {
+function _notionDateRaw(props, key) {
   const p = props[key];
-  if (!p || p.type !== "date" || !p.date || !p.date.start) return "";
-  return new Date(p.date.start).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
+  if (!p) return "";
+  if (p.type === "date" && p.date && p.date.start) return p.date.start;
+  if (p.type === "created_time" && p.created_time) return p.created_time;
+  if (p.type === "last_edited_time" && p.last_edited_time) return p.last_edited_time;
+  return "";
+}
+
+function _notionDateSingle(props, key) {
+  const raw = _notionDateRaw(props, key);
+  return raw ? new Date(raw).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) : "";
 }
 
 // ─── Rendu générique d'une base Notion (toutes colonnes, scroll horizontal) ─
@@ -11307,17 +11315,17 @@ function renderGenericNotionTable(items) {
     return pa - pb;
   });
   return `<div style="overflow-x:auto;max-width:100%">
-    <table style="border-collapse:collapse;font-size:13px;white-space:nowrap">
+    <table style="border-collapse:collapse;font-size:13px;table-layout:fixed">
       <thead>
         <tr style="background:#f0f6ff">
-          ${cols.map(c => `<th style="text-align:left;padding:6px 12px;border-bottom:1px solid #d8e8ff;font-weight:600">${esc(c)}</th>`).join('')}
+          ${cols.map(c => `<th style="text-align:left;vertical-align:middle;padding:8px 12px;border-bottom:1px solid #d8e8ff;font-weight:600;max-width:220px;width:220px;white-space:normal;overflow-wrap:break-word">${esc(c)}</th>`).join('')}
         </tr>
       </thead>
       <tbody>
         ${items.map(item => {
           const props = item.properties || {};
           return `<tr style="border-bottom:1px solid #f0f0ee">
-            ${cols.map(c => `<td style="padding:7px 12px">${_notionPropToHtml(props[c])}</td>`).join('')}
+            ${cols.map(c => `<td style="text-align:left;vertical-align:middle;padding:8px 12px;max-width:220px;width:220px;white-space:normal;overflow-wrap:break-word">${_notionPropToHtml(props[c])}</td>`).join('')}
           </tr>`;
         }).join('')}
       </tbody>
@@ -11326,8 +11334,7 @@ function renderGenericNotionTable(items) {
 }
 
 // ─── Rendu spécifique "Backlog fiches produits" ────────────────────────────
-function renderFichesProduitsItems(items) {
-  if (!items.length) return '<em style="color:#aaa">Aucun élément.</em>';
+function _fichesProduitsTable(items) {
   const _NOTION_PRIORITY_COLORS = {
     'Urgent':  { bg: '#fde8e8', fg: '#c0392b' },
     'Haute':   { bg: '#fff4e0', fg: '#b06a00' },
@@ -11372,6 +11379,26 @@ function renderFichesProduitsItems(items) {
       }).join('')}
     </tbody>
   </table>`;
+}
+
+function renderFichesProduitsItems(items) {
+  if (!items.length) return '<em style="color:#aaa">Aucun élément.</em>';
+
+  const byDateAsc = (a, b) => {
+    const da = _notionDateRaw(a.properties || {}, "Date de la demande");
+    const db_ = _notionDateRaw(b.properties || {}, "Date de la demande");
+    return da < db_ ? -1 : da > db_ ? 1 : 0;
+  };
+
+  const aFaire = items.filter(item => _normStatus(_notionStatus(item.properties || {})) === 'a faire').sort(byDateAsc);
+  const enCours = items.filter(item => _normStatus(_notionStatus(item.properties || {})) === 'en cours').sort(byDateAsc);
+
+  return `
+    <div style="font-weight:700;font-size:13px;color:#004c99;margin-bottom:8px">À faire (${aFaire.length})</div>
+    ${aFaire.length ? _fichesProduitsTable(aFaire) : '<em style="color:#aaa">Aucun élément.</em>'}
+    <div style="font-weight:700;font-size:13px;color:#004c99;margin:20px 0 8px">En cours (${enCours.length})</div>
+    ${enCours.length ? _fichesProduitsTable(enCours) : '<em style="color:#aaa">Aucun élément.</em>'}
+  `;
 }
 
 function _notionSelect(props, key) {
