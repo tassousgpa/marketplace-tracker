@@ -11252,15 +11252,15 @@ function _notionRichText(props, key) {
 }
 
 // Carte cliquable pour une campagne, ouvrant les détails dans une modale
-function _marronnierCard(item) {
+function _marronnierCard(item, gridStyle) {
   const props = item.properties || {};
   const title = _notionTitle(props);
   const period = _notionDateRange(props);
   const status = _notionSelect(props, "Statut");
   const sc = _NOTION_STATUS_COLORS[status] || { bg: '#eef0f2', fg: '#5a6068' };
-  return `<div onclick="showMarronnierDetail('${item.id}')" style="cursor:pointer;border:1px solid #e8e6e1;border-radius:8px;padding:8px 10px;background:#fff;transition:box-shadow .15s" onmouseover="this.style.boxShadow='0 2px 8px rgba(0,0,0,.08)'" onmouseout="this.style.boxShadow='none'">
-    <div style="font-weight:600;font-size:12.5px;margin-bottom:4px">${esc(title)}</div>
-    <div style="font-size:11px;color:#999;margin-bottom:4px">${esc(period)}</div>
+  return `<div onclick="showMarronnierDetail('${item.id}')" style="${gridStyle||''}cursor:pointer;border:1px solid #e8e6e1;border-radius:8px;padding:8px 10px;background:#fff;transition:box-shadow .15s;overflow:hidden" onmouseover="this.style.boxShadow='0 2px 8px rgba(0,0,0,.08)'" onmouseout="this.style.boxShadow='none'">
+    <div style="font-weight:600;font-size:12.5px;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(title)}</div>
+    <div style="font-size:11px;color:#999;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(period)}</div>
     ${status ? `<span style="background:${sc.bg};color:${sc.fg};border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600">${esc(status)}</span>` : ''}
   </div>`;
 }
@@ -11285,33 +11285,48 @@ function renderMarronnierItems(items) {
   });
 
   // 12 colonnes mensuelles à partir du mois en cours
+  const N_MONTHS = 12;
+  const rangeStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const months = [];
-  for (let i = 0; i < 12; i++) months.push(new Date(today.getFullYear(), today.getMonth() + i, 1));
-  const monthKey = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  for (let i = 0; i < N_MONTHS; i++) months.push(new Date(today.getFullYear(), today.getMonth() + i, 1));
 
-  const byMonth = {};
-  months.forEach(m => byMonth[monthKey(m)] = []);
-  const overflow = [];
-  upcoming.forEach(item => {
+  // Index de mois (0-based depuis rangeStart) pour une date donnée, clampé sur [0, N_MONTHS-1]
+  const monthIdx = d => {
+    const idx = (d.getFullYear() - rangeStart.getFullYear()) * 12 + (d.getMonth() - rangeStart.getMonth());
+    return Math.max(0, Math.min(N_MONTHS - 1, idx));
+  };
+
+  // Calcule les colonnes [startCol, endCol) (1-based, fin exclusive pour grid-column)
+  const spans = upcoming.map(item => {
     const d = item.properties?.["Dates"]?.date;
     let start = d?.start ? new Date(d.start) : new Date(today);
-    if (start < today) start = new Date(today); // campagne en cours -> mois actuel
-    const key = monthKey(start);
-    if (byMonth[key]) byMonth[key].push(item);
-    else overflow.push(item);
+    let end = d?.end ? new Date(d.end) : start;
+    if (start < today) start = new Date(today); // campagne en cours -> commence au mois actuel
+    const startCol = monthIdx(start);
+    const endCol = Math.max(startCol, monthIdx(end));
+    return { item, startCol: startCol + 1, endCol: endCol + 2 }; // grid-column 1-based, fin exclusive
   });
-  if (overflow.length) byMonth[monthKey(months[months.length-1])].push(...overflow);
+
+  // Attribution des lignes : algorithme glouton pour éviter les chevauchements
+  spans.sort((a, b) => a.startCol - b.startCol);
+  const rowEnds = []; // rowEnds[i] = colonne de fin (exclusive) de la dernière campagne placée sur la ligne i
+  spans.forEach(s => {
+    let row = rowEnds.findIndex(end => end <= s.startCol);
+    if (row === -1) { row = rowEnds.length; rowEnds.push(0); }
+    rowEnds[row] = s.endCol;
+    s.row = row + 2; // ligne 1 = en-tête des mois
+  });
+  const nRows = rowEnds.length || 1;
 
   const calendarHtml = `
     <div style="font-weight:700;font-size:13px;color:#004c99;margin-bottom:10px">📅 Calendrier — 12 prochains mois</div>
-    <div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:10px">
-      ${months.map(m => `
-        <div style="min-width:170px;flex:0 0 auto">
-          <div style="font-weight:700;font-size:12px;color:#004c99;text-transform:capitalize;margin-bottom:8px;padding-bottom:4px;border-bottom:2px solid #d8e8ff">${m.toLocaleDateString('fr-FR',{month:'long',year:'numeric'})}</div>
-          <div style="display:flex;flex-direction:column;gap:6px">
-            ${(byMonth[monthKey(m)].length ? byMonth[monthKey(m)].map(_marronnierCard).join('') : '<div style="color:#ccc;font-size:11px">—</div>')}
-          </div>
-        </div>`).join('')}
+    <div style="overflow-x:auto;padding-bottom:10px">
+      <div style="display:grid;grid-template-columns:repeat(${N_MONTHS}, minmax(110px,1fr));grid-template-rows:auto repeat(${nRows}, 70px);gap:6px;min-width:${N_MONTHS*120}px">
+        ${months.map((m, i) => `
+          <div style="grid-column:${i+1};grid-row:1;font-weight:700;font-size:12px;color:#004c99;text-transform:capitalize;padding-bottom:4px;border-bottom:2px solid #d8e8ff;text-align:center">${m.toLocaleDateString('fr-FR',{month:'short',year:'2-digit'})}</div>
+        `).join('')}
+        ${spans.map(s => _marronnierCard(s.item, `grid-column:${s.startCol} / ${s.endCol};grid-row:${s.row};`)).join('')}
+      </div>
     </div>`;
 
   const sortedPast = past.slice().sort((a,b) => {
@@ -11324,7 +11339,7 @@ function renderMarronnierItems(items) {
     <div style="margin-top:24px">
       <div style="font-weight:700;font-size:13px;color:#888;margin-bottom:10px">🗄️ Historique — campagnes terminées (${sortedPast.length})</div>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px">
-        ${sortedPast.map(_marronnierCard).join('')}
+        ${sortedPast.map(item => _marronnierCard(item)).join('')}
       </div>
     </div>` : '';
 
