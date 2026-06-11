@@ -10412,6 +10412,19 @@ async function renderSiteSEO() {
   });
 }
 
+// Liste fixe des 18 termes de recherche stratégiques à suivre sur l'onglet Positions SEO
+const SEO_TOP18_TERMS = [
+  'canapé','canapé d\'angle','canapé panoramique','canapé droit','canapé modulable','canapé convertible',
+  'salons de jardin','clic-clac','pergolas','mobilier de jardin','meuble tv','lit coffre','buffet',
+  'table basse','table à manger','chaises','relax','banquette',
+];
+function _normSeoTerm(s) {
+  const NFD = String(s||'').toLowerCase().normalize('NFD');
+  const noDiacritics = NFD.replace(new RegExp('[\\u0300-\\u036f]','g'), '');
+  return noDiacritics.replace(/[‘’`]/g,"'").trim().replace(/\s+/g,' ');
+}
+const SEO_TOP18_NORM = SEO_TOP18_TERMS.map(_normSeoTerm);
+
 // Mots-clés furniture à mettre en avant dans les résultats Search Console
 const SEO_KW_FILTERS = [
   'canap','sofa','lit ','cadre de lit','tête de lit','sommier','matelas','coffre',
@@ -10434,7 +10447,11 @@ async function renderSitePositionsSEO() {
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input id="seo-pos-search" placeholder="Filtrer les requêtes…" oninput="_filterSeoPositions()" style="padding:7px 12px;border:.5px solid var(--border);border-radius:7px;font-size:12px;font-family:inherit;width:200px">
           <label style="font-size:12px;color:var(--txS);display:flex;align-items:center;gap:5px;cursor:pointer">
-            <input type="checkbox" id="seo-pos-furniture" onchange="_filterSeoPositions()" checked style="cursor:pointer">
+            <input type="checkbox" id="seo-pos-top18" onchange="_filterSeoPositions()" checked style="cursor:pointer">
+            Top 18 mots-clés
+          </label>
+          <label style="font-size:12px;color:var(--txS);display:flex;align-items:center;gap:5px;cursor:pointer">
+            <input type="checkbox" id="seo-pos-furniture" onchange="_filterSeoPositions()" style="cursor:pointer">
             Mobilier uniquement
           </label>
         </div>
@@ -10472,10 +10489,12 @@ function _filterSeoPositions() {
   const rows = window._seoPositionsData || [];
   const search = (document.getElementById('seo-pos-search')?.value || '').toLowerCase().trim();
   const furnitureOnly = document.getElementById('seo-pos-furniture')?.checked;
+  const top18Only = document.getElementById('seo-pos-top18')?.checked;
 
   let filtered = rows.filter(r => {
     const q = (r.keys?.[0] || '').toLowerCase();
     if (search && !q.includes(search)) return false;
+    if (top18Only && !SEO_TOP18_NORM.includes(_normSeoTerm(q))) return false;
     if (furnitureOnly && !SEO_KW_FILTERS.some(kw => q.includes(kw))) return false;
     return true;
   });

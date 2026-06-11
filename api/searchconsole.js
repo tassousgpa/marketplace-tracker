@@ -28,8 +28,14 @@ async function getTokenFromServiceAccount(serviceAccountJson) {
   return d.access_token;
 }
 
+// Cache du token au niveau du module (réutilisé tant que l'instance reste chaude)
+let _cachedToken = null; // { token, expiresAt }
+
 // OAuth2 refresh token (preferred for Search Console — uses admin account)
 async function getTokenFromRefreshToken(clientId, clientSecret, refreshToken) {
+  if (_cachedToken && _cachedToken.expiresAt > Date.now()) {
+    return _cachedToken.token;
+  }
   const r = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -42,6 +48,8 @@ async function getTokenFromRefreshToken(clientId, clientSecret, refreshToken) {
   });
   const d = await r.json();
   if (!d.access_token) throw new Error('OAuth2 refresh failed: ' + JSON.stringify(d));
+  const ttl = ((d.expires_in || 3600) - 60) * 1000;
+  _cachedToken = { token: d.access_token, expiresAt: Date.now() + ttl };
   return d.access_token;
 }
 
@@ -81,20 +89,31 @@ module.exports = async function handler(req, res) {
       startD.setUTCDate(startD.getUTCDate() - 27); // last 28 days
       const fmt = d => d.toISOString().slice(0, 10);
 
-      const r = await fetch(
-        `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`,
-        {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            startDate: fmt(startD),
-            endDate: fmt(endD),
-            dimensions: ['query'],
-            rowLimit: 1000,
-            startRow: 0,
-          }),
-        }
-      );
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20000);
+      let r;
+      try {
+        r = await fetch(
+          `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`,
+          {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              startDate: fmt(startD),
+              endDate: fmt(endD),
+              dimensions: ['query'],
+              rowLimit: 1000,
+              startRow: 0,
+            }),
+            signal: controller.signal,
+          }
+        );
+      } catch (e) {
+        if (e.name === 'AbortError') throw new Error('Search Console timeout (20s) — la requête a pris trop de temps');
+        throw e;
+      } finally {
+        clearTimeout(timeout);
+      }
 
       if (!r.ok) {
         const t = await r.text();

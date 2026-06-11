@@ -28,19 +28,29 @@ async function getGoogleToken(serviceAccountJson, scope) {
 }
 
 async function runReport(token, propertyId, body) {
-  const r = await fetch(
-    `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`,
-    {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+  try {
+    const r = await fetch(
+      `https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      }
+    );
+    if (!r.ok) {
+      const t = await r.text();
+      throw new Error(`GA4 ${r.status}: ${t}`);
     }
-  );
-  if (!r.ok) {
-    const t = await r.text();
-    throw new Error(`GA4 ${r.status}: ${t}`);
+    return await r.json();
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('GA4 timeout (20s) — la requête a pris trop de temps');
+    throw e;
+  } finally {
+    clearTimeout(timeout);
   }
-  return r.json();
 }
 
 function parseRows(data) {
@@ -105,7 +115,15 @@ function evolRange() {
   return { start: startD.toISOString().slice(0, 10), end: endD.toISOString().slice(0, 10) };
 }
 
+// Cache du token au niveau du module : réutilisé entre invocations tant que
+// l'instance serverless reste "chaude", pour éviter un aller-retour OAuth
+// (souvent 200-500ms) à chaque appel de l'API GA4.
+let _cachedToken = null; // { token, expiresAt }
+
 async function getTokenFromRefreshToken(clientId, clientSecret, refreshToken) {
+  if (_cachedToken && _cachedToken.expiresAt > Date.now()) {
+    return _cachedToken.token;
+  }
   const r = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -118,6 +136,9 @@ async function getTokenFromRefreshToken(clientId, clientSecret, refreshToken) {
   });
   const d = await r.json();
   if (!d.access_token) throw new Error('OAuth2 refresh failed: ' + JSON.stringify(d));
+  // Marge de sécurité de 60s avant l'expiration réelle (typiquement 3600s)
+  const ttl = ((d.expires_in || 3600) - 60) * 1000;
+  _cachedToken = { token: d.access_token, expiresAt: Date.now() + ttl };
   return d.access_token;
 }
 
