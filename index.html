@@ -458,7 +458,7 @@ const TAB_NAMES_LIGHT_SEA = ["Synthèse","Produits","Historique","Alertes","Audi
 const TAB_NAMES_MINIMAL     = ["Synthèse","Alertes","Audit","Opé. Commerciales","TDC"];
 const TAB_NAMES_MINIMAL_SEA = ["Synthèse","Alertes","Audit","Opé. Commerciales","TDC","SEA"];
 const LAREDOUTE_TABS = ["Synthèse","Positions","Concurrents","Alertes","Audit","Opé. Commerciales","TDC"];
-const TAB_NAMES_SITE = ["Synthèse", "SEO", "Positions SEO", "SEA", "Positions SEA", "Projets/Backlog"];
+const TAB_NAMES_SITE = ["Synthèse", "Trafic SEO", "Positions SEO", "Trafic SEA", "Projets/Backlog"];
 const MINIMAL_MP = new Set(["leroymerlin"]);
 const SEA_MP = new Set(["cdiscount","but","maisonsdumonde","conforama","manomano"]);
 
@@ -1409,8 +1409,7 @@ function renderContent() {
       case 1: renderSiteSEO(); break;
       case 2: renderSitePositionsSEO(); break;
       case 3: renderSiteSEA(); break;
-      case 4: renderSitePositionsSEA(); break;
-      case 5: renderSiteBacklog(); break;
+      case 4: renderSiteBacklog(); break;
       default: el.innerHTML = '';
     }
     return;
