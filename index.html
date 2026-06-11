@@ -1480,7 +1480,7 @@ function esc(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").
 function pill(text,color="default"){return `<span class="pill pill-${color}">${text}</span>`}
 function bar(label,value,max,color="var(--ac)",sub){const pct=max>0?Math.min(Math.round(value/max*100),100):0;return `<div class="bar-row"><div class="bar-header"><span class="bar-label">${label}</span><span class="bar-sub">${sub||value}</span></div><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div></div>`}
 function productRowHTML(p){return `<div class="product-row"><div class="product-row-name">${esc(p.name)}</div><div class="product-row-refs"><span>ID: ${esc(p.product_id)}</span><span>SKU: ${esc(p.sku)}</span><span>SKU MP: ${esc(p.sku_marketplace)}</span>${p.url?`<a href="${esc(p.url)}" target="_blank" class="link">Voir ↗</a>`:'<span style="color:var(--rd)">Pas d\'URL</span>'}</div></div>`}
-function openModal(title,html){document.getElementById("modal-title").textContent=title;document.getElementById("modal-body").innerHTML=html;document.getElementById("modal-overlay").classList.remove("hidden")}
+function openModal(title,html,opts){document.getElementById("modal-title").textContent=title;document.getElementById("modal-body").innerHTML=html;document.getElementById("modal-overlay").classList.remove("hidden");const m=document.querySelector("#modal-overlay .modal");if(m)m.style.maxWidth=(opts&&opts.wide)?"1280px":""}
 function closeModal(){document.getElementById("modal-overlay").classList.add("hidden")}
 const tagLabel=t=>({prix_up:"Prix ↑",prix_down:"Prix ↓",delai_up:"Délai ↑",delai_down:"Délai ↓",note_up:"Note ↑",note_down:"Note ↓"}[t]||t);
 const tagColor=t=>(t.includes("up")&&t!=="note_up")?"red":(t.includes("down")&&t!=="note_down")?"green":t==="note_up"?"green":"red";
@@ -7023,6 +7023,218 @@ function executeOpeExport() {
   closeModal();
 }
 
+// ── Détection des opérations "Soldes" éligibles au volet enrichi ──
+// Critères : titre contenant "soldes" ET période chevauchant la fenêtre
+// officielle des Soldes d'Été 2026 (24/06/2026 → 21/07/2026)
+const SOLDES_2026_START = "2026-06-24";
+const SOLDES_2026_END   = "2026-07-21";
+function _isSoldesOpe(op) {
+  if (!op || !op.nom) return false;
+  if (!/soldes/i.test(op.nom)) return false;
+  return op.date_debut <= SOLDES_2026_END && op.date_fin >= SOLDES_2026_START;
+}
+
+// Agrège soldes_daily_sales par day_rank pour une édition/marketplace (et SKU optionnel)
+async function _soldesDailyAgg(edition, marketplace, sku) {
+  let filter = "edition=eq."+edition+"&marketplace=eq."+marketplace+"&select=day_rank,quantity,revenue_ht";
+  if (sku) filter += "&sku=eq."+encodeURIComponent(sku);
+  const rows = await sb("soldes_daily_sales", filter).catch(()=>[]);
+  const map = {};
+  rows.forEach(r => {
+    if (!map[r.day_rank]) map[r.day_rank] = { qty: 0, rev: 0 };
+    map[r.day_rank].qty += (r.quantity||0);
+    map[r.day_rank].rev += (r.revenue_ht||0);
+  });
+  return map;
+}
+
+function _soldesKpiCard(label, val, evolTxt, evolColor, sub) {
+  return '<div style="background:var(--bg);border-radius:8px;padding:10px 12px">'
+    + '<div style="font-size:10px;color:var(--txS);text-transform:uppercase;margin-bottom:4px">'+label+'</div>'
+    + '<div style="font-size:18px;font-weight:700">'+val+(evolTxt?' <span style="font-size:12px;font-weight:600;color:'+evolColor+'">'+evolTxt+'</span>':'')+'</div>'
+    + (sub ? '<div style="font-size:11px;color:var(--txS)">'+sub+'</div>' : '')
+    + '</div>';
+}
+
+// Construit le volet "Soldes" : KPIs cumulés + tableau jour par jour (toute la marketplace)
+async function renderSoldesOpeBlock(op) {
+  let editions = [];
+  try { editions = await sb("soldes_editions", "select=edition,start_date,end_date&order=edition.asc"); } catch(e) {}
+  const ed2026 = editions.find(e => e.edition === "2026");
+  const ed2025 = editions.find(e => e.edition === "2025");
+  if (!ed2026 && !ed2025) return "";
+
+  const fmtD = d => new Date(d+"T12:00:00Z").toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit"});
+  const start2026 = new Date((ed2026?ed2026.start_date:SOLDES_2026_START)+"T00:00:00Z");
+  const end2026   = new Date((ed2026?ed2026.end_date:SOLDES_2026_END)+"T00:00:00Z");
+  const start2025 = ed2025 ? new Date(ed2025.start_date+"T00:00:00Z") : null;
+  const totalDays = Math.round((end2026-start2026)/86400000)+1;
+
+  const now = new Date();
+  const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  let dayToday = Math.round((todayUTC-start2026)/86400000)+1;
+  dayToday = Math.max(0, Math.min(dayToday, totalDays));
+
+  const [agg26, agg25] = await Promise.all([
+    _soldesDailyAgg("2026", MARKETPLACE),
+    ed2025 ? _soldesDailyAgg("2025", MARKETPLACE) : Promise.resolve({}),
+  ]);
+
+  // KPIs cumulés (jour 1 → jour actuel)
+  let cumQty26=0, cumRev26=0, cumQty25=0, cumRev25=0;
+  for (let d=1; d<=dayToday; d++) {
+    cumQty26 += agg26[d]?.qty||0; cumRev26 += agg26[d]?.rev||0;
+    cumQty25 += agg25[d]?.qty||0; cumRev25 += agg25[d]?.rev||0;
+  }
+  const varQty = cumQty25>0 ? Math.round((cumQty26-cumQty25)/cumQty25*100) : null;
+  const varRev = cumRev25>0 ? Math.round((cumRev26-cumRev25)/cumRev25*100) : null;
+  const varColor = v => v===null ? "var(--txT)" : v>=0 ? "var(--gn)" : "var(--rd)";
+  const varFmt = v => v===null ? "—" : (v>=0?"+":"")+v+"%";
+
+  let kpiHtml;
+  if (dayToday < 1) {
+    kpiHtml = '<div style="padding:12px 14px;background:var(--bg);border-radius:8px;font-size:12px;color:var(--txS);margin-bottom:14px">'
+      + 'Les Soldes d\'Été 2026 démarrent le '+fmtD(ed2026?ed2026.start_date:SOLDES_2026_START)+'. '
+      + (ed2025 ? 'En attendant, l\'historique 2025 (J1 → J'+totalDays+') est disponible ci-dessous.' : '')
+      + '</div>';
+  } else {
+    kpiHtml = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">'
+      + _soldesKpiCard("Ventes — Jour "+dayToday+" · 2026", _fmtNum(cumQty26), varFmt(varQty), varColor(varQty), "Cumul depuis J1 (toutes réf. "+MARKETPLACE+")")
+      + _soldesKpiCard("Ventes — Jour "+dayToday+" · 2025", _fmtNum(cumQty25), null, "var(--txS)", "Référence N-1")
+      + _soldesKpiCard("CA HT — Jour "+dayToday+" · 2026", _fmtEUR(cumRev26), varFmt(varRev), varColor(varRev), "Cumul depuis J1 (toutes réf. "+MARKETPLACE+")")
+      + _soldesKpiCard("CA HT — Jour "+dayToday+" · 2025", _fmtEUR(cumRev25), null, "var(--txS)", "Référence N-1")
+      + '</div>';
+  }
+
+  // Tableau jour par jour (toute la marketplace, tous produits confondus)
+  const days = Array.from({length: totalDays}, (_,i)=>i+1);
+  const dateOf = (start, d) => { const dt = new Date(start); dt.setUTCDate(dt.getUTCDate()+d-1); return dt.toISOString().slice(0,10); };
+
+  const rowDates = days.map(d => {
+    const d26 = dateOf(start2026, d);
+    const d25 = start2025 ? dateOf(start2025, d) : null;
+    const future = d > dayToday;
+    return '<td style="padding:5px 8px;text-align:center;'+(future?'color:var(--txT)':'')+'"><div style="font-weight:600">J'+d+'</div><div style="font-size:10px;color:var(--txS)">'+fmtD(d26)+(d25?' / '+fmtD(d25):'')+'</div></td>';
+  }).join("");
+
+  const rowVentes = days.map(d => {
+    const future = d > dayToday;
+    const q26 = agg26[d]?.qty||0, q25 = agg25[d]?.qty||0;
+    if (future) return '<td style="padding:5px 8px;text-align:center;color:var(--txT)">—'+(q25?'<div style="font-size:10px;color:var(--txS)">N-1 : '+_fmtNum(q25)+'</div>':'')+'</td>';
+    const delta = q25>0 ? (q26-q25) : null;
+    const dColor = delta===null ? "var(--txT)" : delta>=0 ? "var(--gn)" : "var(--rd)";
+    const dTxt = delta===null ? "" : '<div style="font-size:10px;color:'+dColor+'">'+(delta>=0?"+":"")+delta+' vs N-1</div>';
+    return '<td style="padding:5px 8px;text-align:center"><div style="font-weight:700">'+_fmtNum(q26)+'</div>'+dTxt+'</td>';
+  }).join("");
+
+  const rowCA = days.map(d => {
+    const future = d > dayToday;
+    const r26 = agg26[d]?.rev||0, r25 = agg25[d]?.rev||0;
+    if (future) return '<td style="padding:5px 8px;text-align:center;color:var(--txT)">—'+(r25?'<div style="font-size:10px;color:var(--txS)">N-1 : '+_fmtEUR(r25)+'</div>':'')+'</td>';
+    const pct = r25>0 ? Math.round((r26-r25)/r25*100) : null;
+    const pColor = pct===null ? "var(--txT)" : pct>=0 ? "var(--gn)" : "var(--rd)";
+    const pTxt = pct===null ? "" : '<div style="font-size:10px;color:'+pColor+'">'+(pct>=0?"+":"")+pct+'% vs N-1</div>';
+    return '<td style="padding:5px 8px;text-align:center"><div style="font-weight:700;color:var(--gn)">'+_fmtEUR(r26)+'</div>'+pTxt+'</td>';
+  }).join("");
+
+  return kpiHtml
+    + '<div style="font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;margin-bottom:6px">Détail jour par jour — toute la marketplace '+MARKETPLACE+(dayToday<1?' (historique 2025)':'')+'</div>'
+    + '<div style="overflow-x:auto;border:.5px solid var(--border);border-radius:8px;margin-bottom:16px">'
+    + '<table style="border-collapse:collapse;font-size:12px;width:100%">'
+    + '<tbody>'
+    + '<tr style="background:var(--bg);border-bottom:1px solid var(--border)"><td style="padding:5px 8px;font-weight:600;white-space:nowrap;position:sticky;left:0;background:var(--bg)">Jour</td>'+rowDates+'</tr>'
+    + '<tr style="border-bottom:1px solid var(--borderL)"><td style="padding:5px 8px;font-weight:600;white-space:nowrap;position:sticky;left:0;background:var(--card)">Ventes (unités)</td>'+rowVentes+'</tr>'
+    + '<tr><td style="padding:5px 8px;font-weight:600;white-space:nowrap;position:sticky;left:0;background:var(--card)">CA HT (livraison incl.)</td>'+rowCA+'</tr>'
+    + '</tbody></table></div>';
+}
+
+// Détail jour par jour pour un produit spécifique (vs N-1) — accessible en cliquant sur une ligne
+async function openProductSoldesDetail(opId, sku, nom) {
+  openModal("📊 "+esc(sku)+(nom?" — "+esc(nom):""), '<div style="text-align:center;padding:30px;color:var(--txS)">Chargement...</div>', {wide:true});
+
+  let editions = [];
+  try { editions = await sb("soldes_editions", "select=edition,start_date,end_date&order=edition.asc"); } catch(e) {}
+  const ed2026 = editions.find(e => e.edition === "2026");
+  const ed2025 = editions.find(e => e.edition === "2025");
+
+  const fmtD = d => new Date(d+"T12:00:00Z").toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit"});
+  const start2026 = new Date((ed2026?ed2026.start_date:SOLDES_2026_START)+"T00:00:00Z");
+  const end2026   = new Date((ed2026?ed2026.end_date:SOLDES_2026_END)+"T00:00:00Z");
+  const start2025 = ed2025 ? new Date(ed2025.start_date+"T00:00:00Z") : null;
+  const totalDays = Math.round((end2026-start2026)/86400000)+1;
+
+  const now = new Date();
+  const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  let dayToday = Math.round((todayUTC-start2026)/86400000)+1;
+  dayToday = Math.max(0, Math.min(dayToday, totalDays));
+
+  const [agg26, agg25] = await Promise.all([
+    _soldesDailyAgg("2026", MARKETPLACE, sku),
+    ed2025 ? _soldesDailyAgg("2025", MARKETPLACE, sku) : Promise.resolve({}),
+  ]);
+
+  let cumQty26=0, cumRev26=0, cumQty25=0, cumRev25=0;
+  for (let d=1; d<=Math.max(dayToday,0); d++) {
+    cumQty26 += agg26[d]?.qty||0; cumRev26 += agg26[d]?.rev||0;
+    cumQty25 += agg25[d]?.qty||0; cumRev25 += agg25[d]?.rev||0;
+  }
+  const varQty = cumQty25>0 ? Math.round((cumQty26-cumQty25)/cumQty25*100) : null;
+  const varRev = cumRev25>0 ? Math.round((cumRev26-cumRev25)/cumRev25*100) : null;
+  const varColor = v => v===null ? "var(--txT)" : v>=0 ? "var(--gn)" : "var(--rd)";
+  const varFmt = v => v===null ? "—" : (v>=0?"+":"")+v+"%";
+
+  const days = Array.from({length: totalDays}, (_,i)=>i+1);
+  const dateOf = (start, d) => { const dt = new Date(start); dt.setUTCDate(dt.getUTCDate()+d-1); return dt.toISOString().slice(0,10); };
+
+  const rowDates = days.map(d => {
+    const d26 = dateOf(start2026, d);
+    const d25 = start2025 ? dateOf(start2025, d) : null;
+    const future = d > dayToday;
+    return '<td style="padding:5px 8px;text-align:center;'+(future?'color:var(--txT)':'')+'"><div style="font-weight:600">J'+d+'</div><div style="font-size:10px;color:var(--txS)">'+fmtD(d26)+(d25?' / '+fmtD(d25):'')+'</div></td>';
+  }).join("");
+
+  const rowVentes = days.map(d => {
+    const future = d > dayToday;
+    const q26 = agg26[d]?.qty||0, q25 = agg25[d]?.qty||0;
+    if (future) return '<td style="padding:5px 8px;text-align:center;color:var(--txT)">—'+(q25?'<div style="font-size:10px;color:var(--txS)">N-1 : '+_fmtNum(q25)+'</div>':'')+'</td>';
+    const delta = q25>0 ? (q26-q25) : null;
+    const dColor = delta===null ? "var(--txT)" : delta>=0 ? "var(--gn)" : "var(--rd)";
+    const dTxt = delta===null ? "" : '<div style="font-size:10px;color:'+dColor+'">'+(delta>=0?"+":"")+delta+' vs N-1</div>';
+    return '<td style="padding:5px 8px;text-align:center"><div style="font-weight:700">'+_fmtNum(q26)+'</div>'+dTxt+'</td>';
+  }).join("");
+
+  const rowCA = days.map(d => {
+    const future = d > dayToday;
+    const r26 = agg26[d]?.rev||0, r25 = agg25[d]?.rev||0;
+    if (future) return '<td style="padding:5px 8px;text-align:center;color:var(--txT)">—'+(r25?'<div style="font-size:10px;color:var(--txS)">N-1 : '+_fmtEUR(r25)+'</div>':'')+'</td>';
+    const pct = r25>0 ? Math.round((r26-r25)/r25*100) : null;
+    const pColor = pct===null ? "var(--txT)" : pct>=0 ? "var(--gn)" : "var(--rd)";
+    const pTxt = pct===null ? "" : '<div style="font-size:10px;color:'+pColor+'">'+(pct>=0?"+":"")+pct+'% vs N-1</div>';
+    return '<td style="padding:5px 8px;text-align:center"><div style="font-weight:700;color:var(--gn)">'+_fmtEUR(r26)+'</div>'+pTxt+'</td>';
+  }).join("");
+
+  const kpiHtml = dayToday < 1
+    ? '<div style="padding:12px 14px;background:var(--bg);border-radius:8px;font-size:12px;color:var(--txS);margin-bottom:14px">Les Soldes d\'Été 2026 n\'ont pas encore démarré. Historique 2025 ci-dessous.</div>'
+    : '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">'
+      + _soldesKpiCard("Ventes — Jour "+dayToday+" · 2026", _fmtNum(cumQty26), varFmt(varQty), varColor(varQty), "Cumul depuis J1")
+      + _soldesKpiCard("Ventes — Jour "+dayToday+" · 2025", _fmtNum(cumQty25), null, "var(--txS)", "Référence N-1")
+      + _soldesKpiCard("CA HT — Jour "+dayToday+" · 2026", _fmtEUR(cumRev26), varFmt(varRev), varColor(varRev), "Cumul depuis J1")
+      + _soldesKpiCard("CA HT — Jour "+dayToday+" · 2025", _fmtEUR(cumRev25), null, "var(--txS)", "Référence N-1")
+      + '</div>';
+
+  document.getElementById("modal-body").innerHTML =
+    '<button onclick="openOpeDetail('+opId+')" style="margin-bottom:12px;padding:6px 12px;border:.5px solid var(--border);border-radius:6px;font-size:11px;background:var(--card);color:var(--txS);cursor:pointer;font-family:inherit">← Retour à l\'opération</button>'
+    + kpiHtml
+    + '<div style="font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;margin-bottom:6px">Détail jour par jour — '+esc(sku)+(dayToday<1?' (historique 2025)':'')+'</div>'
+    + '<div style="overflow-x:auto;border:.5px solid var(--border);border-radius:8px">'
+    + '<table style="border-collapse:collapse;font-size:12px;width:100%">'
+    + '<tbody>'
+    + '<tr style="background:var(--bg);border-bottom:1px solid var(--border)"><td style="padding:5px 8px;font-weight:600;white-space:nowrap;position:sticky;left:0;background:var(--bg)">Jour</td>'+rowDates+'</tr>'
+    + '<tr style="border-bottom:1px solid var(--borderL)"><td style="padding:5px 8px;font-weight:600;white-space:nowrap;position:sticky;left:0;background:var(--card)">Ventes (unités)</td>'+rowVentes+'</tr>'
+    + '<tr><td style="padding:5px 8px;font-weight:600;white-space:nowrap;position:sticky;left:0;background:var(--card)">CA HT (livraison incl.)</td>'+rowCA+'</tr>'
+    + '</tbody></table></div>';
+}
+
 async function openOpeDetail(id) {
   const op = opeData.find(o => o.id === id);
   if (!op) return;
@@ -7034,6 +7246,9 @@ async function openOpeDetail(id) {
   try {
     prods = await sb("operation_products", "operation_id=eq."+id+"&select=*&order=ref.asc");
   } catch(e) {}
+
+  const _soldesMode = _isSoldesOpe(op);
+  const _soldesBlockHtml = _soldesMode ? await renderSoldesOpeBlock(op).catch(()=>"") : "";
 
   // Ventes Prestashop — filtrées par marketplace (onglet courant) + période de l'opé
   // Logique RECHERCHEV : pour chaque réf de l'opé, on cumule qty + CA HT
@@ -7073,14 +7288,15 @@ async function openOpeDetail(id) {
     }
     return sorted.map(function(p,i) {
       const ps = salesByRef[p.ref] || { qty: 0, ca_ht: 0 };
-      return '<tr style="'+(i%2?"background:var(--bg)":"")+';border-bottom:1px solid var(--borderL)">'
-        + '<td style="padding:6px 10px;font-weight:600;white-space:nowrap">'+esc(p.ref)+'</td>'
+      const clickAttr = _soldesMode ? ' onclick="openProductSoldesDetail('+id+',\''+esc(p.ref).replace(/'/g,"\\'")+'\',\''+esc((p.nom_produit||"").replace(/'/g,"\\'"))+'\')" style="cursor:pointer" title="Voir le détail jour par jour vs N-1"' : '';
+      return '<tr'+clickAttr+' style="'+(i%2?"background:var(--bg);":"")+(_soldesMode?'cursor:pointer;':'')+'border-bottom:1px solid var(--borderL)">'
+        + '<td style="padding:6px 10px;font-weight:600;white-space:nowrap">'+esc(p.ref)+(_soldesMode?' <span style="color:var(--ac);font-size:10px">📊</span>':'')+'</td>'
         + '<td style="padding:6px 10px;color:var(--txS)">'+esc(p.nom_produit||"—")+'</td>'
         + '<td style="padding:6px 10px;text-align:right">'+(p.prix!=null?p.prix+"€":"—")+'</td>'
         + '<td style="padding:6px 10px;text-align:right">'+(p.taux_commission!=null?(isMM?p.taux_commission+' €':Math.round(p.taux_commission*100)+"%"):"—")+'</td>'
         + '<td style="padding:6px 10px;text-align:right;font-weight:600">'+(ps.qty>0?ps.qty:'<span style="color:var(--txT)">—</span>')+'</td>'
         + '<td style="padding:6px 10px;text-align:right;color:var(--gn);font-weight:600">'+(ps.ca_ht>0?Math.round(ps.ca_ht).toLocaleString("fr-FR")+" €":'<span style="color:var(--txT)">—</span>')+'</td>'
-        + '<td style="padding:4px 6px;text-align:center">'+(p.id?'<button onclick="deleteOpeProd('+p.id+','+id+')" title="Supprimer ce produit" style="padding:2px 7px;border:.5px solid var(--rd);border-radius:4px;font-size:11px;background:var(--rdBg);color:var(--rd);cursor:pointer;font-family:inherit;line-height:1.4">×</button>':'')+'</td>'
+        + '<td style="padding:4px 6px;text-align:center">'+(p.id?'<button onclick="event.stopPropagation();deleteOpeProd('+p.id+','+id+')" title="Supprimer ce produit" style="padding:2px 7px;border:.5px solid var(--rd);border-radius:4px;font-size:11px;background:var(--rdBg);color:var(--rd);cursor:pointer;font-family:inherit;line-height:1.4">×</button>':'')+'</td>'
         + '</tr>';
     }).join("");
   }
@@ -7098,12 +7314,14 @@ async function openOpeDetail(id) {
     + '<span style="padding:3px 10px;border-radius:99px;font-size:11px;font-weight:600;background:'+(isAct?"var(--gnBg)":"var(--rdBg)")+';color:'+(isAct?"var(--gn)":"var(--rd)")+'">'+( isAct?"● Actif":"○ Expiré")+'</span>'
     + (op.type_ope ? '<span style="font-size:11px;color:var(--txS)">'+esc(op.type_ope)+'</span>' : "")
     + '</div>'
+    + (_soldesMode ? _soldesBlockHtml : "")
     + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:14px">'
     + '<div style="background:var(--bg);border-radius:8px;padding:10px 12px"><div style="font-size:10px;color:var(--txS);text-transform:uppercase;margin-bottom:4px">Début</div><div style="font-size:13px;font-weight:600">'+fmtD(op.date_debut)+'</div></div>'
     + '<div style="background:var(--bg);border-radius:8px;padding:10px 12px"><div style="font-size:10px;color:var(--txS);text-transform:uppercase;margin-bottom:4px">Fin</div><div style="font-size:13px;font-weight:600">'+fmtD(op.date_fin)+'</div></div>'
     + '<div style="background:var(--bg);border-radius:8px;padding:10px 12px"><div style="font-size:10px;color:var(--txS);text-transform:uppercase;margin-bottom:4px">'+(isMM?'Co-Financement moy.':'Commission moy.')+'</div><div style="font-size:13px;font-weight:600">'+avgComm+(isMM?' €':'%')+'</div></div>'
     + '<div style="background:'+(totalVentes>0?"var(--gnBg)":"var(--bg)")+';border-radius:8px;padding:10px 12px"><div style="font-size:10px;color:var(--txS);text-transform:uppercase;margin-bottom:4px">Ventes période</div><div style="font-size:13px;font-weight:700;color:'+(totalVentes>0?"var(--gn)":"var(--txS)")+'">'+totalVentes+'</div><div style="font-size:11px;color:var(--txS)">'+(totalCaHt>0?Math.round(totalCaHt).toLocaleString("fr-FR")+" € HT":"—")+'</div></div>'
     + '</div>'
+    + (_soldesMode ? '<div style="font-size:11px;font-weight:600;color:var(--txS);text-transform:uppercase;margin-bottom:6px">Produits importés dans cette opération — cliquez sur une ligne pour le détail vs N-1</div>' : '')
     + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px">'
     + '<div style="font-size:12px;font-weight:600;color:var(--txS);text-transform:uppercase">'+prods.length+' produit'+(prods.length>1?"s":"")+'</div>'
     + (hasSalesData ? '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;color:var(--txS);margin-left:auto"><input type="checkbox" onchange="window._opeRefreshTable(this.checked)" style="cursor:pointer"> Avec ventes uniquement</label>' : '<span style="font-size:11px;color:var(--txT);margin-left:auto">Aucune vente Prestashop sur cette période</span>')
@@ -7178,7 +7396,7 @@ async function openOpeDetail(id) {
           +'</div>';
       })();
 
-  openModal("📋 "+esc(op.nom), html);
+  openModal("📋 "+esc(op.nom), html, {wide: _soldesMode});
 
   function sortOpeTable(col) {
     if (window._opeSortCol === col) {
