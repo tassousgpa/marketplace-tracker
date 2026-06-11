@@ -11103,7 +11103,7 @@ async function renderSiteInternet() {
 const NOTION_DATABASES = [
   { id: "marronnier_commercial", label: "Marronnier commercial",                    dbId: "33561fa6330d80c692c9e955a33cf43c" },
   { id: "fiches_produits",   label: "Création fiches produits en cours",        dbId: "32961fa6330d8075aaa9de58bd8d9a22" },
-  { id: "plan_photos",       label: "Plan clean photos",                         dbId: "" },
+  { id: "plan_photos",       label: "Plan clean photos — Journal des tests",     dbId: "37361fa6330d80c09b3be54d2db8e306" },
   { id: "contenu_visuels",   label: "Création contenu / visuels réseaux sociaux", dbId: "" },
   { id: "partenariats",      label: "Partenariats influence réseaux sociaux",    dbId: "" },
 ];
@@ -11157,6 +11157,7 @@ async function renderSiteBacklog() {
       }
       target.innerHTML = db.id === "marronnier_commercial" ? renderMarronnierItems(results)
         : db.id === "fiches_produits" ? renderFichesProduitsItems(results)
+        : db.id === "plan_photos" ? renderGenericNotionTable(results)
         : renderNotionItems(results);
     } catch(e) {
       target.innerHTML = `<span style="color:#b5312c">Erreur de chargement : ${esc(String(e))}</span>`;
@@ -11248,6 +11249,80 @@ function _notionDateSingle(props, key) {
   const p = props[key];
   if (!p || p.type !== "date" || !p.date || !p.date.start) return "";
   return new Date(p.date.start).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+// ─── Rendu générique d'une base Notion (toutes colonnes, scroll horizontal) ─
+function _notionPropToHtml(p) {
+  if (!p) return '';
+  switch (p.type) {
+    case 'title': return esc((p.title || []).map(t => t.plain_text || '').join(''));
+    case 'rich_text': return esc((p.rich_text || []).map(t => t.plain_text || '').join(''));
+    case 'select': return p.select ? esc(p.select.name) : '';
+    case 'status': return p.status ? esc(p.status.name) : '';
+    case 'multi_select': return (p.multi_select || []).map(o => esc(o.name)).join(', ');
+    case 'number': return p.number != null ? _fmtNum(p.number) : '';
+    case 'date': {
+      if (!p.date) return '';
+      const fmt = s => s ? new Date(s).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+      const start = fmt(p.date.start), end = fmt(p.date.end);
+      return end && end !== start ? `${start} → ${end}` : start;
+    }
+    case 'people': return (p.people || []).map(u => esc(u.name || '')).join(', ');
+    case 'checkbox': return p.checkbox ? '✅' : '';
+    case 'url': return p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.url)}</a>` : '';
+    case 'email': return p.email ? esc(p.email) : '';
+    case 'phone_number': return p.phone_number ? esc(p.phone_number) : '';
+    case 'files': return (p.files || []).map(f => {
+        const url = f.type === 'external' ? f.external?.url : f.file?.url;
+        return url ? `<a href="${esc(url)}" target="_blank" rel="noopener">${esc(f.name || 'Fichier')}</a>` : esc(f.name || '');
+      }).join(', ');
+    case 'formula': {
+      const f = p.formula;
+      if (!f) return '';
+      if (f.type === 'string') return esc(f.string || '');
+      if (f.type === 'number') return f.number != null ? _fmtNum(f.number) : '';
+      if (f.type === 'boolean') return f.boolean ? '✅' : '';
+      if (f.type === 'date') return f.date?.start ? esc(f.date.start) : '';
+      return '';
+    }
+    case 'relation': return (p.relation || []).map(() => '•').join(' ');
+    case 'created_time': return p.created_time ? new Date(p.created_time).toLocaleDateString('fr-FR') : '';
+    case 'last_edited_time': return p.last_edited_time ? new Date(p.last_edited_time).toLocaleDateString('fr-FR') : '';
+    default: return '';
+  }
+}
+
+function renderGenericNotionTable(items) {
+  if (!items.length) return '<em style="color:#aaa">Aucun élément.</em>';
+  // Construit la liste des colonnes : titre en premier, puis l'union des autres propriétés
+  const cols = [];
+  items.forEach(item => {
+    Object.keys(item.properties || {}).forEach(key => {
+      if (!cols.includes(key)) cols.push(key);
+    });
+  });
+  cols.sort((a, b) => {
+    const pa = items[0].properties[a]?.type === 'title' ? 0 : 1;
+    const pb = items[0].properties[b]?.type === 'title' ? 0 : 1;
+    return pa - pb;
+  });
+  return `<div style="overflow-x:auto;max-width:100%">
+    <table style="border-collapse:collapse;font-size:13px;white-space:nowrap">
+      <thead>
+        <tr style="background:#f0f6ff">
+          ${cols.map(c => `<th style="text-align:left;padding:6px 12px;border-bottom:1px solid #d8e8ff;font-weight:600">${esc(c)}</th>`).join('')}
+        </tr>
+      </thead>
+      <tbody>
+        ${items.map(item => {
+          const props = item.properties || {};
+          return `<tr style="border-bottom:1px solid #f0f0ee">
+            ${cols.map(c => `<td style="padding:7px 12px">${_notionPropToHtml(props[c])}</td>`).join('')}
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  </div>`;
 }
 
 // ─── Rendu spécifique "Backlog fiches produits" ────────────────────────────
