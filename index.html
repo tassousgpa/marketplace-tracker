@@ -11133,7 +11133,9 @@ async function renderSiteBacklog() {
       const res = await fetch("/api/notion?db=" + encodeURIComponent(db.dbId));
       if (!res.ok) throw new Error("HTTP " + res.status);
       const data = await res.json();
-      target.innerHTML = renderNotionItems(data.results || []);
+      target.innerHTML = db.id === "marronnier_commercial"
+        ? renderMarronnierItems(data.results || [])
+        : renderNotionItems(data.results || []);
     } catch(e) {
       target.innerHTML = `<span style="color:#b5312c">Erreur de chargement : ${esc(String(e))}</span>`;
     }
@@ -11196,6 +11198,88 @@ function _notionAssignee(props) {
     }
   }
   return "";
+}
+
+// ─── Rendu spécifique "Marronnier commercial" (calendrier de campagnes) ────
+function _notionDateRange(props) {
+  const p = props["Dates"];
+  if (!p || p.type !== "date" || !p.date) return "";
+  const fmt = s => s ? new Date(s).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+  const start = fmt(p.date.start);
+  const end = fmt(p.date.end);
+  return end && end !== start ? `${start} → ${end}` : start;
+}
+
+function _notionMultiSelect(props, key) {
+  const p = props[key];
+  if (!p || p.type !== "multi_select" || !p.multi_select) return [];
+  return p.multi_select.map(o => o.name);
+}
+
+function _notionSelect(props, key) {
+  const p = props[key];
+  if (!p) return "";
+  if (p.type === "select" && p.select) return p.select.name;
+  if (p.type === "status" && p.status) return p.status.name;
+  return "";
+}
+
+function _notionNumber(props, key) {
+  const p = props[key];
+  if (!p || p.type !== "number" || p.number == null) return null;
+  return p.number;
+}
+
+const _NOTION_STATUS_COLORS = {
+  'Terminée': { bg: '#e6f4ea', fg: '#1e7e34' },
+  'En cours': { bg: '#fff4e0', fg: '#b06a00' },
+  'Planifiée': { bg: '#eef0f2', fg: '#5a6068' },
+  'Annulée': { bg: '#fde8e8', fg: '#c0392b' },
+};
+
+function renderMarronnierItems(items) {
+  if (!items.length) return '<em style="color:#aaa">Aucune campagne.</em>';
+  // Trie par date de début, les plus récentes/futures en premier
+  const sorted = items.slice().sort((a, b) => {
+    const da = a.properties?.["Dates"]?.date?.start || '';
+    const db_ = b.properties?.["Dates"]?.date?.start || '';
+    return da < db_ ? 1 : da > db_ ? -1 : 0;
+  });
+  return `<table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead>
+      <tr style="background:#f0f6ff">
+        <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">Campagne</th>
+        <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">Type</th>
+        <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">Période</th>
+        <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">Statut</th>
+        <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">Catégories</th>
+        <th style="text-align:right;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">CA</th>
+        <th style="text-align:right;padding:6px 10px;border-bottom:1px solid #d8e8ff;font-weight:600">Ventes</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${sorted.map(item => {
+        const props = item.properties || {};
+        const title = _notionTitle(props);
+        const type = _notionSelect(props, "Type d'animation");
+        const period = _notionDateRange(props);
+        const status = _notionSelect(props, "Statut");
+        const cats = _notionMultiSelect(props, "Catégories concernées");
+        const ca = _notionNumber(props, "Chiffre d'affaires");
+        const ventes = _notionNumber(props, "Nombre de ventes");
+        const sc = _NOTION_STATUS_COLORS[status] || { bg: '#eef0f2', fg: '#5a6068' };
+        return `<tr style="border-bottom:1px solid #f0f0ee">
+          <td style="padding:7px 10px;font-weight:500">${esc(title)}</td>
+          <td style="padding:7px 10px;color:#888">${esc(type)}</td>
+          <td style="padding:7px 10px;color:#888;white-space:nowrap">${esc(period)}</td>
+          <td style="padding:7px 10px">${status ? `<span style="background:${sc.bg};color:${sc.fg};border-radius:4px;padding:2px 7px;font-size:12px;font-weight:600">${esc(status)}</span>` : ''}</td>
+          <td style="padding:7px 10px;color:#888">${cats.map(c => `<span style="background:#f0f6ff;color:#004c99;border-radius:4px;padding:1px 6px;font-size:11px;margin-right:3px;display:inline-block;margin-bottom:2px">${esc(c)}</span>`).join('')}</td>
+          <td style="padding:7px 10px;text-align:right">${ca != null ? _fmtEUR(ca) : ''}</td>
+          <td style="padding:7px 10px;text-align:right">${ventes != null ? _fmtNum(ventes) : ''}</td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table>`;
 }
 
 // ─── Fin Site Internet ────────────────────────────────────────────────────────
