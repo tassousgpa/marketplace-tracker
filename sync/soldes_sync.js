@@ -157,13 +157,18 @@ async function run() {
     return;
   }
 
-  // Agréger par (marketplace, product_ref, sale_date)
+  // Agréger par (marketplace, product_ref, sale_date) — sale_date tronqué au jour
+  // (la colonne soldes_daily_sales.sale_date est de type DATE, alors que
+  // ps_sales_daily.sale_date est un timestamp ; sans cette troncature, deux
+  // commandes du même jour génèrent deux clés distinctes mais le même
+  // conflit ON CONFLICT, ce qui fait échouer l'upsert)
   const aggMap = {};
   for (const s of rawSales) {
     const mp = s.marketplace || "site";
     if (mp === "site") continue; // On ignore les ventes site web
-    const key = `${mp}|${s.product_ref}|${s.sale_date}`;
-    if (!aggMap[key]) aggMap[key] = { marketplace: mp, sku: s.product_ref, sale_date: s.sale_date, quantity: 0, revenue_ht: 0 };
+    const day = String(s.sale_date).slice(0, 10);
+    const key = `${mp}|${s.product_ref}|${day}`;
+    if (!aggMap[key]) aggMap[key] = { marketplace: mp, sku: s.product_ref, sale_date: day, quantity: 0, revenue_ht: 0 };
     aggMap[key].quantity   += (s.quantity || 0);
     aggMap[key].revenue_ht += (s.revenue_ht || 0) + (s.shipping_ht || 0);
   }
