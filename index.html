@@ -10850,7 +10850,10 @@ function _filterSeaCampaigns() {
         <tbody>
           ${filtered.map(r => `
             <tr style="border-bottom:.5px solid var(--borderL)" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
-              <td style="padding:8px 12px;font-weight:500">${esc(r.category)}${r.category===SEA_OTHER_CATEGORY ? `<span style="color:var(--txT);font-weight:400;font-size:11px"> (${r.pages.length} pages non catégorisées)</span>` : ''}</td>
+              <td style="padding:8px 12px;font-weight:500">${esc(r.category)}${r.category===SEA_OTHER_CATEGORY ? `<span style="color:var(--txT);font-weight:400;font-size:11px"> (${r.pages.length} pages non catégorisées)</span>
+                <div style="margin-top:4px;font-size:11px;font-weight:400;color:var(--txT)">
+                  ${r.pages.slice().sort((a,b)=>b.sessions-a.sessions).slice(0,5).map(p=>`<div>· ${esc(p.page || '(non défini)')} — ${_fmtNum(p.sessions)} sessions</div>`).join('')}
+                </div>` : ''}</td>
               <td style="padding:8px 12px;text-align:right">${_fmtNum(r.sessions)}</td>
               <td style="padding:8px 12px;text-align:right;font-weight:600">${_fmtNum(r.transactions)}</td>
               <td style="padding:8px 12px;text-align:center">
