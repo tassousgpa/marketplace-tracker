@@ -37,7 +37,11 @@ function isoWeek(dateStr) {
   const jan4 = new Date(Date.UTC(yr, 0, 4));
   const jan4dow = jan4.getUTCDay() || 7;
   const week1mon = new Date(jan4); week1mon.setUTCDate(jan4.getUTCDate() - (jan4dow - 1));
-  const week = Math.round((thu - week1mon) / 604800000) + 1;
+  // NB: comparer "mon" (lundi de la semaine cible, à 12:00 UTC comme `d`) à "week1mon"
+  // (lundi de la semaine 1, à 00:00 UTC car dérivé de Date.UTC sans heure) — et non
+  // "thu" — pour rester cohérent avec isoWeekLabel() côté front (sinon décalage
+  // de 12h qui fait basculer certaines semaines d'une unité, ex: 29/12/2025).
+  const week = Math.round((mon - week1mon) / 604800000) + 1;
   return { year: yr, week };
 }
 
