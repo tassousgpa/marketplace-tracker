@@ -928,13 +928,14 @@ async function loadData() {
   if (MARKETPLACE === "site_internet") {
     try {
       const yr = new Date().getFullYear();
-      const [revenueImports, revenueEntries, monthlyHistory, psSalesDaily, productSalesWeekly, cosManuel] = await Promise.all([
+      const [revenueImports, revenueEntries, monthlyHistory, psSalesDaily, productSalesWeekly, cosManuel, gadsAnalysisData] = await Promise.all([
         sb("revenue_imports", "marketplace=eq.site_internet&select=*&order=period_start.asc").catch(()=>[]),
         sb("revenue_entries", "marketplace=eq.site_internet&select=*&order=week_start_date.asc").catch(()=>[]),
         sb("revenue_monthly_history", "marketplace=eq.site_internet&select=year,month,revenue&order=year.asc,month.asc").catch(()=>[]),
         sb("ps_sales_daily", `marketplace=eq.site&sale_date=gte.${yr}-01-01&select=order_id,order_reference,product_ref,product_name,sale_date,quantity,revenue_ht,shipping_ht,revenue_ttc,shipping_ttc&order=sale_date.desc&limit=10000`).catch(()=>[]),
         sb("product_sales_weekly", "marketplace=eq.site&select=*&order=week_label.desc").catch(()=>[]),
         sb("cos_site_manuel", "marketplace=eq.site_internet&select=*").catch(()=>[]),
+        sb("gads_analysis_data", "marketplace=eq.site_internet&select=*").catch(()=>[]),
       ]);
       STATE.revenueImports = revenueImports;
       STATE.revenueEntries = revenueEntries;
@@ -942,6 +943,11 @@ async function loadData() {
       STATE.psSalesDaily = psSalesDaily;
       STATE.productSalesWeekly = productSalesWeekly;
       STATE.cosManuel = cosManuel;
+      _gadsSearchTerms = {}; _gadsProductCost = {};
+      (gadsAnalysisData || []).forEach(function(r) {
+        if (r.type === 'search') _gadsSearchTerms[r.semaine] = r.data;
+        else if (r.type === 'product') _gadsProductCost[r.semaine] = r.data;
+      });
       STATE.products = [];
       STATE.allProducts = [];
       STATE.activeOps = [];
@@ -11838,22 +11844,27 @@ async function saveCosManuel(inputEl, wk, field) {
 // =============================================
 async function renderSiteGAdsAnalyse() {
   const el = document.getElementById('content');
-  function importBlock(id, title, desc) {
-    return '<div class="card" style="padding:16px;margin-bottom:12px;flex:1;min-width:260px">'
-      + '<div style="font-size:13px;font-weight:600;margin-bottom:6px">' + title + '</div>'
-      + '<div style="font-size:11px;color:var(--txS);margin-bottom:10px">' + desc + '</div>'
-      + '<input type="file" id="' + id + '-input" accept=".csv" multiple onchange="' + id + 'Import(this.files)" style="font-size:12px">'
-      + '<div id="' + id + '-log" style="margin-top:10px;font-size:11px;color:var(--txS)"></div>'
-      + '</div>';
+  function importBtn(id, label, title) {
+    return '<label title="' + title + '" style="font-size:11px;font-weight:600;padding:5px 9px;border:1px solid var(--border);border-radius:6px;cursor:pointer;background:var(--bg);white-space:nowrap">'
+      + label
+      + '<input type="file" id="' + id + '-input" accept=".csv" multiple onchange="' + id + 'Import(this.files)" style="display:none">'
+      + '</label>';
   }
   el.innerHTML =
-    '<div style="font-size:15px;font-weight:700;margin-bottom:16px">Analyse Perf. G. Ads</div>'
-    + '<div style="font-size:11px;color:var(--txS);margin-bottom:12px">Pour chaque export, la période est détectée automatiquement depuis l\'en-tête (ex: "June 1, 2026 - June 7, 2026") et convertie en semaine ISO. Seules les semaines complètes (lundi → dimanche) sont prises en compte.</div>'
-    + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:4px">'
-    + importBlock('gadsCampaign', '📊 Export "Campagne"', 'Décomposition des coûts par campagne. Le total alimente automatiquement "Coût GAds" de l\'onglet COS site web.')
-    + importBlock('gadsSearch', '🔎 Export "Search"', 'Coût par terme de recherche — affiche le top 20 ci-dessous.')
-    + importBlock('gadsProduct', '🛋️ Export "ID Produit"', 'Coût par produit, rapproché du CA Prestashop et catégorisé.')
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:4px;flex-wrap:wrap">'
+    + '<div>'
+    + '<div style="font-size:15px;font-weight:700;margin-bottom:4px">Analyse Perf. G. Ads</div>'
+    + '<div style="font-size:11px;color:var(--txS)">La période est détectée automatiquement depuis chaque export. Seules les semaines complètes (lundi → dimanche) sont prises en compte. La semaine la plus récente importée est affichée ci-dessous, pour tous les utilisateurs, jusqu\'au prochain import.</div>'
     + '</div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
+    + importBtn('gadsCampaign', '📊 Campagne', 'Importer un export "Campagne" (coût GAds → onglet COS site web)')
+    + importBtn('gadsSearch', '🔎 Search', 'Importer un export "Search" (termes de recherche)')
+    + importBtn('gadsProduct', '🛋️ ID Produit', 'Importer un export "ID Produit" (coût par produit)')
+    + '</div>'
+    + '</div>'
+    + '<div id="gadsCampaign-log" style="font-size:11px;color:var(--txS);text-align:right;margin-bottom:2px"></div>'
+    + '<div id="gadsSearch-log" style="font-size:11px;color:var(--txS);text-align:right;margin-bottom:2px"></div>'
+    + '<div id="gadsProduct-log" style="font-size:11px;color:var(--txS);text-align:right;margin-bottom:12px"></div>'
     + '<div id="gads-analysis-container">' + _renderGAdsAnalysisContent() + '</div>';
 }
 
@@ -12119,8 +12130,9 @@ async function gadsSearchImport(fileList) {
       var terms = dataRows.map(function(r) {
         return { term: (r[termIdx] || '').replace(/"/g, ''), cost: _parseGAdsNumber(r[costIdx]), impr: _parseGAdsNumber(r[imprIdx]), clicks: _parseGAdsNumber(r[clicksIdx]), conv: _parseGAdsNumber(r[convIdx]) };
       });
-      _gadsSearchTerms[wkLabel] = terms;
-      logLines.push('✅ ' + file.name + ' : ' + terms.length + ' termes de recherche importés pour ' + wkLabel + '.');
+      _gadsSearchTerms = {}; _gadsSearchTerms[wkLabel] = terms;
+      await sbUpsert('gads_analysis_data', [{ marketplace: 'site_internet', type: 'search', semaine: wkLabel, data: terms, updated_at: new Date().toISOString() }], 'marketplace,type');
+      logLines.push('✅ ' + file.name + ' : ' + terms.length + ' termes de recherche importés pour ' + wkLabel + ' (enregistré en base).');
     } catch (e) {
       logLines.push('❌ ' + file.name + ' : erreur — ' + e.message);
     }
@@ -12155,8 +12167,9 @@ async function gadsProductImport(fileList) {
       var products = dataRows.map(function(r) {
         return { ref: (r[refIdx] || '').replace(/"/g, ''), title: titleIdx !== -1 ? (r[titleIdx] || '').replace(/"/g, '') : '', cost: _parseGAdsNumber(r[costIdx]), impr: _parseGAdsNumber(r[imprIdx]), clicks: _parseGAdsNumber(r[clicksIdx]), conv: _parseGAdsNumber(r[convIdx]) };
       });
-      _gadsProductCost[wkLabel] = products;
-      logLines.push('✅ ' + file.name + ' : ' + products.length + ' produits importés pour ' + wkLabel + '.');
+      _gadsProductCost = {}; _gadsProductCost[wkLabel] = products;
+      await sbUpsert('gads_analysis_data', [{ marketplace: 'site_internet', type: 'product', semaine: wkLabel, data: products, updated_at: new Date().toISOString() }], 'marketplace,type');
+      logLines.push('✅ ' + file.name + ' : ' + products.length + ' produits importés pour ' + wkLabel + ' (enregistré en base).');
     } catch (e) {
       logLines.push('❌ ' + file.name + ' : erreur — ' + e.message);
     }
