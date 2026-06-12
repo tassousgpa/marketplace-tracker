@@ -11517,7 +11517,10 @@ async function renderSiteCOS() {
     + '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">'
     + '<button id="sync-mollie-btn" onclick="syncMollieFees()" style="padding:7px 16px;border:.5px solid var(--pu);border-radius:8px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">🔄 Sync Mollie (frais PSP)</button>'
     + '<button id="sync-paypal-btn" onclick="syncPaypalFees()" style="padding:7px 16px;border:.5px solid var(--pu);border-radius:8px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">🔄 Sync PayPal (frais)</button>'
+    + '<label for="gads-weekly-history-input" style="padding:7px 16px;border:.5px solid var(--pu);border-radius:8px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">📥 Importer historique GAds (CSV par semaine)</label>'
+    + '<input type="file" id="gads-weekly-history-input" accept=".csv" multiple onchange="gadsWeeklyHistoryImport(this.files)" style="display:none">'
     + '</div>'
+    + '<div id="gads-weekly-import-log" style="font-size:11px;color:var(--txS);margin:-8px 0 12px"></div>'
     + '<div id="cos-site-container">' + _buildCosSiteTable(null) + '</div>';
 
   try {
@@ -11730,13 +11733,21 @@ async function saveCosManuel(inputEl, wk, field) {
 // =============================================
 async function renderSiteGAdsAnalyse() {
   const el = document.getElementById('content');
+  function importBlock(id, title, desc) {
+    return '<div class="card" style="padding:16px;margin-bottom:12px;flex:1;min-width:260px">'
+      + '<div style="font-size:13px;font-weight:600;margin-bottom:6px">' + title + '</div>'
+      + '<div style="font-size:11px;color:var(--txS);margin-bottom:10px">' + desc + '</div>'
+      + '<input type="file" id="' + id + '-input" accept=".csv" multiple onchange="' + id + 'Import(this.files)" style="font-size:12px">'
+      + '<div id="' + id + '-log" style="margin-top:10px;font-size:11px;color:var(--txS)"></div>'
+      + '</div>';
+  }
   el.innerHTML =
     '<div style="font-size:15px;font-weight:700;margin-bottom:16px">Analyse Perf. G. Ads</div>'
-    + '<div class="card" style="padding:16px;margin-bottom:16px">'
-    + '<div style="font-size:13px;font-weight:600;margin-bottom:8px">Importer des exports Google Ads (CSV)</div>'
-    + '<div style="font-size:11px;color:var(--txS);margin-bottom:10px">Glisse/sélectionne un ou plusieurs fichiers (export "Campagne", "Search" ou "ID Produit"). La date est détectée automatiquement depuis l\'en-tête du fichier (ex: "June 1, 2026 - June 7, 2026") et convertie en semaine ISO. Seules les semaines complètes (lundi → dimanche) sont prises en compte.</div>'
-    + '<input type="file" id="gads-csv-input" accept=".csv" multiple onchange="handleGAdsCsvImport(this.files)" style="font-size:12px">'
-    + '<div id="gads-import-log" style="margin-top:10px;font-size:11px;color:var(--txS)"></div>'
+    + '<div style="font-size:11px;color:var(--txS);margin-bottom:12px">Pour chaque export, la période est détectée automatiquement depuis l\'en-tête (ex: "June 1, 2026 - June 7, 2026") et convertie en semaine ISO. Seules les semaines complètes (lundi → dimanche) sont prises en compte.</div>'
+    + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:4px">'
+    + importBlock('gadsCampaign', '📊 Export "Campagne"', 'Décomposition des coûts par campagne. Le total alimente automatiquement "Coût GAds" de l\'onglet COS site web.')
+    + importBlock('gadsSearch', '🔎 Export "Search"', 'Coût par terme de recherche — affiche le top 20 ci-dessous.')
+    + importBlock('gadsProduct', '🛋️ Export "ID Produit"', 'Coût par produit, rapproché du CA Prestashop et catégorisé.')
     + '</div>'
     + '<div id="gads-analysis-container">' + _renderGAdsAnalysisContent() + '</div>';
 }
@@ -11864,129 +11875,180 @@ function _readGAdsCsv(file) {
   });
 }
 
-async function handleGAdsCsvImport(fileList) {
-  var logEl = document.getElementById('gads-import-log');
+// Met à jour cos_site_manuel.gads pour une ou plusieurs semaines en une seule requête
+async function _upsertGAdsCost(updates) {
+  // updates: [{wk:'S23', cost: 1234.56}, ...]
+  var batchRows = updates.map(function(u) {
+    var existing = (STATE.cosManuel || []).find(function(r) { return r.semaine === u.wk; }) || {};
+    var row = Object.assign({ marketplace: 'site_internet', semaine: u.wk, gads: null, meta: null, pinterest: null, tiktok: null, agences: null, mollie_fees: null, paypal_fees: null, bnpl: null }, existing);
+    row.gads = u.cost;
+    delete row.id; delete row.created_at; delete row.updated_at;
+    return row;
+  });
+  await sbUpsert('cos_site_manuel', batchRows, 'marketplace,semaine');
+  batchRows.forEach(function(row) {
+    STATE.cosManuel = (STATE.cosManuel || []).filter(function(r) { return r.semaine !== row.semaine; });
+    STATE.cosManuel.push(row);
+  });
+  var cWk = document.getElementById('cos-site-container');
+  if (cWk) cWk.innerHTML = _buildCosSiteTable(_lastCosGa4Map);
+}
+
+// Détecte la semaine ISO complète (lundi->dimanche) d'un export hebdomadaire GAds, à partir de la ligne 2
+function _gadsDetectWeek(rows, file, logLines) {
+  var range = _parseGAdsDateRange(rows[1][0]);
+  if (!range) { logLines.push('❌ ' + file.name + ' : impossible de détecter la période (ligne 2).'); return null; }
+  var startInfo = isoWeekLabel(range.start.toISOString().slice(0, 10));
+  var endInfo = isoWeekLabel(range.end.toISOString().slice(0, 10));
+  var startWk = startInfo ? parseWeekLabel(startInfo.label) : null;
+  var endWk = endInfo ? parseWeekLabel(endInfo.label) : null;
+  var diffDays = Math.round((range.end - range.start) / 86400000);
+  var isFullWeek = startWk && endWk && startWk.year === endWk.year && startWk.week === endWk.week && diffDays === 6;
+  if (!isFullWeek) {
+    logLines.push('⚠️ ' + file.name + ' : période ' + rows[1][0].replace(/"/g, '') + ' n\'est pas une semaine complète (lundi→dimanche) — ignoré.');
+    return null;
+  }
+  return startWk;
+}
+
+// ── Import "Campagne" : décomposition par campagne -> total -> cos_site_manuel.gads ──
+async function gadsCampaignImport(fileList) {
+  var logEl = document.getElementById('gadsCampaign-log');
   var files = Array.prototype.slice.call(fileList || []);
   if (!files.length) return;
   var logLines = [];
-
   for (const file of files) {
     try {
       var rows = await _readGAdsCsv(file);
       if (rows.length < 3) { logLines.push('❌ ' + file.name + ' : format non reconnu (trop peu de lignes).'); continue; }
-
-      var headerCheck = rows[2].map(function(h) { return h.trim().toLowerCase(); });
-      if (headerCheck.indexOf('week') !== -1 && headerCheck.indexOf('campaign') === -1) {
-        // ── Fichier "YTD by Week" : une ligne = une semaine (date = lundi de la semaine), coût total ──
-        var wIdx = headerCheck.indexOf('week');
-        var cIdx = headerCheck.indexOf('cost');
-        var dataRows2 = rows.slice(3);
-        var updates = [];
-        dataRows2.forEach(function(r) {
-          var dateStr = (r[wIdx] || '').replace(/"/g, '').trim();
-          if (!dateStr) return;
-          var cost = _parseGAdsNumber(r[cIdx]);
-          var wInfo = isoWeekLabel(dateStr);
-          if (!wInfo) return;
-          var p = parseWeekLabel(wInfo.label);
-          if (!p || p.year !== 2026) return;
-          updates.push({ wk: 'S' + p.week, cost: Math.round(cost * 100) / 100 });
-        });
-
-        if (!updates.length) {
-          logLines.push('⚠️ ' + file.name + ' : aucune semaine 2026 exploitable trouvée.');
-        } else {
-          var batchRows = updates.map(function(u) {
-            var existing = (STATE.cosManuel || []).find(function(r) { return r.semaine === u.wk; }) || {};
-            var row = Object.assign({ marketplace: 'site_internet', semaine: u.wk, gads: null, meta: null, pinterest: null, tiktok: null, agences: null, mollie_fees: null, paypal_fees: null, bnpl: null }, existing);
-            row.gads = u.cost;
-            delete row.id; delete row.created_at; delete row.updated_at;
-            return row;
-          });
-          await sbUpsert('cos_site_manuel', batchRows, 'marketplace,semaine');
-          batchRows.forEach(function(row) {
-            STATE.cosManuel = (STATE.cosManuel || []).filter(function(r) { return r.semaine !== row.semaine; });
-            STATE.cosManuel.push(row);
-          });
-          var cWk = document.getElementById('cos-site-container');
-          if (cWk) cWk.innerHTML = _buildCosSiteTable(_lastCosGa4Map);
-          logLines.push('✅ ' + file.name + ' : Coût GAds mis à jour pour ' + batchRows.length + ' semaine(s) (' + updates.map(function(u){return u.wk;}).join(', ') + ').');
-        }
-        continue;
-      }
-
-      var range = _parseGAdsDateRange(rows[1][0]);
-      if (!range) { logLines.push('❌ ' + file.name + ' : impossible de détecter la période (ligne 2).'); continue; }
-
-      var startInfo = isoWeekLabel(range.start.toISOString().slice(0, 10));
-      var endInfo = isoWeekLabel(range.end.toISOString().slice(0, 10));
-      var startWk = startInfo ? parseWeekLabel(startInfo.label) : null;
-      var endWk = endInfo ? parseWeekLabel(endInfo.label) : null;
-      var diffDays = Math.round((range.end - range.start) / 86400000);
-      var isFullWeek = startWk && endWk && startWk.year === endWk.year && startWk.week === endWk.week && diffDays === 6;
-      if (!isFullWeek) {
-        logLines.push('⚠️ ' + file.name + ' : période ' + rows[1][0].replace(/"/g, '') + ' n\'est pas une semaine complète (lundi→dimanche) — ignoré.');
-        continue;
-      }
-      var wkLabel = 'S' + startWk.week;
-      var year = startWk.year;
-
       var header = rows[2].map(function(h) { return h.trim().toLowerCase(); });
+      if (header.indexOf('campaign') === -1) { logLines.push('❌ ' + file.name + ' : ce n\'est pas un export "Campagne" (colonne "Campaign" absente).'); continue; }
+      var wk = _gadsDetectWeek(rows, file, logLines);
+      if (!wk) continue;
+      var costIdx = header.indexOf('cost');
       var dataRows = rows.slice(3);
+      var total = 0;
+      dataRows.forEach(function(r) { total += _parseGAdsNumber(r[costIdx]); });
+      total = Math.round(total * 100) / 100;
+      if (wk.year !== 2026) { logLines.push('⚠️ ' + file.name + ' : semaine S' + wk.week + ' ' + wk.year + ' hors année 2026 — non enregistré.'); continue; }
+      var wkLabel = 'S' + wk.week;
+      await _upsertGAdsCost([{ wk: wkLabel, cost: total }]);
+      logLines.push('✅ ' + file.name + ' : Coût GAds ' + wkLabel + ' = ' + total.toFixed(2) + '€ enregistré (onglet COS site web).');
+    } catch (e) {
+      logLines.push('❌ ' + file.name + ' : erreur — ' + e.message);
+    }
+  }
+  if (logEl) logEl.innerHTML = logLines.map(function(l) { return '<div>' + l + '</div>'; }).join('');
+}
 
+// ── Import "Search" : top termes de recherche ──
+async function gadsSearchImport(fileList) {
+  var logEl = document.getElementById('gadsSearch-log');
+  var files = Array.prototype.slice.call(fileList || []);
+  if (!files.length) return;
+  var logLines = [];
+  for (const file of files) {
+    try {
+      var rows = await _readGAdsCsv(file);
+      if (rows.length < 3) { logLines.push('❌ ' + file.name + ' : format non reconnu (trop peu de lignes).'); continue; }
+      var header = rows[2].map(function(h) { return h.trim().toLowerCase(); });
+      if (header.indexOf('search term') === -1) { logLines.push('❌ ' + file.name + ' : ce n\'est pas un export "Search" (colonne "Search term" absente).'); continue; }
+      var wk = _gadsDetectWeek(rows, file, logLines);
+      if (!wk) continue;
+      var wkLabel = 'S' + wk.week;
+      var dataRows = rows.slice(3);
+      var termIdx = header.indexOf('search term');
       var costIdx = header.indexOf('cost');
       var imprIdx = header.findIndex(function(h) { return h.indexOf('impr') === 0; });
       var clicksIdx = header.indexOf('clicks');
       var convIdx = header.indexOf('conversions');
+      var terms = dataRows.map(function(r) {
+        return { term: (r[termIdx] || '').replace(/"/g, ''), cost: _parseGAdsNumber(r[costIdx]), impr: _parseGAdsNumber(r[imprIdx]), clicks: _parseGAdsNumber(r[clicksIdx]), conv: _parseGAdsNumber(r[convIdx]) };
+      });
+      _gadsSearchTerms[wkLabel] = terms;
+      logLines.push('✅ ' + file.name + ' : ' + terms.length + ' termes de recherche importés pour ' + wkLabel + '.');
+    } catch (e) {
+      logLines.push('❌ ' + file.name + ' : erreur — ' + e.message);
+    }
+  }
+  if (logEl) logEl.innerHTML = logLines.map(function(l) { return '<div>' + l + '</div>'; }).join('');
+  var ac = document.getElementById('gads-analysis-container');
+  if (ac) ac.innerHTML = _renderGAdsAnalysisContent();
+}
 
-      if (header.indexOf('campaign') !== -1) {
-        // ── Fichier "Campagne" : total des coûts -> cos_site_manuel.gads ──
-        var total = 0;
-        dataRows.forEach(function(r) { total += _parseGAdsNumber(r[costIdx]); });
-        total = Math.round(total * 100) / 100;
+// ── Import "ID Produit" : coût par produit ──
+async function gadsProductImport(fileList) {
+  var logEl = document.getElementById('gadsProduct-log');
+  var files = Array.prototype.slice.call(fileList || []);
+  if (!files.length) return;
+  var logLines = [];
+  for (const file of files) {
+    try {
+      var rows = await _readGAdsCsv(file);
+      if (rows.length < 3) { logLines.push('❌ ' + file.name + ' : format non reconnu (trop peu de lignes).'); continue; }
+      var header = rows[2].map(function(h) { return h.trim().toLowerCase(); });
+      if (header.indexOf('item id') === -1) { logLines.push('❌ ' + file.name + ' : ce n\'est pas un export "ID Produit" (colonne "Item Id" absente).'); continue; }
+      var wk = _gadsDetectWeek(rows, file, logLines);
+      if (!wk) continue;
+      var wkLabel = 'S' + wk.week;
+      var dataRows = rows.slice(3);
+      var refIdx = header.indexOf('item id');
+      var titleIdx = header.findIndex(function(h) { return h.indexOf('title') !== -1 || h.indexOf('product') !== -1; });
+      var costIdx = header.indexOf('cost');
+      var imprIdx = header.findIndex(function(h) { return h.indexOf('impr') === 0; });
+      var clicksIdx = header.indexOf('clicks');
+      var convIdx = header.indexOf('conversions');
+      var products = dataRows.map(function(r) {
+        return { ref: (r[refIdx] || '').replace(/"/g, ''), title: titleIdx !== -1 ? (r[titleIdx] || '').replace(/"/g, '') : '', cost: _parseGAdsNumber(r[costIdx]), impr: _parseGAdsNumber(r[imprIdx]), clicks: _parseGAdsNumber(r[clicksIdx]), conv: _parseGAdsNumber(r[convIdx]) };
+      });
+      _gadsProductCost[wkLabel] = products;
+      logLines.push('✅ ' + file.name + ' : ' + products.length + ' produits importés pour ' + wkLabel + '.');
+    } catch (e) {
+      logLines.push('❌ ' + file.name + ' : erreur — ' + e.message);
+    }
+  }
+  if (logEl) logEl.innerHTML = logLines.map(function(l) { return '<div>' + l + '</div>'; }).join('');
+  var ac = document.getElementById('gads-analysis-container');
+  if (ac) ac.innerHTML = _renderGAdsAnalysisContent();
+}
 
-        if (year === 2026) {
-          var existing = (STATE.cosManuel || []).find(function(r) { return r.semaine === wkLabel; }) || {};
-          var row = Object.assign({ marketplace: 'site_internet', semaine: wkLabel, gads: null, meta: null, pinterest: null, tiktok: null, agences: null, mollie_fees: null, paypal_fees: null, bnpl: null }, existing);
-          row.gads = total;
-          delete row.id; delete row.created_at; delete row.updated_at;
-          await sbUpsert('cos_site_manuel', [row], 'marketplace,semaine');
-          STATE.cosManuel = (STATE.cosManuel || []).filter(function(r) { return r.semaine !== wkLabel; });
-          STATE.cosManuel.push(row);
-          var c = document.getElementById('cos-site-container');
-          if (c) c.innerHTML = _buildCosSiteTable(_lastCosGa4Map);
-          logLines.push('✅ ' + file.name + ' : Coût GAds ' + wkLabel + ' = ' + total.toFixed(2) + '€ enregistré (onglet COS site web).');
-        } else {
-          logLines.push('⚠️ ' + file.name + ' : semaine ' + wkLabel + ' ' + year + ' hors année 2026 — non enregistré.');
-        }
-      } else if (header.indexOf('search term') !== -1) {
-        // ── Fichier "Search" : top termes de recherche ──
-        var termIdx = header.indexOf('search term');
-        var terms = dataRows.map(function(r) {
-          return { term: (r[termIdx] || '').replace(/"/g, ''), cost: _parseGAdsNumber(r[costIdx]), impr: _parseGAdsNumber(r[imprIdx]), clicks: _parseGAdsNumber(r[clicksIdx]), conv: _parseGAdsNumber(r[convIdx]) };
-        });
-        _gadsSearchTerms[wkLabel] = terms;
-        logLines.push('✅ ' + file.name + ' : ' + terms.length + ' termes de recherche importés pour ' + wkLabel + '.');
-      } else if (header.indexOf('item id') !== -1 || header.indexOf('item id ') !== -1) {
-        // ── Fichier "ID Produit" : coût par produit ──
-        var refIdx = header.indexOf('item id');
-        var titleIdx = header.findIndex(function(h) { return h.indexOf('title') !== -1 || h.indexOf('product') !== -1; });
-        var products = dataRows.map(function(r) {
-          return { ref: (r[refIdx] || '').replace(/"/g, ''), title: titleIdx !== -1 ? (r[titleIdx] || '').replace(/"/g, '') : '', cost: _parseGAdsNumber(r[costIdx]), impr: _parseGAdsNumber(r[imprIdx]), clicks: _parseGAdsNumber(r[clicksIdx]), conv: _parseGAdsNumber(r[convIdx]) };
-        });
-        _gadsProductCost[wkLabel] = products;
-        logLines.push('✅ ' + file.name + ' : ' + products.length + ' produits importés pour ' + wkLabel + '.');
+// ── Import "YTD by Week" (onglet COS site web) : une ligne = une semaine, backfill du Coût GAds ──
+async function gadsWeeklyHistoryImport(fileList) {
+  var logEl = document.getElementById('gads-weekly-import-log');
+  var files = Array.prototype.slice.call(fileList || []);
+  if (!files.length) return;
+  var logLines = [];
+  for (const file of files) {
+    try {
+      var rows = await _readGAdsCsv(file);
+      if (rows.length < 3) { logLines.push('❌ ' + file.name + ' : format non reconnu (trop peu de lignes).'); continue; }
+      var header = rows[2].map(function(h) { return h.trim().toLowerCase(); });
+      if (header.indexOf('week') === -1) { logLines.push('❌ ' + file.name + ' : ce n\'est pas un export "YTD by Week" (colonne "Week" absente).'); continue; }
+      var wIdx = header.indexOf('week');
+      var cIdx = header.indexOf('cost');
+      var dataRows = rows.slice(3);
+      var updates = [];
+      dataRows.forEach(function(r) {
+        var dateStr = (r[wIdx] || '').replace(/"/g, '').trim();
+        if (!dateStr) return;
+        var cost = _parseGAdsNumber(r[cIdx]);
+        var wInfo = isoWeekLabel(dateStr);
+        if (!wInfo) return;
+        var p = parseWeekLabel(wInfo.label);
+        if (!p || p.year !== 2026) return;
+        updates.push({ wk: 'S' + p.week, cost: Math.round(cost * 100) / 100 });
+      });
+      if (!updates.length) {
+        logLines.push('⚠️ ' + file.name + ' : aucune semaine 2026 exploitable trouvée.');
       } else {
-        logLines.push('❌ ' + file.name + ' : type de fichier non reconnu (colonnes inattendues).');
+        await _upsertGAdsCost(updates);
+        logLines.push('✅ ' + file.name + ' : Coût GAds mis à jour pour ' + updates.length + ' semaine(s) (' + updates.map(function(u){return u.wk;}).join(', ') + ').');
       }
     } catch (e) {
       logLines.push('❌ ' + file.name + ' : erreur — ' + e.message);
     }
   }
-
   if (logEl) logEl.innerHTML = logLines.map(function(l) { return '<div>' + l + '</div>'; }).join('');
-  var ac = document.getElementById('gads-analysis-container');
-  if (ac) ac.innerHTML = _renderGAdsAnalysisContent();
 }
 
 async function renderSiteBacklog() {
