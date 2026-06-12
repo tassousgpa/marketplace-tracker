@@ -11590,6 +11590,11 @@ function _buildCosSiteTable(ga4Map) {
   function inputCell(wk, field, val, hideStyle) {
     return '<td style="' + cellStyle(hideStyle) + '"><input type="number" step="0.01" value="' + (val !== null && val !== undefined ? val : '') + '" placeholder="—" onchange="saveCosManuel(this,\'' + wk + '\',\'' + field + '\')" style="width:72px;text-align:right;border:1px solid var(--border);border-radius:4px;padding:3px 5px;font-size:12px;background:var(--bgC);color:inherit;font-family:inherit"></td>';
   }
+  // Cellule en lecture seule pour les montants alimentés automatiquement (sync/import) :
+  // séparateur de milliers, sans décimales superflues.
+  function moneyCell(val, hideStyle) {
+    return '<td style="' + cellStyle(hideStyle) + '">' + (val !== null && val !== undefined ? Math.round(val).toLocaleString('fr-FR') + '€' : '—') + '</td>';
+  }
 
   var rows = '';
   for (var w = 1; w <= 52; w++) {
@@ -11614,10 +11619,11 @@ function _buildCosSiteTable(ga4Map) {
     var isCur = (curWeekNum === w);
     var rowBg = isCur ? 'background:var(--acBg);' : (w % 2 ? 'background:var(--bg);' : '');
     var values = { meta: meta, pinterest: pinterest, tiktok: tiktok, agences: agences, mollie_fees: mollie, paypal_fees: paypal, bnpl: bnpl };
+    var autoFields = { mollie_fees: true, paypal_fees: true }; // alimentés par sync -> lecture seule, formatés
     var groupCells = '';
     groups.forEach(function(g) {
       var hide = _cosHiddenGroups[g.key] ? ';display:none' : '';
-      groupCells += inputCell(wk, g.field, values[g.field], hide);
+      groupCells += autoFields[g.field] ? moneyCell(values[g.field], hide) : inputCell(wk, g.field, values[g.field], hide);
     });
     rows += '<tr style="' + rowBg + 'border-bottom:1px solid var(--borderL)">'
       + '<td style="' + TD.replace('text-align:right', 'text-align:left') + ';font-weight:' + (isCur ? 700 : 500) + '">' + wk + (isCur ? ' ←' : '') + '</td>'
@@ -11625,7 +11631,7 @@ function _buildCosSiteTable(ga4Map) {
       + '<td style="' + TD + '">' + (orders ? orders.toLocaleString('fr-FR') : '—') + '</td>'
       + '<td style="' + TD + '">' + (sessions != null ? Math.round(sessions).toLocaleString('fr-FR') : (ga4Map ? '—' : '…')) + '</td>'
       + '<td style="' + TD + '">' + (cvr != null ? cvr.toFixed(2) + '%' : '—') + '</td>'
-      + inputCell(wk, 'gads', gads)
+      + moneyCell(gads)
       + groupCells
       + '<td style="' + TD + '">' + (cosMedia != null ? cosMedia.toFixed(1) + '%' : '—') + '</td>'
       + '<td style="' + TD + ';font-weight:600">' + (cosBlended != null ? cosBlended.toFixed(1) + '%' : '—') + '</td>'
@@ -11662,7 +11668,7 @@ function _buildCosSiteTable(ga4Map) {
     + '</tr></thead>'
     + '<tbody>' + rows + '</tbody>'
     + '</table></div></div>'
-    + '<div style="font-size:11px;color:var(--txS);margin-top:8px">Coût GAds, Meta, Pinterest, TikTok, Agences, Frais PayPal et Frais BNPL (Alma) : saisie manuelle hebdomadaire, enregistrée pour tous les utilisateurs. Frais Mollie/PayPal alimentés via les boutons de sync (corrigeables manuellement). COS média = (GAds + Meta + Pinterest + TikTok) / CA. COS blended = tous les coûts (média + agences + frais PSP/BNPL) / CA. Utilisez les boutons "Colonnes" pour masquer/afficher les colonnes peu utilisées.</div>';
+    + '<div style="font-size:11px;color:var(--txS);margin-top:8px">Coût GAds : alimenté via les imports CSV (onglet "Analyse Perf. G. Ads" et bouton "Importer historique"). Frais Mollie et PayPal : alimentés via les boutons de sync. Ces 3 colonnes sont en lecture seule. Meta, Pinterest, TikTok, Agences et Frais BNPL (Alma) : saisie manuelle hebdomadaire, enregistrée pour tous les utilisateurs. COS média = (GAds + Meta + Pinterest + TikTok) / CA. COS blended = tous les coûts (média + agences + frais PSP/BNPL) / CA. Utilisez les boutons "Colonnes" pour masquer/afficher les colonnes peu utilisées.</div>';
 }
 
 // Affiche/masque un groupe de colonnes dans le tableau COS site web
