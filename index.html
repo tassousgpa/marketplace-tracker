@@ -955,7 +955,7 @@ async function loadData() {
     // Évite le problème de la limite 5000 qui tronquerait les premiers keyboards.
     // La table positions ne contient que le dernier run (purge côté scraper avant chaque session)
     // → select * sans filtre ni limite, requête simple et fiable
-    const [products, allProducts, snapshots, positions, sellerStats, revenueEntries, trackedSellers, revenueImports, productSalesWeekly, monthlyHistory, activeOps, activeOpProducts, seaCampaigns, seaProductStats, supplyStats, psSalesDaily, seaActiveProducts, seaActiveAllMp, commissionRates] = await Promise.all([
+    const [products, allProducts, snapshots, positions, sellerStats, revenueEntries, trackedSellers, revenueImports, productSalesWeekly, monthlyHistory, activeOps, activeOpProducts, seaCampaigns, seaProductStats, supplyStats, psSalesDaily, seaActiveProducts, seaActiveAllMp, commissionRates, seaDepensesManual] = await Promise.all([
       sb("products", `marketplace=eq.${MARKETPLACE}&active=eq.true&select=*&order=product_id`),
       sb("products", `marketplace=eq.${MARKETPLACE}&select=*&order=product_id`),
       sb("product_snapshots", `marketplace=eq.${MARKETPLACE}&select=*&order=date.desc&limit=10000`),
@@ -975,6 +975,7 @@ async function loadData() {
       sb("sea_active_products", `marketplace=eq.${MARKETPLACE}&select=sku,period_start,period_end`).catch(()=>[]),
       sb("sea_active_products", `select=marketplace,sku,period_start,period_end`).catch(()=>[]),
       sb("commission_rates", `marketplace=eq.${MARKETPLACE}&select=product_ref,rate`).catch(()=>[]),
+      sb("sea_depenses_manuelles", `marketplace=eq.${MARKETPLACE}&select=*`).catch(()=>[]),
     ]);
 
     // Mettre à jour le cache de scraping avec les données fraîchement chargées
@@ -1252,7 +1253,7 @@ async function loadData() {
     const _activeOpRefs0 = new Set(); (activeOpProducts||[]).forEach(ap=>{if(_activeOpIds0.has(ap.operation_id))_activeOpRefs0.add(ap.ref);});
     const _opeDelCount0 = (products||[]).filter(p=>p.sku&&(p._delivery||0)>30&&_activeOpRefs0.has(p.sku)).length;
     const _syncAlertCount = alertData.seaMultiMp.length + alertData.seaDelivery.length + alertData.seaOpeDoublons.length + _opeDelCount0;
-    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, leaderCounts, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], revenueImports: revenueImports||[], monthlyHistory: monthlyHistory||[], activeOps: activeOps||[], activeOpProducts: activeOpProducts||[], productSalesWeekly: productSalesWeekly||[], seaCampaigns: seaCampaigns||[], seaProductStats: seaProductStats||[], supplyByRef, psSalesDaily: psSalesDaily||[], seaActiveProducts: seaActiveProducts||[], seaActiveAllMp: seaActiveAllMp||[], commissionRates: commissionRates||[], alertData, _alertsJustLoaded: _syncAlertCount > 0, tab:STATE.tab||0 };
+    STATE = { products, allProducts, snapshots, positions:latestPositions, dates, latestDate, prevDate, history, keywordData, leaderCounts, bmByKeyword, productsInPage1, page1Keywords, prodByScraper, trackedByScraperId, bmScraperIds, latestPosDate: latestPosSession, positionsOutdated, snapshotDay, posDay, sellerStats, confoSellerHistory, amazonReviewsProxy, revenueEntries: revenueEntries||[], trackedSellers: trackedSellers||[], revenueImports: revenueImports||[], monthlyHistory: monthlyHistory||[], activeOps: activeOps||[], activeOpProducts: activeOpProducts||[], productSalesWeekly: productSalesWeekly||[], seaCampaigns: seaCampaigns||[], seaProductStats: seaProductStats||[], supplyByRef, psSalesDaily: psSalesDaily||[], seaActiveProducts: seaActiveProducts||[], seaActiveAllMp: seaActiveAllMp||[], commissionRates: commissionRates||[], seaDepensesManual: seaDepensesManual||[], alertData, _alertsJustLoaded: _syncAlertCount > 0, tab:STATE.tab||0 };
 
     const sessionDisplay = latestDate ? new Date(latestDate + "T12:00:00Z").toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"}) : "N/A";
     document.getElementById("header-subtitle").textContent = `${products.length} produits · Relevé du ${sessionDisplay}`;
@@ -9035,7 +9036,7 @@ async function renderSEA() {
   var mpLabel = (MARKETPLACES.find(function(m){return m.id===MARKETPLACE;})||{label:MARKETPLACE}).label;
 
   // ── Bloc 1 : Budget hebdomadaire ──────────────────────────────────
-  var bloc1 = buildSEABudgetBloc();
+  var bloc1 = '<div id="sea-budget-container">'+buildSEABudgetBloc()+'</div>';
 
   // ── Bloc 2 : Produits sponsorisés YTD (avec Attribution) ──────────
   var bloc2 = '<div id="sea-products-container">'+renderSEAProductsTable()+'</div>';
@@ -9052,6 +9053,24 @@ async function renderSEA() {
     + bloc1
     + bloc2
     + bloc3;
+}
+
+// Enregistre une dépense SEA hebdomadaire saisie manuellement (persisté Supabase, partagé entre tous les users)
+async function saveSeaDepense(inputEl, wk) {
+  var raw = inputEl.value.trim().replace(',', '.');
+  var num = raw === '' ? null : parseFloat(raw);
+  if (raw !== '' && isNaN(num)) { alert('Valeur invalide'); return; }
+  inputEl.disabled = true;
+  try {
+    await sbUpsert('sea_depenses_manuelles', [{ marketplace: MARKETPLACE, semaine: wk, depenses: num }], 'marketplace,semaine');
+    STATE.seaDepensesManual = (STATE.seaDepensesManual||[]).filter(function(r){ return r.semaine !== wk; });
+    if (num !== null) STATE.seaDepensesManual.push({ marketplace: MARKETPLACE, semaine: wk, depenses: num });
+    var c = document.getElementById('sea-budget-container');
+    if (c) c.innerHTML = buildSEABudgetBloc();
+  } catch(e) {
+    alert('Erreur lors de l\'enregistrement : ' + e.message);
+    inputEl.disabled = false;
+  }
 }
 
 function buildSEABudgetBloc() {
@@ -9120,13 +9139,19 @@ function buildSEABudgetBloc() {
   var _curWkParsed = nowWk ? parseWeekLabel(nowWk.label) : null;
   var curWeekNum = _curWkParsed ? _curWkParsed.week : null;
 
+  // Saisies manuelles des dépenses SEA (persistées Supabase, prioritaires sur SEA_BUDGET_DATA)
+  var manualDep = {};
+  (STATE.seaDepensesManual||[]).forEach(function(r) {
+    manualDep[r.semaine] = r.depenses;
+  });
+
   var rows = '';
   for (var w = 1; w <= 52; w++) {
     var wk = 'S'+w;
     var ca = seaBudgetGetWeekCA(w);
     var qty = seaBudgetGetWeekQty(w);
     var data = mpData[wk] || {};
-    var depenses = data.depenses || null;
+    var depenses = (manualDep[wk] !== undefined && manualDep[wk] !== null) ? manualDep[wk] : (data.depenses || null);
     var budget = data.budget || null;
     var pctDepCA = (depenses && ca && ca > 0) ? (depenses/ca*100) : null;
     var ecart = (depenses !== null && budget !== null) ? (depenses - budget) : null;
@@ -9137,7 +9162,7 @@ function buildSEABudgetBloc() {
       +'<td style="'+TD.replace('text-align:right','text-align:left')+';font-weight:'+(isCur?700:500)+'">'+wk+(isCur?' ←':'')+'</td>'
       +'<td style="'+TD+'">'+( ca ? Math.round(ca).toLocaleString('fr-FR')+'€' : '—' )+'</td>'
       +'<td style="'+TD+'">'+( qty ? qty.toLocaleString('fr-FR') : '—' )+'</td>'
-      +'<td style="'+TD+'">'+( depenses ? Math.round(depenses).toLocaleString('fr-FR')+'€' : '—' )+'</td>'
+      +'<td style="'+TD+'"><input type="number" step="0.01" value="'+(depenses!==null&&depenses!==undefined?depenses:'')+'" placeholder="—" onchange="saveSeaDepense(this,\''+wk+'\')" style="width:80px;text-align:right;border:1px solid var(--border);border-radius:4px;padding:3px 5px;font-size:12px;background:var(--bgC);color:inherit;font-family:inherit"></td>'
       +'<td style="'+TD+'">'+( pctDepCA !== null ? pctDepCA.toFixed(1)+'%' : '—' )+'</td>'
       +'<td style="'+TD+'">'+( budget ? Math.round(budget).toLocaleString('fr-FR')+'€' : '—' )+'</td>'
       +'<td style="'+TD+';font-weight:600;color:'+ecartColor+'">'+( ecart !== null ? (ecart>0?'+':'')+Math.round(ecart).toLocaleString('fr-FR')+'€' : '—' )+'</td>'
