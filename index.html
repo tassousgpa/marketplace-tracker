@@ -255,6 +255,12 @@ const MP_LAST_SCRAPING = {};
 
 // Dernière map de sessions GA4 chargée pour le tableau COS site web (semaine -> sessions)
 let _lastCosGa4Map = null;
+// Groupes de colonnes masqués (style "grouper" Excel) dans le tableau COS site web
+let _cosHiddenGroups = {};
+// Données importées depuis les CSV Google Ads (par semaine "Sxx")
+let _gadsSearchTerms = {};   // { "S23": [{term, cost, impr, clicks, conv}, ...] }
+let _gadsProductCost = {};   // { "S23": [{ref, title, cost, impr, clicks, conv}, ...] }
+let _gadsLastImports = [];   // log des derniers imports (nom fichier, type, semaine, statut)
 
 async function sb(table, params="") {
   const r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, {
@@ -11566,12 +11572,20 @@ function _buildCosSiteTable(ga4Map) {
   var curParsed = nowWk ? parseWeekLabel(nowWk.label) : null;
   var curWeekNum = curParsed ? curParsed.week : null;
 
-  function inputCell(wk, field, val) {
-    return '<td style="' + TD + '"><input type="number" step="0.01" value="' + (val !== null && val !== undefined ? val : '') + '" placeholder="—" onchange="saveCosManuel(this,\'' + wk + '\',\'' + field + '\')" style="width:72px;text-align:right;border:1px solid var(--border);border-radius:4px;padding:3px 5px;font-size:12px;background:var(--bgC);color:inherit;font-family:inherit"></td>';
-  }
-  function pctCell(cost, ca) {
-    if (cost === null || cost === undefined || !ca) return '<td style="' + TD + '">—</td>';
-    return '<td style="' + TD + '">' + (cost / ca * 100).toFixed(1) + '%</td>';
+  // Définition des groupes de colonnes repliables (style "grouper" Excel)
+  var groups = [
+    { key: 'meta', label: 'Meta', field: 'meta', th: 'Coût Meta (€)' },
+    { key: 'pinterest', label: 'Pinterest', field: 'pinterest', th: 'Coût Pinterest (€)' },
+    { key: 'tiktok', label: 'TikTok', field: 'tiktok', th: 'Coût TikTok (€)' },
+    { key: 'agences', label: 'Agences', field: 'agences', th: 'Agences (€)' },
+    { key: 'mollie', label: 'Mollie', field: 'mollie_fees', th: 'Frais Mollie (€)' },
+    { key: 'paypal', label: 'PayPal', field: 'paypal_fees', th: 'Frais PayPal (€)' },
+    { key: 'bnpl', label: 'BNPL', field: 'bnpl', th: 'Frais BNPL Alma (€)' },
+  ];
+
+  function cellStyle(extra) { return TD + (extra || ''); }
+  function inputCell(wk, field, val, hideStyle) {
+    return '<td style="' + cellStyle(hideStyle) + '"><input type="number" step="0.01" value="' + (val !== null && val !== undefined ? val : '') + '" placeholder="—" onchange="saveCosManuel(this,\'' + wk + '\',\'' + field + '\')" style="width:72px;text-align:right;border:1px solid var(--border);border-radius:4px;padding:3px 5px;font-size:12px;background:var(--bgC);color:inherit;font-family:inherit"></td>';
   }
 
   var rows = '';
@@ -11591,9 +11605,17 @@ function _buildCosSiteTable(ga4Map) {
     var paypal = (m.paypal_fees !== undefined && m.paypal_fees !== null) ? m.paypal_fees : null;
     var bnpl = (m.bnpl !== undefined && m.bnpl !== null) ? m.bnpl : null;
     var totalCost = [gads, meta, pinterest, tiktok, agences, mollie, paypal, bnpl].reduce(function(a, v) { return a + (v || 0); }, 0);
+    var mediaCost = [gads, meta, pinterest, tiktok].reduce(function(a, v) { return a + (v || 0); }, 0);
+    var cosMedia = ca > 0 ? (mediaCost / ca * 100) : null;
     var cosBlended = ca > 0 ? (totalCost / ca * 100) : null;
     var isCur = (curWeekNum === w);
     var rowBg = isCur ? 'background:var(--acBg);' : (w % 2 ? 'background:var(--bg);' : '');
+    var values = { meta: meta, pinterest: pinterest, tiktok: tiktok, agences: agences, mollie_fees: mollie, paypal_fees: paypal, bnpl: bnpl };
+    var groupCells = '';
+    groups.forEach(function(g) {
+      var hide = _cosHiddenGroups[g.key] ? ';display:none' : '';
+      groupCells += inputCell(wk, g.field, values[g.field], hide);
+    });
     rows += '<tr style="' + rowBg + 'border-bottom:1px solid var(--borderL)">'
       + '<td style="' + TD.replace('text-align:right', 'text-align:left') + ';font-weight:' + (isCur ? 700 : 500) + '">' + wk + (isCur ? ' ←' : '') + '</td>'
       + '<td style="' + TD + '">' + (ca ? Math.round(ca).toLocaleString('fr-FR') + '€' : '—') + '</td>'
@@ -11601,24 +11623,29 @@ function _buildCosSiteTable(ga4Map) {
       + '<td style="' + TD + '">' + (sessions != null ? Math.round(sessions).toLocaleString('fr-FR') : (ga4Map ? '—' : '…')) + '</td>'
       + '<td style="' + TD + '">' + (cvr != null ? cvr.toFixed(2) + '%' : '—') + '</td>'
       + inputCell(wk, 'gads', gads)
-      + pctCell(gads, ca)
-      + inputCell(wk, 'meta', meta)
-      + pctCell(meta, ca)
-      + inputCell(wk, 'pinterest', pinterest)
-      + pctCell(pinterest, ca)
-      + inputCell(wk, 'tiktok', tiktok)
-      + pctCell(tiktok, ca)
-      + inputCell(wk, 'agences', agences)
-      + inputCell(wk, 'mollie_fees', mollie)
-      + inputCell(wk, 'paypal_fees', paypal)
-      + inputCell(wk, 'bnpl', bnpl)
+      + groupCells
+      + '<td style="' + TD + '">' + (cosMedia != null ? cosMedia.toFixed(1) + '%' : '—') + '</td>'
       + '<td style="' + TD + ';font-weight:600">' + (cosBlended != null ? cosBlended.toFixed(1) + '%' : '—') + '</td>'
       + '</tr>';
   }
 
-  return '<div class="card" style="padding:0;overflow:hidden">'
+  var toggleBar = '<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;align-items:center">'
+    + '<span style="font-size:11px;color:var(--txS);font-weight:600">Colonnes :</span>'
+    + groups.map(function(g) {
+        var hidden = !!_cosHiddenGroups[g.key];
+        return '<button onclick="_toggleCosGroup(\'' + g.key + '\')" style="padding:3px 9px;border:.5px solid var(--border);border-radius:6px;font-size:11px;background:' + (hidden ? 'var(--bg)' : 'var(--puBg)') + ';color:' + (hidden ? 'var(--txS)' : 'var(--pu)') + ';cursor:pointer;font-family:inherit">' + (hidden ? '+' : '−') + ' ' + g.label + '</button>';
+      }).join('')
+    + '</div>';
+
+  var groupHeaders = groups.map(function(g) {
+    var hide = _cosHiddenGroups[g.key] ? ';display:none' : '';
+    return '<th style="' + TH + hide + '">' + g.th + '</th>';
+  }).join('');
+
+  return toggleBar
+    + '<div class="card" style="padding:0;overflow:hidden">'
     + '<div style="overflow-x:auto;max-height:70vh;overflow-y:auto">'
-    + '<table style="min-width:1750px;border-collapse:collapse;width:100%">'
+    + '<table style="min-width:1450px;border-collapse:collapse;width:100%">'
     + '<thead><tr>'
     + '<th style="' + THL + '">Semaine</th>'
     + '<th style="' + TH + '">CA PS (HT)</th>'
@@ -11626,22 +11653,20 @@ function _buildCosSiteTable(ga4Map) {
     + '<th style="' + TH + '">Sessions GA4</th>'
     + '<th style="' + TH + '">CVR</th>'
     + '<th style="' + TH + '">Coût GAds (€)</th>'
-    + '<th style="' + TH + '">COS Google</th>'
-    + '<th style="' + TH + '">Coût Meta (€)</th>'
-    + '<th style="' + TH + '">COS Meta</th>'
-    + '<th style="' + TH + '">Coût Pinterest (€)</th>'
-    + '<th style="' + TH + '">COS Pinterest</th>'
-    + '<th style="' + TH + '">Coût TikTok (€)</th>'
-    + '<th style="' + TH + '">COS TikTok</th>'
-    + '<th style="' + TH + '">Agences (€)</th>'
-    + '<th style="' + TH + '">Frais Mollie (€)</th>'
-    + '<th style="' + TH + '">Frais PayPal (€)</th>'
-    + '<th style="' + TH + '">Frais BNPL Alma (€)</th>'
+    + groupHeaders
+    + '<th style="' + TH + '">COS média (%)</th>'
     + '<th style="' + TH + '">COS blended</th>'
     + '</tr></thead>'
     + '<tbody>' + rows + '</tbody>'
     + '</table></div></div>'
-    + '<div style="font-size:11px;color:var(--txS);margin-top:8px">Coût GAds, Meta, Pinterest, TikTok, Agences, Frais PayPal et Frais BNPL (Alma) : saisie manuelle hebdomadaire, enregistrée pour tous les utilisateurs. Frais Mollie alimentés via le bouton "Sync Mollie" (corrigeable manuellement). Le coût GAds sera alimenté automatiquement via import CSV (onglet "Analyse Perf. G. Ads") une fois disponible.</div>';
+    + '<div style="font-size:11px;color:var(--txS);margin-top:8px">Coût GAds, Meta, Pinterest, TikTok, Agences, Frais PayPal et Frais BNPL (Alma) : saisie manuelle hebdomadaire, enregistrée pour tous les utilisateurs. Frais Mollie/PayPal alimentés via les boutons de sync (corrigeables manuellement). COS média = (GAds + Meta + Pinterest + TikTok) / CA. COS blended = tous les coûts (média + agences + frais PSP/BNPL) / CA. Utilisez les boutons "Colonnes" pour masquer/afficher les colonnes peu utilisées.</div>';
+}
+
+// Affiche/masque un groupe de colonnes dans le tableau COS site web
+function _toggleCosGroup(key) {
+  _cosHiddenGroups[key] = !_cosHiddenGroups[key];
+  var c = document.getElementById('cos-site-container');
+  if (c) c.innerHTML = _buildCosSiteTable(_lastCosGa4Map);
 }
 
 // Lance la synchronisation des frais Mollie (Settlements) -> cos_site_manuel.mollie_fees / psp
@@ -11707,15 +11732,221 @@ async function renderSiteGAdsAnalyse() {
   const el = document.getElementById('content');
   el.innerHTML =
     '<div style="font-size:15px;font-weight:700;margin-bottom:16px">Analyse Perf. G. Ads</div>'
-    + '<div class="card" style="padding:20px;font-size:13px;color:var(--txS);line-height:1.7">'
-    + 'Cet onglet affichera, une fois les fichiers CSV fournis par l\'équipe :'
-    + '<ul style="margin:10px 0 0 18px">'
-    + '<li><b>Budget Google Ads</b> par semaine et par type de campagne — alimente automatiquement la colonne "Coût GAds" de l\'onglet COS site web.</li>'
-    + '<li><b>Top 20 des termes de recherche</b> avec coûts, impressions, clics, conversions.</li>'
-    + '<li><b>Coût par produit</b> rapproché des ventes Prestashop (matching par référence), avec catégorisation automatique : Performers, Brûleurs de budget, Potentiel, Fantômes, Invisibles.</li>'
-    + '</ul>'
-    + '<div style="margin-top:12px">📩 En attente des 3 fichiers CSV.</div>'
-    + '</div>';
+    + '<div class="card" style="padding:16px;margin-bottom:16px">'
+    + '<div style="font-size:13px;font-weight:600;margin-bottom:8px">Importer des exports Google Ads (CSV)</div>'
+    + '<div style="font-size:11px;color:var(--txS);margin-bottom:10px">Glisse/sélectionne un ou plusieurs fichiers (export "Campagne", "Search" ou "ID Produit"). La date est détectée automatiquement depuis l\'en-tête du fichier (ex: "June 1, 2026 - June 7, 2026") et convertie en semaine ISO. Seules les semaines complètes (lundi → dimanche) sont prises en compte.</div>'
+    + '<input type="file" id="gads-csv-input" accept=".csv" multiple onchange="handleGAdsCsvImport(this.files)" style="font-size:12px">'
+    + '<div id="gads-import-log" style="margin-top:10px;font-size:11px;color:var(--txS)"></div>'
+    + '</div>'
+    + '<div id="gads-analysis-container">' + _renderGAdsAnalysisContent() + '</div>';
+}
+
+function _renderGAdsAnalysisContent() {
+  var hasSearch = Object.keys(_gadsSearchTerms).length > 0;
+  var hasProduct = Object.keys(_gadsProductCost).length > 0;
+  if (!hasSearch && !hasProduct) {
+    return '<div class="card" style="padding:20px;font-size:13px;color:var(--txS);line-height:1.7">'
+      + 'Importe un fichier "Search" (top termes de recherche) ou "ID Produit" (coût par produit) pour voir les analyses ici. '
+      + 'L\'import d\'un fichier "Campagne" met automatiquement à jour la colonne "Coût GAds" de l\'onglet COS site web.'
+      + '</div>';
+  }
+  var html = '';
+  var TH = 'padding:7px 10px;text-align:right;font-size:11px;font-weight:600;color:var(--txS);background:var(--bg);border-bottom:1px solid var(--border);white-space:nowrap';
+  var THL = TH.replace('text-align:right', 'text-align:left');
+  var TD = 'padding:6px 10px;font-size:12px;border-bottom:1px solid var(--borderL);text-align:right;';
+  var TDL = TD.replace('text-align:right', 'text-align:left');
+
+  // ── Top 20 termes de recherche (semaine la plus récente importée) ──
+  if (hasSearch) {
+    var weeks = Object.keys(_gadsSearchTerms).sort();
+    var lastWk = weeks[weeks.length - 1];
+    var terms = (_gadsSearchTerms[lastWk] || []).slice().sort(function(a, b) { return b.cost - a.cost; }).slice(0, 20);
+    html += '<div class="card" style="padding:0;overflow:hidden;margin-bottom:16px">'
+      + '<div style="padding:10px 14px;font-size:13px;font-weight:600;border-bottom:1px solid var(--border)">Top 20 termes de recherche — ' + lastWk + '</div>'
+      + '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%">'
+      + '<thead><tr><th style="' + THL + '">Terme de recherche</th><th style="' + TH + '">Coût (€)</th><th style="' + TH + '">Impr.</th><th style="' + TH + '">Clics</th><th style="' + TH + '">Conversions</th></tr></thead><tbody>';
+    terms.forEach(function(t) {
+      html += '<tr><td style="' + TDL + '">' + t.term + '</td><td style="' + TD + '">' + t.cost.toFixed(2) + '€</td><td style="' + TD + '">' + t.impr.toLocaleString('fr-FR') + '</td><td style="' + TD + '">' + t.clicks.toLocaleString('fr-FR') + '</td><td style="' + TD + '">' + t.conv.toFixed(2) + '</td></tr>';
+    });
+    html += '</tbody></table></div></div>';
+  }
+
+  // ── Coût par produit, rapproché du CA Prestashop, catégorisé ──
+  if (hasProduct) {
+    var pweeks = Object.keys(_gadsProductCost).sort();
+    var plastWk = pweeks[pweeks.length - 1];
+    var parsed = parseWeekLabel(plastWk);
+    var products = _gadsProductCost[plastWk] || [];
+
+    // CA Prestashop par référence produit, pour la même semaine ISO
+    var revByRef = {};
+    if (parsed) {
+      (STATE.psSalesDaily || []).forEach(function(s) {
+        var d = String(s.sale_date || '').slice(0, 10);
+        if (!d || !s.product_ref) return;
+        var wInfo = isoWeekLabel(d);
+        var p = wInfo ? parseWeekLabel(wInfo.label) : null;
+        if (!p || p.year !== parsed.year || p.week !== parsed.week) return;
+        revByRef[s.product_ref] = (revByRef[s.product_ref] || 0) + (parseFloat(s.revenue_ht) || 0);
+      });
+    }
+
+    var categories = { 'Performers': [], 'Potentiel': [], 'Brûleurs de budget': [], 'Fantômes': [], 'Invisibles': [] };
+    products.forEach(function(p) {
+      var rev = revByRef[p.ref] || 0;
+      var cos = rev > 0 ? (p.cost / rev * 100) : null;
+      var cat;
+      if (p.clicks <= 2 && p.conv === 0) cat = 'Invisibles';
+      else if (rev === 0 && p.cost > 0) cat = 'Fantômes';
+      else if (cos !== null && cos > 30) cat = 'Brûleurs de budget';
+      else if (cos !== null && cos >= 10) cat = 'Potentiel';
+      else cat = 'Performers';
+      categories[cat].push(Object.assign({}, p, { rev: rev, cos: cos }));
+    });
+
+    html += '<div class="card" style="padding:0;overflow:hidden">'
+      + '<div style="padding:10px 14px;font-size:13px;font-weight:600;border-bottom:1px solid var(--border)">Coût par produit vs CA — ' + plastWk + '</div>';
+    Object.keys(categories).forEach(function(cat) {
+      var list = categories[cat].slice().sort(function(a, b) { return b.cost - a.cost; });
+      if (!list.length) return;
+      html += '<div style="padding:10px 14px;font-size:12px;font-weight:600;background:var(--bg);border-bottom:1px solid var(--border)">' + cat + ' (' + list.length + ')</div>'
+        + '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%">'
+        + '<thead><tr><th style="' + THL + '">Produit</th><th style="' + TH + '">Réf.</th><th style="' + TH + '">Coût Ads (€)</th><th style="' + TH + '">CA PS (€)</th><th style="' + TH + '">COS</th><th style="' + TH + '">Clics</th><th style="' + TH + '">Conv.</th></tr></thead><tbody>';
+      list.slice(0, 30).forEach(function(p) {
+        html += '<tr><td style="' + TDL + '">' + (p.title || '—') + '</td><td style="' + TD + '">' + (p.ref || '—') + '</td><td style="' + TD + '">' + p.cost.toFixed(2) + '€</td><td style="' + TD + '">' + (p.rev ? p.rev.toFixed(2) + '€' : '—') + '</td><td style="' + TD + '">' + (p.cos != null ? p.cos.toFixed(1) + '%' : '—') + '</td><td style="' + TD + '">' + p.clicks.toLocaleString('fr-FR') + '</td><td style="' + TD + '">' + p.conv.toFixed(2) + '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+    });
+    html += '</div>';
+  }
+
+  return html;
+}
+
+// Parse un nombre au format export Google Ads : "1,234.56" ou "1 234" -> 1234.56 (point décimal US)
+function _parseGAdsNumber(v) {
+  if (v === undefined || v === null) return 0;
+  var s = String(v).replace(/"/g, '').trim().replace(/,/g, '');
+  var n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
+
+// Parse l'en-tête "June 1, 2026 - June 7, 2026" -> { start: Date, end: Date }
+function _parseGAdsDateRange(line) {
+  var clean = String(line || '').replace(/"/g, '').trim();
+  var parts = clean.split(' - ');
+  if (parts.length !== 2) return null;
+  var start = new Date(parts[0].trim() + ' UTC');
+  var end = new Date(parts[1].trim() + ' UTC');
+  if (isNaN(start) || isNaN(end)) return null;
+  return { start: start, end: end };
+}
+
+// Lit un fichier CSV Google Ads (encodage UTF-16LE habituel) et retourne ses lignes (tableaux de cellules)
+function _readGAdsCsv(file) {
+  return new Promise(function(resolve, reject) {
+    var reader = new FileReader();
+    reader.onerror = function() { reject(new Error('Lecture du fichier impossible')); };
+    reader.onload = function() {
+      var buf = reader.result;
+      var text;
+      try {
+        text = new TextDecoder('utf-16le').decode(buf);
+        if (text.indexOf('\t') === -1) text = new TextDecoder('utf-8').decode(buf);
+      } catch (e) {
+        text = new TextDecoder('utf-8').decode(buf);
+      }
+      var lines = text.split(/\r?\n/).filter(function(l) { return l.trim().length; });
+      var rows = lines.map(function(l) { return l.split('\t'); });
+      resolve(rows);
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+async function handleGAdsCsvImport(fileList) {
+  var logEl = document.getElementById('gads-import-log');
+  var files = Array.prototype.slice.call(fileList || []);
+  if (!files.length) return;
+  var logLines = [];
+
+  for (const file of files) {
+    try {
+      var rows = await _readGAdsCsv(file);
+      if (rows.length < 3) { logLines.push('❌ ' + file.name + ' : format non reconnu (trop peu de lignes).'); continue; }
+
+      var range = _parseGAdsDateRange(rows[1][0]);
+      if (!range) { logLines.push('❌ ' + file.name + ' : impossible de détecter la période (ligne 2).'); continue; }
+
+      var startInfo = isoWeekLabel(range.start.toISOString().slice(0, 10));
+      var endInfo = isoWeekLabel(range.end.toISOString().slice(0, 10));
+      var startWk = startInfo ? parseWeekLabel(startInfo.label) : null;
+      var endWk = endInfo ? parseWeekLabel(endInfo.label) : null;
+      var diffDays = Math.round((range.end - range.start) / 86400000);
+      var isFullWeek = startWk && endWk && startWk.year === endWk.year && startWk.week === endWk.week && diffDays === 6;
+      if (!isFullWeek) {
+        logLines.push('⚠️ ' + file.name + ' : période ' + rows[1][0].replace(/"/g, '') + ' n\'est pas une semaine complète (lundi→dimanche) — ignoré.');
+        continue;
+      }
+      var wkLabel = 'S' + startWk.week;
+      var year = startWk.year;
+
+      var header = rows[2].map(function(h) { return h.trim().toLowerCase(); });
+      var dataRows = rows.slice(3);
+
+      var costIdx = header.indexOf('cost');
+      var imprIdx = header.findIndex(function(h) { return h.indexOf('impr') === 0; });
+      var clicksIdx = header.indexOf('clicks');
+      var convIdx = header.indexOf('conversions');
+
+      if (header.indexOf('campaign') !== -1) {
+        // ── Fichier "Campagne" : total des coûts -> cos_site_manuel.gads ──
+        var total = 0;
+        dataRows.forEach(function(r) { total += _parseGAdsNumber(r[costIdx]); });
+        total = Math.round(total * 100) / 100;
+
+        if (year === 2026) {
+          var existing = (STATE.cosManuel || []).find(function(r) { return r.semaine === wkLabel; }) || {};
+          var row = Object.assign({ marketplace: 'site_internet', semaine: wkLabel, gads: null, meta: null, pinterest: null, tiktok: null, agences: null, mollie_fees: null, paypal_fees: null, bnpl: null }, existing);
+          row.gads = total;
+          delete row.id; delete row.created_at; delete row.updated_at;
+          await sbUpsert('cos_site_manuel', [row], 'marketplace,semaine');
+          STATE.cosManuel = (STATE.cosManuel || []).filter(function(r) { return r.semaine !== wkLabel; });
+          STATE.cosManuel.push(row);
+          var c = document.getElementById('cos-site-container');
+          if (c) c.innerHTML = _buildCosSiteTable(_lastCosGa4Map);
+          logLines.push('✅ ' + file.name + ' : Coût GAds ' + wkLabel + ' = ' + total.toFixed(2) + '€ enregistré (onglet COS site web).');
+        } else {
+          logLines.push('⚠️ ' + file.name + ' : semaine ' + wkLabel + ' ' + year + ' hors année 2026 — non enregistré.');
+        }
+      } else if (header.indexOf('search term') !== -1) {
+        // ── Fichier "Search" : top termes de recherche ──
+        var termIdx = header.indexOf('search term');
+        var terms = dataRows.map(function(r) {
+          return { term: (r[termIdx] || '').replace(/"/g, ''), cost: _parseGAdsNumber(r[costIdx]), impr: _parseGAdsNumber(r[imprIdx]), clicks: _parseGAdsNumber(r[clicksIdx]), conv: _parseGAdsNumber(r[convIdx]) };
+        });
+        _gadsSearchTerms[wkLabel] = terms;
+        logLines.push('✅ ' + file.name + ' : ' + terms.length + ' termes de recherche importés pour ' + wkLabel + '.');
+      } else if (header.indexOf('item id') !== -1 || header.indexOf('item id ') !== -1) {
+        // ── Fichier "ID Produit" : coût par produit ──
+        var refIdx = header.indexOf('item id');
+        var titleIdx = header.findIndex(function(h) { return h.indexOf('title') !== -1 || h.indexOf('product') !== -1; });
+        var products = dataRows.map(function(r) {
+          return { ref: (r[refIdx] || '').replace(/"/g, ''), title: titleIdx !== -1 ? (r[titleIdx] || '').replace(/"/g, '') : '', cost: _parseGAdsNumber(r[costIdx]), impr: _parseGAdsNumber(r[imprIdx]), clicks: _parseGAdsNumber(r[clicksIdx]), conv: _parseGAdsNumber(r[convIdx]) };
+        });
+        _gadsProductCost[wkLabel] = products;
+        logLines.push('✅ ' + file.name + ' : ' + products.length + ' produits importés pour ' + wkLabel + '.');
+      } else {
+        logLines.push('❌ ' + file.name + ' : type de fichier non reconnu (colonnes inattendues).');
+      }
+    } catch (e) {
+      logLines.push('❌ ' + file.name + ' : erreur — ' + e.message);
+    }
+  }
+
+  if (logEl) logEl.innerHTML = logLines.map(function(l) { return '<div>' + l + '</div>'; }).join('');
+  var ac = document.getElementById('gads-analysis-container');
+  if (ac) ac.innerHTML = _renderGAdsAnalysisContent();
 }
 
 async function renderSiteBacklog() {
