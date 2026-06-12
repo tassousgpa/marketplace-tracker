@@ -11514,14 +11514,17 @@ async function renderSiteCOS() {
     + '<div id="cos-site-container">' + _buildCosSiteTable(null) + '</div>';
 
   try {
-    const evol = await fetch('/api/ga4?type=total_evolution').then(r => r.json());
+    const evol = await fetch('/api/ga4?type=total_daily_evolution').then(r => r.json());
     const ga4Map = {};
-    (evol.weeks || []).forEach(function(w) {
-      const yw = String(w.yearWeek || '');
-      if (yw.length >= 6) {
-        const yr = yw.slice(0, 4), wk = parseInt(yw.slice(4), 10);
-        ga4Map[yr + '-S' + wk] = w.sessions;
-      }
+    (evol.days || []).forEach(function(d) {
+      const date = String(d.date || '');
+      if (!date) return;
+      const wInfo = isoWeekLabel(date);
+      if (!wInfo) return;
+      const parsed = parseWeekLabel(wInfo.label);
+      if (!parsed) return;
+      const key = parsed.year + '-S' + parsed.week;
+      ga4Map[key] = (ga4Map[key] || 0) + (d.sessions || 0);
     });
     _lastCosGa4Map = ga4Map;
     const c = document.getElementById('cos-site-container');

@@ -253,6 +253,102 @@ async function getCachedEvolution(token, propertyId, channel, dimensionFilter) {
   return parseRows(data).map(r => ({ yearWeek: r.dims[0], sessions: r.mets[0] }));
 }
 
+// Variante journalière : récupère/cache les sessions par date (YYYY-MM-DD) au lieu
+// du yearWeek GA4 (qui ne correspond pas aux semaines ISO Lundi-Dimanche utilisées
+// dans le reste de l'outil). L'agrégation en semaines ISO se fait côté front.
+async function getCachedDailyEvolution(token, propertyId, channel, dimensionFilter) {
+  const range = evolRange();
+  const metaChannel = channel + '_daily';
+
+  let lastEnd = null;
+  try {
+    const meta = await sbSelect('ga4_sync_meta', `channel=eq.${metaChannel}&select=last_end_date`);
+    lastEnd = meta[0]?.last_end_date || null;
+  } catch (e) {
+    lastEnd = null;
+  }
+
+  let fetchStart = range.start;
+  let needsFetch = true;
+  if (lastEnd) {
+    if (lastEnd >= range.end) {
+      needsFetch = false;
+    } else {
+      const d = new Date(lastEnd);
+      d.setUTCDate(d.getUTCDate() - 6);
+      const minStart = new Date(range.start);
+      fetchStart = (d < minStart ? minStart : d).toISOString().slice(0, 10);
+    }
+  }
+
+  if (needsFetch) {
+    const chunks = [];
+    let curStart = new Date(fetchStart);
+    const end = new Date(range.end);
+    while (curStart <= end) {
+      const curEnd = new Date(curStart);
+      curEnd.setUTCDate(curEnd.getUTCDate() + 29);
+      if (curEnd > end) curEnd.setTime(end.getTime());
+      chunks.push({ start: curStart.toISOString().slice(0, 10), end: curEnd.toISOString().slice(0, 10) });
+      curStart = new Date(curEnd);
+      curStart.setUTCDate(curStart.getUTCDate() + 1);
+    }
+
+    const startTime = Date.now();
+    const DEADLINE_MS = 45000;
+
+    for (const c of chunks) {
+      if (Date.now() - startTime > DEADLINE_MS) break;
+      const body = {
+        dateRanges: [{ startDate: c.start, endDate: c.end }],
+        dimensions: [{ name: 'date' }],
+        metrics: [{ name: 'sessions' }],
+        orderBys: [{ dimension: { dimensionName: 'date' } }],
+      };
+      if (dimensionFilter) body.dimensionFilter = dimensionFilter;
+      let data;
+      try {
+        data = await runReport(token, propertyId, body, 25000);
+      } catch (e) {
+        break;
+      }
+      const rows = parseRows(data)
+        .map(r => {
+          const raw = r.dims[0]; // YYYYMMDD
+          if (!raw || raw.length !== 8) return null;
+          const iso = raw.slice(0, 4) + '-' + raw.slice(4, 6) + '-' + raw.slice(6, 8);
+          return { channel, date: iso, sessions: r.mets[0] };
+        })
+        .filter(Boolean);
+      try {
+        if (rows.length) await sbUpsert('ga4_daily_stats', rows, 'channel,date');
+        await sbUpsert('ga4_sync_meta', [{ channel: metaChannel, last_end_date: c.end }], 'channel');
+      } catch (e) {
+        break;
+      }
+    }
+  }
+
+  try {
+    const cached = await sbSelect('ga4_daily_stats', `channel=eq.${channel}&select=date,sessions&order=date.asc&limit=1000`);
+    if (cached.length) return cached.map(r => ({ date: r.date, sessions: r.sessions }));
+  } catch (e) { /* ignore, fallback ci-dessous */ }
+
+  const body = {
+    dateRanges: [{ startDate: range.start, endDate: range.end }],
+    dimensions: [{ name: 'date' }],
+    metrics: [{ name: 'sessions' }],
+    orderBys: [{ dimension: { dimensionName: 'date' } }],
+  };
+  if (dimensionFilter) body.dimensionFilter = dimensionFilter;
+  const data = await runReport(token, propertyId, body);
+  return parseRows(data).map(r => {
+    const raw = r.dims[0];
+    const iso = raw.slice(0, 4) + '-' + raw.slice(4, 6) + '-' + raw.slice(6, 8);
+    return { date: iso, sessions: r.mets[0] };
+  });
+}
+
 // Cache du token au niveau du module : réutilisé entre invocations tant que
 // l'instance serverless reste "chaude", pour éviter un aller-retour OAuth
 // (souvent 200-500ms) à chaque appel de l'API GA4.
@@ -621,6 +717,13 @@ module.exports = async function handler(req, res) {
       const weeks = await getCachedEvolution(token, propertyId, 'total', null);
       res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=300');
       return res.status(200).json({ weeks });
+    }
+
+    // ── Trafic total — évolution journalière (pour agrégation en semaines ISO côté front) ──
+    if (type === 'total_daily_evolution') {
+      const days = await getCachedDailyEvolution(token, propertyId, 'total', null);
+      res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=300');
+      return res.status(200).json({ days });
     }
 
     // ── Trafic total — conversion 3 derniers jours vs moyenne YTD (tous canaux) ──
