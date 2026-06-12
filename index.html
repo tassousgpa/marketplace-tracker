@@ -11508,6 +11508,9 @@ async function renderSiteCOS() {
   const el = document.getElementById('content');
   el.innerHTML =
     '<div style="font-size:15px;font-weight:700;margin-bottom:16px">COS site web</div>'
+    + '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">'
+    + '<button id="sync-mollie-btn" onclick="syncMollieFees()" style="padding:7px 16px;border:.5px solid var(--pu);border-radius:8px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">🔄 Sync Mollie (frais PSP)</button>'
+    + '</div>'
     + '<div id="cos-site-container">' + _buildCosSiteTable(null) + '</div>';
 
   try {
@@ -11632,6 +11635,23 @@ function _buildCosSiteTable(ga4Map) {
     + '<tbody>' + rows + '</tbody>'
     + '</table></div></div>'
     + '<div style="font-size:11px;color:var(--txS);margin-top:8px">Coût GAds, Meta, Pinterest, TikTok, Agences, Frais PSP (Mollie+Paypal) et Frais BNPL (Alma) : saisie manuelle hebdomadaire, enregistrée pour tous les utilisateurs. Le coût GAds sera alimenté automatiquement via import CSV (onglet "Analyse Perf. G. Ads") une fois disponible.</div>';
+}
+
+// Lance la synchronisation des frais Mollie (Settlements) -> cos_site_manuel.mollie_fees / psp
+async function syncMollieFees() {
+  var btn = document.getElementById('sync-mollie-btn');
+  var origText = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Synchronisation Mollie...'; }
+  try {
+    var r = await fetch('/api/mollie?type=sync').then(function(r){ return r.json(); });
+    if (r.error) { alert('Erreur Mollie : ' + r.error); return; }
+    await loadData();
+    alert('Sync Mollie OK : ' + r.weeksUpdated + ' semaine(s) mise(s) à jour (' + r.settlements + ' règlements analysés).');
+  } catch(e) {
+    alert('Erreur lors de la synchronisation Mollie : ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = origText; }
+  }
 }
 
 // Enregistre une saisie manuelle hebdomadaire COS site web (persisté Supabase, partagé entre tous les users)

@@ -1,6 +1,7 @@
 {
   "functions": {
     "api/ga4.js": { "maxDuration": 60 },
-    "api/searchconsole.js": { "maxDuration": 30 }
+    "api/searchconsole.js": { "maxDuration": 30 },
+    "api/mollie.js": { "maxDuration": 30 }
   }
 }
