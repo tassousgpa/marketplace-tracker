@@ -11514,13 +11514,7 @@ async function renderSiteCOS() {
   const el = document.getElementById('content');
   el.innerHTML =
     '<div style="font-size:15px;font-weight:700;margin-bottom:16px">COS site web</div>'
-    + '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">'
-    + '<button id="sync-mollie-btn" onclick="syncMollieFees()" style="padding:7px 16px;border:.5px solid var(--pu);border-radius:8px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">🔄 Sync Mollie (frais PSP)</button>'
-    + '<button id="sync-paypal-btn" onclick="syncPaypalFees()" style="padding:7px 16px;border:.5px solid var(--pu);border-radius:8px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">🔄 Sync PayPal (frais)</button>'
-    + '<label for="gads-weekly-history-input" style="padding:7px 16px;border:.5px solid var(--pu);border-radius:8px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">📥 Importer historique GAds (CSV par semaine)</label>'
-    + '<input type="file" id="gads-weekly-history-input" accept=".csv" multiple onchange="gadsWeeklyHistoryImport(this.files)" style="display:none">'
-    + '</div>'
-    + '<div id="gads-weekly-import-log" style="font-size:11px;color:var(--txS);margin:-8px 0 12px"></div>'
+    + '<div id="cos-kpi-container">' + _buildCosKpiCards() + '</div>'
     + '<div id="cos-site-container">' + _buildCosSiteTable(null) + '</div>';
 
   try {
@@ -11546,8 +11540,107 @@ async function renderSiteCOS() {
   }
 }
 
+// Construit un chemin SVG de secteur de camembert (centre cx,cy, rayon r, angles en radians)
+function _pieSlicePath(cx, cy, r, startAngle, endAngle) {
+  var x1 = cx + r * Math.cos(startAngle), y1 = cy + r * Math.sin(startAngle);
+  var x2 = cx + r * Math.cos(endAngle), y2 = cy + r * Math.sin(endAngle);
+  var large = (endAngle - startAngle) > Math.PI ? 1 : 0;
+  return 'M' + cx + ',' + cy + ' L' + x1.toFixed(2) + ',' + y1.toFixed(2) + ' A' + r + ',' + r + ' 0 ' + large + ',1 ' + x2.toFixed(2) + ',' + y2.toFixed(2) + ' Z';
+}
+
+// Cartes KPI : COS média / COS blended de la semaine pleine précédente + répartition des dépenses média
+function _buildCosKpiCards() {
+  var YEAR = 2026;
+  var weekCA = {};
+  (STATE.psSalesDaily || []).forEach(function(s) {
+    var d = String(s.sale_date || '').slice(0, 10);
+    if (!d) return;
+    var wInfo = isoWeekLabel(d);
+    if (!wInfo) return;
+    var parsed = parseWeekLabel(wInfo.label);
+    if (!parsed || parsed.year !== YEAR) return;
+    var wk = 'S' + parsed.week;
+    weekCA[wk] = (weekCA[wk] || 0) + (parseFloat(s.revenue_ht) || 0) + (parseFloat(s.shipping_ht) || 0);
+  });
+  var manual = {};
+  (STATE.cosManuel || []).forEach(function(r) { manual[r.semaine] = r; });
+
+  var nowWk = isoWeekLabel(new Date().toISOString().slice(0, 10));
+  var curParsed = nowWk ? parseWeekLabel(nowWk.label) : null;
+  var curWeekNum = curParsed ? curParsed.week : null;
+  var lastWeekNum = curWeekNum ? curWeekNum - 1 : null;
+  if (!lastWeekNum || lastWeekNum < 1) return '';
+  var wk = 'S' + lastWeekNum;
+  var ca = weekCA[wk] || 0;
+  var m = manual[wk] || {};
+  var gads = m.gads || 0, meta = m.meta || 0, pinterest = m.pinterest || 0, tiktok = m.tiktok || 0;
+  var agences = m.agences || 0, mollie = m.mollie_fees || 0, paypal = m.paypal_fees || 0, bnpl = m.bnpl || 0;
+  var mediaCost = gads + meta + pinterest + tiktok;
+  var totalCost = mediaCost + agences + mollie + paypal + bnpl;
+  var cosMedia = ca > 0 ? (mediaCost / ca * 100) : null;
+  var cosBlended = ca > 0 ? (totalCost / ca * 100) : null;
+
+  var cardCss = 'class="card" style="padding:16px;flex:1;min-width:180px;display:flex;flex-direction:column;gap:6px"';
+  var labelCss = 'font-size:11px;color:var(--txS);font-weight:600;text-transform:uppercase;letter-spacing:.03em';
+  var valueCss = 'font-size:28px;font-weight:800;color:var(--tx)';
+  var subCss = 'font-size:11px;color:var(--txS)';
+
+  var kpi1 = '<div ' + cardCss + '>'
+    + '<div style="' + labelCss + '">COS média — ' + wk + '</div>'
+    + '<div style="' + valueCss + '">' + (cosMedia != null ? cosMedia.toFixed(1) + '%' : '—') + '</div>'
+    + '<div style="' + subCss + '">' + (mediaCost ? Math.round(mediaCost).toLocaleString('fr-FR') + '€ média / ' : '') + (ca ? Math.round(ca).toLocaleString('fr-FR') + '€ CA' : 'CA non disponible') + '</div>'
+    + '</div>';
+
+  var kpi2 = '<div ' + cardCss + '>'
+    + '<div style="' + labelCss + '">COS blended — ' + wk + '</div>'
+    + '<div style="' + valueCss + '">' + (cosBlended != null ? cosBlended.toFixed(1) + '%' : '—') + '</div>'
+    + '<div style="' + subCss + '">' + (totalCost ? Math.round(totalCost).toLocaleString('fr-FR') + '€ coûts totaux' : '—') + '</div>'
+    + '</div>';
+
+  // Répartition des dépenses média (Google / Meta / Pinterest / TikTok)
+  var slices = [
+    { label: 'Google Ads', value: gads, color: '#4285F4' },
+    { label: 'Meta', value: meta, color: '#7C5CFC' },
+    { label: 'Pinterest', value: pinterest, color: '#E60023' },
+    { label: 'TikTok', value: tiktok, color: '#111827' },
+  ].filter(function(s) { return s.value > 0; });
+
+  var pieHtml;
+  if (!slices.length) {
+    pieHtml = '<div style="' + subCss + ';margin-top:6px">Aucune dépense média enregistrée pour ' + wk + '.</div>';
+  } else if (slices.length === 1) {
+    pieHtml = '<svg width="84" height="84" viewBox="0 0 84 84"><circle cx="42" cy="42" r="38" fill="' + slices[0].color + '"><title>' + slices[0].label + ' : ' + Math.round(slices[0].value).toLocaleString('fr-FR') + '€ (100%)</title></circle></svg>';
+  } else {
+    var total = slices.reduce(function(a, s) { return a + s.value; }, 0);
+    var angle = -Math.PI / 2;
+    var paths = '';
+    slices.forEach(function(s) {
+      var frac = s.value / total;
+      var next = angle + frac * 2 * Math.PI;
+      paths += '<path d="' + _pieSlicePath(42, 42, 38, angle, next) + '" fill="' + s.color + '"><title>' + s.label + ' : ' + Math.round(s.value).toLocaleString('fr-FR') + '€ (' + (frac * 100).toFixed(1) + '%)</title></path>';
+      angle = next;
+    });
+    pieHtml = '<svg width="84" height="84" viewBox="0 0 84 84">' + paths + '</svg>';
+  }
+
+  var legend = slices.length ? '<div style="display:flex;flex-direction:column;gap:4px;justify-content:center">'
+    + slices.map(function(s) {
+        var pct = mediaCost > 0 ? (s.value / mediaCost * 100) : 0;
+        return '<div title="' + s.label + ' : ' + Math.round(s.value).toLocaleString('fr-FR') + '€ (' + pct.toFixed(1) + '%)" style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--txS);cursor:default">'
+          + '<span style="width:9px;height:9px;border-radius:2px;background:' + s.color + ';display:inline-block;flex-shrink:0"></span>' + s.label + '</div>';
+      }).join('')
+    + '</div>' : '';
+
+  var kpi3 = '<div class="card" style="padding:16px;flex:2;min-width:260px;display:flex;flex-direction:column;gap:6px">'
+    + '<div style="' + labelCss + '">Répartition média — ' + wk + '</div>'
+    + '<div style="display:flex;align-items:center;gap:16px;margin-top:4px">' + pieHtml + legend + '</div>'
+    + '</div>';
+
+  return '<div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">' + kpi1 + kpi2 + kpi3 + '</div>';
+}
+
 function _buildCosSiteTable(ga4Map) {
-  var TH = 'padding:7px 10px;text-align:right;font-size:11px;font-weight:600;color:var(--txS);background:var(--bg);border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:2';
+  var TH = 'padding:9px 10px;text-align:right;font-size:11px;font-weight:800;letter-spacing:.02em;text-transform:uppercase;color:var(--tx);background:var(--bg);border-bottom:2px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:2';
   var THL = TH.replace('text-align:right', 'text-align:left');
   var TD = 'padding:6px 10px;font-size:12px;border-bottom:1px solid var(--borderL);text-align:right;';
   var YEAR = 2026;
@@ -11638,12 +11731,18 @@ function _buildCosSiteTable(ga4Map) {
       + '</tr>';
   }
 
-  var toggleBar = '<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;align-items:center">'
+  var toggleBar = '<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
     + '<span style="font-size:11px;color:var(--txS);font-weight:600">Colonnes :</span>'
     + groups.map(function(g) {
         var hidden = !!_cosHiddenGroups[g.key];
         return '<button onclick="_toggleCosGroup(\'' + g.key + '\')" style="padding:3px 9px;border:.5px solid var(--border);border-radius:6px;font-size:11px;background:' + (hidden ? 'var(--bg)' : 'var(--puBg)') + ';color:' + (hidden ? 'var(--txS)' : 'var(--pu)') + ';cursor:pointer;font-family:inherit">' + (hidden ? '+' : '−') + ' ' + g.label + '</button>';
       }).join('')
+    + '</div>'
+    + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'
+    + '<button id="sync-mollie-btn" onclick="syncMollieFees()" style="padding:3px 9px;border:.5px solid var(--border);border-radius:6px;font-size:11px;background:var(--bg);color:var(--txS);cursor:pointer;font-family:inherit">🔄 Mollie</button>'
+    + '<button id="sync-paypal-btn" onclick="syncPaypalFees()" style="padding:3px 9px;border:.5px solid var(--border);border-radius:6px;font-size:11px;background:var(--bg);color:var(--txS);cursor:pointer;font-family:inherit">🔄 PayPal</button>'
+    + '</div>'
     + '</div>';
 
   var groupHeaders = groups.map(function(g) {
@@ -11668,7 +11767,7 @@ function _buildCosSiteTable(ga4Map) {
     + '</tr></thead>'
     + '<tbody>' + rows + '</tbody>'
     + '</table></div></div>'
-    + '<div style="font-size:11px;color:var(--txS);margin-top:8px">Coût GAds : alimenté via les imports CSV (onglet "Analyse Perf. G. Ads" et bouton "Importer historique"). Frais Mollie et PayPal : alimentés via les boutons de sync. Ces 3 colonnes sont en lecture seule. Meta, Pinterest, TikTok, Agences et Frais BNPL (Alma) : saisie manuelle hebdomadaire, enregistrée pour tous les utilisateurs. COS média = (GAds + Meta + Pinterest + TikTok) / CA. COS blended = tous les coûts (média + agences + frais PSP/BNPL) / CA. Utilisez les boutons "Colonnes" pour masquer/afficher les colonnes peu utilisées.</div>';
+    + '<div style="font-size:11px;color:var(--txS);margin-top:8px">Coût GAds : alimenté chaque semaine via l\'import CSV "Campagne" (onglet "Analyse Perf. G. Ads"). Frais Mollie et PayPal : alimentés via les boutons de sync ci-dessus. Ces 3 colonnes sont en lecture seule. Meta, Pinterest, TikTok, Agences et Frais BNPL (Alma) : saisie manuelle hebdomadaire, enregistrée pour tous les utilisateurs. COS média = (GAds + Meta + Pinterest + TikTok) / CA. COS blended = tous les coûts (média + agences + frais PSP/BNPL) / CA. Utilisez les boutons "Colonnes" pour masquer/afficher les colonnes peu utilisées.</div>';
 }
 
 // Affiche/masque un groupe de colonnes dans le tableau COS site web
@@ -11773,17 +11872,56 @@ function _renderGAdsAnalysisContent() {
   var TD = 'padding:6px 10px;font-size:12px;border-bottom:1px solid var(--borderL);text-align:right;';
   var TDL = TD.replace('text-align:right', 'text-align:left');
 
-  // ── Top 20 termes de recherche (semaine la plus récente importée) ──
+  // ── Top 20 termes de recherche (semaine la plus récente importée), regroupés par variantes similaires ──
   if (hasSearch) {
     var weeks = Object.keys(_gadsSearchTerms).sort();
     var lastWk = weeks[weeks.length - 1];
-    var terms = (_gadsSearchTerms[lastWk] || []).slice().sort(function(a, b) { return b.cost - a.cost; }).slice(0, 20);
+    var rawTerms = _gadsSearchTerms[lastWk] || [];
+
+    // Regroupe les variantes proches (espaces, accents, pluriel/singulier) sous un même mot-clé
+    var groups2 = {}; // key -> { label, labelCounts: {term: count}, cost, impr, clicks, conv }
+    rawTerms.forEach(function(t) {
+      var key = _gadsKeywordKey(t.term);
+      if (!key) return;
+      if (!groups2[key]) groups2[key] = { labelCounts: {}, cost: 0, impr: 0, clicks: 0, conv: 0 };
+      var g = groups2[key];
+      g.labelCounts[t.term] = (g.labelCounts[t.term] || 0) + 1;
+      g.cost += t.cost; g.impr += t.impr; g.clicks += t.clicks; g.conv += t.conv;
+    });
+    var grouped = Object.keys(groups2).map(function(key) {
+      var g = groups2[key];
+      // Label représentatif : la variante la plus fréquente (ou la plus longue en cas d'égalité)
+      var label = Object.keys(g.labelCounts).sort(function(a, b) {
+        return (g.labelCounts[b] - g.labelCounts[a]) || (b.length - a.length);
+      })[0];
+      var variantCount = Object.keys(g.labelCounts).length;
+      return { label: label, variants: variantCount, cost: g.cost, impr: g.impr, clicks: g.clicks, conv: g.conv };
+    });
+
+    // KPIs globaux (sur l'ensemble des termes importés, avant troncature au top 20)
+    var totCost = 0, totImpr = 0, totClicks = 0, totConv = 0;
+    grouped.forEach(function(g) { totCost += g.cost; totImpr += g.impr; totClicks += g.clicks; totConv += g.conv; });
+    var ctr = totImpr > 0 ? (totClicks / totImpr * 100) : null;
+    var convRate = totClicks > 0 ? (totConv / totClicks * 100) : null;
+    var cpc = totClicks > 0 ? (totCost / totClicks) : null;
+    var cpa = totConv > 0 ? (totCost / totConv) : null;
+
+    var kpiCss = 'flex:1;min-width:130px;padding:10px 14px;border-right:1px solid var(--border)';
+    var kLabel = 'font-size:10px;color:var(--txS);font-weight:600;text-transform:uppercase;letter-spacing:.03em';
+    var kValue = 'font-size:18px;font-weight:800;color:var(--tx);margin-top:2px';
     html += '<div class="card" style="padding:0;overflow:hidden;margin-bottom:16px">'
-      + '<div style="padding:10px 14px;font-size:13px;font-weight:600;border-bottom:1px solid var(--border)">Top 20 termes de recherche — ' + lastWk + '</div>'
+      + '<div style="padding:10px 14px;font-size:13px;font-weight:600;border-bottom:1px solid var(--border)">Top 20 mots-clés (regroupés) — ' + lastWk + '</div>'
+      + '<div style="display:flex;flex-wrap:wrap;border-bottom:1px solid var(--border)">'
+      + '<div style="' + kpiCss + '"><div style="' + kLabel + '">CTR</div><div style="' + kValue + '">' + (ctr != null ? ctr.toFixed(2) + '%' : '—') + '</div></div>'
+      + '<div style="' + kpiCss + '"><div style="' + kLabel + '">Taux de conversion</div><div style="' + kValue + '">' + (convRate != null ? convRate.toFixed(2) + '%' : '—') + '</div></div>'
+      + '<div style="' + kpiCss + '"><div style="' + kLabel + '">CPC moyen</div><div style="' + kValue + '">' + (cpc != null ? cpc.toFixed(2) + '€' : '—') + '</div></div>'
+      + '<div style="' + kpiCss.replace('border-right:1px solid var(--border)', '') + '"><div style="' + kLabel + '">Coût / conversion</div><div style="' + kValue + '">' + (cpa != null ? cpa.toFixed(2) + '€' : '—') + '</div></div>'
+      + '</div>'
       + '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%">'
-      + '<thead><tr><th style="' + THL + '">Terme de recherche</th><th style="' + TH + '">Coût (€)</th><th style="' + TH + '">Impr.</th><th style="' + TH + '">Clics</th><th style="' + TH + '">Conversions</th></tr></thead><tbody>';
-    terms.forEach(function(t) {
-      html += '<tr><td style="' + TDL + '">' + t.term + '</td><td style="' + TD + '">' + t.cost.toFixed(2) + '€</td><td style="' + TD + '">' + t.impr.toLocaleString('fr-FR') + '</td><td style="' + TD + '">' + t.clicks.toLocaleString('fr-FR') + '</td><td style="' + TD + '">' + t.conv.toFixed(2) + '</td></tr>';
+      + '<thead><tr><th style="' + THL + '">Mot-clé</th><th style="' + TH + '">Coût (€)</th><th style="' + TH + '">Impr.</th><th style="' + TH + '">Clics</th><th style="' + TH + '">CTR</th><th style="' + TH + '">Conversions</th></tr></thead><tbody>';
+    grouped.sort(function(a, b) { return b.cost - a.cost; }).slice(0, 20).forEach(function(g) {
+      var gCtr = g.impr > 0 ? (g.clicks / g.impr * 100) : null;
+      html += '<tr><td style="' + TDL + '">' + g.label + (g.variants > 1 ? ' <span style="color:var(--txS);font-size:10px">(+' + (g.variants - 1) + ' variante' + (g.variants > 2 ? 's' : '') + ')</span>' : '') + '</td><td style="' + TD + '">' + g.cost.toFixed(2) + '€</td><td style="' + TD + '">' + Math.round(g.impr).toLocaleString('fr-FR') + '</td><td style="' + TD + '">' + Math.round(g.clicks).toLocaleString('fr-FR') + '</td><td style="' + TD + '">' + (gCtr != null ? gCtr.toFixed(2) + '%' : '—') + '</td><td style="' + TD + '">' + g.conv.toFixed(2) + '</td></tr>';
     });
     html += '</tbody></table></div></div>';
   }
@@ -11846,6 +11984,16 @@ function _parseGAdsNumber(v) {
   var s = String(v).replace(/"/g, '').trim().replace(/,/g, '');
   var n = parseFloat(s);
   return isNaN(n) ? 0 : n;
+}
+
+// Clé de regroupement pour un mot-clé : minuscules, sans accents, sans espaces/ponctuation,
+// et singulier naïf (retire un "s" final) -> permet de fusionner "best mobilier", "bestmobilier",
+// "best mobiliers", "bestmobiliers", etc.
+function _gadsKeywordKey(term) {
+  var s = String(term || '').toLowerCase().normalize('NFD').replace(new RegExp('[\\u0300-\\u036f]', 'g'), '');
+  s = s.replace(/[^a-z0-9]/g, '');
+  if (s.length > 4 && s.charAt(s.length - 1) === 's') s = s.slice(0, -1);
+  return s;
 }
 
 // Parse l'en-tête "June 1, 2026 - June 7, 2026" -> { start: Date, end: Date }
@@ -12016,45 +12164,6 @@ async function gadsProductImport(fileList) {
   if (logEl) logEl.innerHTML = logLines.map(function(l) { return '<div>' + l + '</div>'; }).join('');
   var ac = document.getElementById('gads-analysis-container');
   if (ac) ac.innerHTML = _renderGAdsAnalysisContent();
-}
-
-// ── Import "YTD by Week" (onglet COS site web) : une ligne = une semaine, backfill du Coût GAds ──
-async function gadsWeeklyHistoryImport(fileList) {
-  var logEl = document.getElementById('gads-weekly-import-log');
-  var files = Array.prototype.slice.call(fileList || []);
-  if (!files.length) return;
-  var logLines = [];
-  for (const file of files) {
-    try {
-      var rows = await _readGAdsCsv(file);
-      if (rows.length < 3) { logLines.push('❌ ' + file.name + ' : format non reconnu (trop peu de lignes).'); continue; }
-      var header = rows[2].map(function(h) { return h.trim().toLowerCase(); });
-      if (header.indexOf('week') === -1) { logLines.push('❌ ' + file.name + ' : ce n\'est pas un export "YTD by Week" (colonne "Week" absente).'); continue; }
-      var wIdx = header.indexOf('week');
-      var cIdx = header.indexOf('cost');
-      var dataRows = rows.slice(3);
-      var updates = [];
-      dataRows.forEach(function(r) {
-        var dateStr = (r[wIdx] || '').replace(/"/g, '').trim();
-        if (!dateStr) return;
-        var cost = _parseGAdsNumber(r[cIdx]);
-        var wInfo = isoWeekLabel(dateStr);
-        if (!wInfo) return;
-        var p = parseWeekLabel(wInfo.label);
-        if (!p || p.year !== 2026) return;
-        updates.push({ wk: 'S' + p.week, cost: Math.round(cost * 100) / 100 });
-      });
-      if (!updates.length) {
-        logLines.push('⚠️ ' + file.name + ' : aucune semaine 2026 exploitable trouvée.');
-      } else {
-        await _upsertGAdsCost(updates);
-        logLines.push('✅ ' + file.name + ' : Coût GAds mis à jour pour ' + updates.length + ' semaine(s) (' + updates.map(function(u){return u.wk;}).join(', ') + ').');
-      }
-    } catch (e) {
-      logLines.push('❌ ' + file.name + ' : erreur — ' + e.message);
-    }
-  }
-  if (logEl) logEl.innerHTML = logLines.map(function(l) { return '<div>' + l + '</div>'; }).join('');
 }
 
 async function renderSiteBacklog() {
