@@ -11510,6 +11510,7 @@ async function renderSiteCOS() {
     '<div style="font-size:15px;font-weight:700;margin-bottom:16px">COS site web</div>'
     + '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">'
     + '<button id="sync-mollie-btn" onclick="syncMollieFees()" style="padding:7px 16px;border:.5px solid var(--pu);border-radius:8px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">🔄 Sync Mollie (frais PSP)</button>'
+    + '<button id="sync-paypal-btn" onclick="syncPaypalFees()" style="padding:7px 16px;border:.5px solid var(--pu);border-radius:8px;font-size:12px;background:var(--puBg);color:var(--pu);cursor:pointer;font-weight:600;font-family:inherit">🔄 Sync PayPal (frais)</button>'
     + '</div>'
     + '<div id="cos-site-container">' + _buildCosSiteTable(null) + '</div>';
 
@@ -11655,6 +11656,22 @@ async function syncMollieFees() {
     alert('Sync Mollie OK : ' + r.weeksUpdated + ' semaine(s) mise(s) à jour (' + r.settlements + ' règlements analysés).');
   } catch(e) {
     alert('Erreur lors de la synchronisation Mollie : ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = origText; }
+  }
+}
+
+async function syncPaypalFees() {
+  var btn = document.getElementById('sync-paypal-btn');
+  var origText = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Synchronisation PayPal...'; }
+  try {
+    var r = await fetch('/api/paypal?type=sync').then(function(r){ return r.json(); });
+    if (r.error) { alert('Erreur PayPal : ' + r.error); return; }
+    await loadData();
+    alert('Sync PayPal OK : ' + r.weeksUpdated + ' semaine(s) mise(s) à jour (' + r.transactions + ' transactions analysées).');
+  } catch(e) {
+    alert('Erreur lors de la synchronisation PayPal : ' + e.message);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = origText; }
   }
