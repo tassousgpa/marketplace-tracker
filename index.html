@@ -11875,6 +11875,46 @@ async function handleGAdsCsvImport(fileList) {
       var rows = await _readGAdsCsv(file);
       if (rows.length < 3) { logLines.push('❌ ' + file.name + ' : format non reconnu (trop peu de lignes).'); continue; }
 
+      var headerCheck = rows[2].map(function(h) { return h.trim().toLowerCase(); });
+      if (headerCheck.indexOf('week') !== -1 && headerCheck.indexOf('campaign') === -1) {
+        // ── Fichier "YTD by Week" : une ligne = une semaine (date = lundi de la semaine), coût total ──
+        var wIdx = headerCheck.indexOf('week');
+        var cIdx = headerCheck.indexOf('cost');
+        var dataRows2 = rows.slice(3);
+        var updates = [];
+        dataRows2.forEach(function(r) {
+          var dateStr = (r[wIdx] || '').replace(/"/g, '').trim();
+          if (!dateStr) return;
+          var cost = _parseGAdsNumber(r[cIdx]);
+          var wInfo = isoWeekLabel(dateStr);
+          if (!wInfo) return;
+          var p = parseWeekLabel(wInfo.label);
+          if (!p || p.year !== 2026) return;
+          updates.push({ wk: 'S' + p.week, cost: Math.round(cost * 100) / 100 });
+        });
+
+        if (!updates.length) {
+          logLines.push('⚠️ ' + file.name + ' : aucune semaine 2026 exploitable trouvée.');
+        } else {
+          var batchRows = updates.map(function(u) {
+            var existing = (STATE.cosManuel || []).find(function(r) { return r.semaine === u.wk; }) || {};
+            var row = Object.assign({ marketplace: 'site_internet', semaine: u.wk, gads: null, meta: null, pinterest: null, tiktok: null, agences: null, mollie_fees: null, paypal_fees: null, bnpl: null }, existing);
+            row.gads = u.cost;
+            delete row.id; delete row.created_at; delete row.updated_at;
+            return row;
+          });
+          await sbUpsert('cos_site_manuel', batchRows, 'marketplace,semaine');
+          batchRows.forEach(function(row) {
+            STATE.cosManuel = (STATE.cosManuel || []).filter(function(r) { return r.semaine !== row.semaine; });
+            STATE.cosManuel.push(row);
+          });
+          var cWk = document.getElementById('cos-site-container');
+          if (cWk) cWk.innerHTML = _buildCosSiteTable(_lastCosGa4Map);
+          logLines.push('✅ ' + file.name + ' : Coût GAds mis à jour pour ' + batchRows.length + ' semaine(s) (' + updates.map(function(u){return u.wk;}).join(', ') + ').');
+        }
+        continue;
+      }
+
       var range = _parseGAdsDateRange(rows[1][0]);
       if (!range) { logLines.push('❌ ' + file.name + ' : impossible de détecter la période (ligne 2).'); continue; }
 
