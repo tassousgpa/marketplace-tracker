@@ -11583,9 +11583,10 @@ function _buildCosSiteTable(ga4Map) {
     var pinterest = (m.pinterest !== undefined && m.pinterest !== null) ? m.pinterest : null;
     var tiktok = (m.tiktok !== undefined && m.tiktok !== null) ? m.tiktok : null;
     var agences = (m.agences !== undefined && m.agences !== null) ? m.agences : null;
-    var psp = (m.psp !== undefined && m.psp !== null) ? m.psp : null;
+    var mollie = (m.mollie_fees !== undefined && m.mollie_fees !== null) ? m.mollie_fees : null;
+    var paypal = (m.paypal_fees !== undefined && m.paypal_fees !== null) ? m.paypal_fees : null;
     var bnpl = (m.bnpl !== undefined && m.bnpl !== null) ? m.bnpl : null;
-    var totalCost = [gads, meta, pinterest, tiktok, agences, psp, bnpl].reduce(function(a, v) { return a + (v || 0); }, 0);
+    var totalCost = [gads, meta, pinterest, tiktok, agences, mollie, paypal, bnpl].reduce(function(a, v) { return a + (v || 0); }, 0);
     var cosBlended = ca > 0 ? (totalCost / ca * 100) : null;
     var isCur = (curWeekNum === w);
     var rowBg = isCur ? 'background:var(--acBg);' : (w % 2 ? 'background:var(--bg);' : '');
@@ -11604,7 +11605,8 @@ function _buildCosSiteTable(ga4Map) {
       + inputCell(wk, 'tiktok', tiktok)
       + pctCell(tiktok, ca)
       + inputCell(wk, 'agences', agences)
-      + inputCell(wk, 'psp', psp)
+      + inputCell(wk, 'mollie_fees', mollie)
+      + inputCell(wk, 'paypal_fees', paypal)
       + inputCell(wk, 'bnpl', bnpl)
       + '<td style="' + TD + ';font-weight:600">' + (cosBlended != null ? cosBlended.toFixed(1) + '%' : '—') + '</td>'
       + '</tr>';
@@ -11628,13 +11630,14 @@ function _buildCosSiteTable(ga4Map) {
     + '<th style="' + TH + '">Coût TikTok (€)</th>'
     + '<th style="' + TH + '">COS TikTok</th>'
     + '<th style="' + TH + '">Agences (€)</th>'
-    + '<th style="' + TH + '">Frais PSP Mollie+Paypal (€)</th>'
+    + '<th style="' + TH + '">Frais Mollie (€)</th>'
+    + '<th style="' + TH + '">Frais PayPal (€)</th>'
     + '<th style="' + TH + '">Frais BNPL Alma (€)</th>'
     + '<th style="' + TH + '">COS blended</th>'
     + '</tr></thead>'
     + '<tbody>' + rows + '</tbody>'
     + '</table></div></div>'
-    + '<div style="font-size:11px;color:var(--txS);margin-top:8px">Coût GAds, Meta, Pinterest, TikTok, Agences, Frais PSP (Mollie+Paypal) et Frais BNPL (Alma) : saisie manuelle hebdomadaire, enregistrée pour tous les utilisateurs. Le coût GAds sera alimenté automatiquement via import CSV (onglet "Analyse Perf. G. Ads") une fois disponible.</div>';
+    + '<div style="font-size:11px;color:var(--txS);margin-top:8px">Coût GAds, Meta, Pinterest, TikTok, Agences, Frais PayPal et Frais BNPL (Alma) : saisie manuelle hebdomadaire, enregistrée pour tous les utilisateurs. Frais Mollie alimentés via le bouton "Sync Mollie" (corrigeable manuellement). Le coût GAds sera alimenté automatiquement via import CSV (onglet "Analyse Perf. G. Ads") une fois disponible.</div>';
 }
 
 // Lance la synchronisation des frais Mollie (Settlements) -> cos_site_manuel.mollie_fees / psp
@@ -11662,7 +11665,7 @@ async function saveCosManuel(inputEl, wk, field) {
   inputEl.disabled = true;
   try {
     var existing = (STATE.cosManuel || []).find(function(r) { return r.semaine === wk; }) || {};
-    var row = Object.assign({ marketplace: 'site_internet', semaine: wk, gads: null, meta: null, pinterest: null, tiktok: null, agences: null, psp: null, bnpl: null }, existing);
+    var row = Object.assign({ marketplace: 'site_internet', semaine: wk, gads: null, meta: null, pinterest: null, tiktok: null, agences: null, mollie_fees: null, paypal_fees: null, bnpl: null }, existing);
     row[field] = num;
     delete row.id; delete row.created_at; delete row.updated_at;
     await sbUpsert('cos_site_manuel', [row], 'marketplace,semaine');

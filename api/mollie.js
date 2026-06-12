@@ -103,13 +103,11 @@ module.exports = async function handler(req, res) {
         const [yr, wk] = key.split('-');
         if (yr !== '2026') continue; // limité à l'année en cours, comme le reste de l'outil
         const ex = existingByWeek[wk] || {};
-        const paypalFees = ex.paypal_fees || 0;
         rows.push({
           marketplace: 'site_internet',
           semaine: wk,
           mollie_fees: Math.round(mollieFees * 100) / 100,
           paypal_fees: ex.paypal_fees ?? null,
-          psp: Math.round((mollieFees + paypalFees) * 100) / 100,
           gads: ex.gads ?? null,
           meta: ex.meta ?? null,
           pinterest: ex.pinterest ?? null,
