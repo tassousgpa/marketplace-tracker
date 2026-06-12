@@ -253,6 +253,9 @@ function applyMpTheme(mp) {
 // Cache des derniers timestamps de scraping par marketplace (pour l'indicateur)
 const MP_LAST_SCRAPING = {};
 
+// Dernière map de sessions GA4 chargée pour le tableau COS site web (semaine -> sessions)
+let _lastCosGa4Map = null;
+
 async function sb(table, params="") {
   const r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, {
     headers: {
@@ -458,7 +461,7 @@ const TAB_NAMES_LIGHT_SEA = ["Synthèse","Produits","Historique","Alertes","Audi
 const TAB_NAMES_MINIMAL     = ["Synthèse","Alertes","Audit","Opé. Commerciales","TDC"];
 const TAB_NAMES_MINIMAL_SEA = ["Synthèse","Alertes","Audit","Opé. Commerciales","TDC","SEA"];
 const LAREDOUTE_TABS = ["Synthèse","Positions","Concurrents","Alertes","Audit","Opé. Commerciales","TDC"];
-const TAB_NAMES_SITE = ["Synthèse", "Trafic SEO", "Positions SEO", "Trafic SEA", "Trafic Social", "Projets/Backlog"];
+const TAB_NAMES_SITE = ["Synthèse", "Trafic SEO", "Positions SEO", "Trafic SEA", "Trafic Social", "COS site web", "Analyse Perf. G. Ads", "Projets/Backlog"];
 const MINIMAL_MP = new Set(["leroymerlin"]);
 const SEA_MP = new Set(["cdiscount","but","maisonsdumonde","conforama","manomano"]);
 
@@ -919,18 +922,20 @@ async function loadData() {
   if (MARKETPLACE === "site_internet") {
     try {
       const yr = new Date().getFullYear();
-      const [revenueImports, revenueEntries, monthlyHistory, psSalesDaily, productSalesWeekly] = await Promise.all([
+      const [revenueImports, revenueEntries, monthlyHistory, psSalesDaily, productSalesWeekly, cosManuel] = await Promise.all([
         sb("revenue_imports", "marketplace=eq.site_internet&select=*&order=period_start.asc").catch(()=>[]),
         sb("revenue_entries", "marketplace=eq.site_internet&select=*&order=week_start_date.asc").catch(()=>[]),
         sb("revenue_monthly_history", "marketplace=eq.site_internet&select=year,month,revenue&order=year.asc,month.asc").catch(()=>[]),
         sb("ps_sales_daily", `marketplace=eq.site&sale_date=gte.${yr}-01-01&select=order_id,order_reference,product_ref,product_name,sale_date,quantity,revenue_ht,shipping_ht,revenue_ttc,shipping_ttc&order=sale_date.desc&limit=10000`).catch(()=>[]),
         sb("product_sales_weekly", "marketplace=eq.site&select=*&order=week_label.desc").catch(()=>[]),
+        sb("cos_site_manuel", "marketplace=eq.site_internet&select=*").catch(()=>[]),
       ]);
       STATE.revenueImports = revenueImports;
       STATE.revenueEntries = revenueEntries;
       STATE.monthlyHistory = monthlyHistory;
       STATE.psSalesDaily = psSalesDaily;
       STATE.productSalesWeekly = productSalesWeekly;
+      STATE.cosManuel = cosManuel;
       STATE.products = [];
       STATE.allProducts = [];
       STATE.activeOps = [];
@@ -941,6 +946,7 @@ async function loadData() {
       STATE.monthlyHistory = [];
       STATE.psSalesDaily = [];
       STATE.productSalesWeekly = [];
+      STATE.cosManuel = [];
       STATE.products = [];
       STATE.allProducts = [];
       STATE.activeOps = [];
@@ -1411,7 +1417,9 @@ function renderContent() {
       case 2: renderSitePositionsSEO(); break;
       case 3: renderSiteSEA(); break;
       case 4: renderSiteSocial(); break;
-      case 5: renderSiteBacklog(); break;
+      case 5: renderSiteCOS(); break;
+      case 6: renderSiteGAdsAnalyse(); break;
+      case 7: renderSiteBacklog(); break;
       default: el.innerHTML = '';
     }
     return;
@@ -11491,6 +11499,180 @@ function toggleNotionBlock(id) {
 
 function _normStatus(s) {
   return String(s || '').toLowerCase().normalize('NFD').replace(new RegExp('[\\u0300-\\u036f]','g'), '').trim();
+}
+
+// =============================================
+// COS SITE WEB
+// =============================================
+async function renderSiteCOS() {
+  const el = document.getElementById('content');
+  el.innerHTML =
+    '<div style="font-size:15px;font-weight:700;margin-bottom:16px">COS site web</div>'
+    + '<div id="cos-site-container">' + _buildCosSiteTable(null) + '</div>';
+
+  try {
+    const evol = await fetch('/api/ga4?type=total_evolution').then(r => r.json());
+    const ga4Map = {};
+    (evol.weeks || []).forEach(function(w) {
+      const yw = String(w.yearWeek || '');
+      if (yw.length >= 6) {
+        const yr = yw.slice(0, 4), wk = parseInt(yw.slice(4), 10);
+        ga4Map[yr + '-S' + wk] = w.sessions;
+      }
+    });
+    _lastCosGa4Map = ga4Map;
+    const c = document.getElementById('cos-site-container');
+    if (c) c.innerHTML = _buildCosSiteTable(ga4Map);
+  } catch (e) {
+    _lastCosGa4Map = {};
+    const c = document.getElementById('cos-site-container');
+    if (c) c.innerHTML = _buildCosSiteTable({});
+  }
+}
+
+function _buildCosSiteTable(ga4Map) {
+  var TH = 'padding:7px 10px;text-align:right;font-size:11px;font-weight:600;color:var(--txS);background:var(--bg);border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:2';
+  var THL = TH.replace('text-align:right', 'text-align:left');
+  var TD = 'padding:6px 10px;font-size:12px;border-bottom:1px solid var(--borderL);text-align:right;';
+  var YEAR = 2026;
+
+  // CA & nb commandes Prestashop par semaine
+  var weekCA = {}, weekOrders = {};
+  (STATE.psSalesDaily || []).forEach(function(s) {
+    var d = String(s.sale_date || '').slice(0, 10);
+    if (!d) return;
+    var wInfo = isoWeekLabel(d);
+    if (!wInfo) return;
+    var parsed = parseWeekLabel(wInfo.label);
+    if (!parsed || parsed.year !== YEAR) return;
+    var wk = 'S' + parsed.week;
+    weekCA[wk] = (weekCA[wk] || 0) + (parseFloat(s.revenue_ht) || 0) + (parseFloat(s.shipping_ht) || 0);
+    if (!weekOrders[wk]) weekOrders[wk] = new Set();
+    weekOrders[wk].add(s.order_reference || s.order_id);
+  });
+
+  // Saisies manuelles (Coût GAds, Meta, Pinterest, TikTok, Agences, PSP, BNPL)
+  var manual = {};
+  (STATE.cosManuel || []).forEach(function(r) { manual[r.semaine] = r; });
+
+  var nowWk = isoWeekLabel(new Date().toISOString().slice(0, 10));
+  var curParsed = nowWk ? parseWeekLabel(nowWk.label) : null;
+  var curWeekNum = curParsed ? curParsed.week : null;
+
+  function inputCell(wk, field, val) {
+    return '<td style="' + TD + '"><input type="number" step="0.01" value="' + (val !== null && val !== undefined ? val : '') + '" placeholder="—" onchange="saveCosManuel(this,\'' + wk + '\',\'' + field + '\')" style="width:72px;text-align:right;border:1px solid var(--border);border-radius:4px;padding:3px 5px;font-size:12px;background:var(--bgC);color:inherit;font-family:inherit"></td>';
+  }
+  function pctCell(cost, ca) {
+    if (cost === null || cost === undefined || !ca) return '<td style="' + TD + '">—</td>';
+    return '<td style="' + TD + '">' + (cost / ca * 100).toFixed(1) + '%</td>';
+  }
+
+  var rows = '';
+  for (var w = 1; w <= 52; w++) {
+    var wk = 'S' + w;
+    var ca = weekCA[wk] || 0;
+    var orders = weekOrders[wk] ? weekOrders[wk].size : 0;
+    var sessions = ga4Map ? (ga4Map[YEAR + '-' + wk] !== undefined ? ga4Map[YEAR + '-' + wk] : null) : null;
+    var cvr = (sessions && orders) ? (orders / sessions * 100) : null;
+    var m = manual[wk] || {};
+    var gads = (m.gads !== undefined && m.gads !== null) ? m.gads : null;
+    var meta = (m.meta !== undefined && m.meta !== null) ? m.meta : null;
+    var pinterest = (m.pinterest !== undefined && m.pinterest !== null) ? m.pinterest : null;
+    var tiktok = (m.tiktok !== undefined && m.tiktok !== null) ? m.tiktok : null;
+    var agences = (m.agences !== undefined && m.agences !== null) ? m.agences : null;
+    var psp = (m.psp !== undefined && m.psp !== null) ? m.psp : null;
+    var bnpl = (m.bnpl !== undefined && m.bnpl !== null) ? m.bnpl : null;
+    var totalCost = [gads, meta, pinterest, tiktok, agences, psp, bnpl].reduce(function(a, v) { return a + (v || 0); }, 0);
+    var cosBlended = ca > 0 ? (totalCost / ca * 100) : null;
+    var isCur = (curWeekNum === w);
+    var rowBg = isCur ? 'background:var(--acBg);' : (w % 2 ? 'background:var(--bg);' : '');
+    rows += '<tr style="' + rowBg + 'border-bottom:1px solid var(--borderL)">'
+      + '<td style="' + TD.replace('text-align:right', 'text-align:left') + ';font-weight:' + (isCur ? 700 : 500) + '">' + wk + (isCur ? ' ←' : '') + '</td>'
+      + '<td style="' + TD + '">' + (ca ? Math.round(ca).toLocaleString('fr-FR') + '€' : '—') + '</td>'
+      + '<td style="' + TD + '">' + (orders ? orders.toLocaleString('fr-FR') : '—') + '</td>'
+      + '<td style="' + TD + '">' + (sessions != null ? Math.round(sessions).toLocaleString('fr-FR') : (ga4Map ? '—' : '…')) + '</td>'
+      + '<td style="' + TD + '">' + (cvr != null ? cvr.toFixed(2) + '%' : '—') + '</td>'
+      + inputCell(wk, 'gads', gads)
+      + pctCell(gads, ca)
+      + inputCell(wk, 'meta', meta)
+      + pctCell(meta, ca)
+      + inputCell(wk, 'pinterest', pinterest)
+      + pctCell(pinterest, ca)
+      + inputCell(wk, 'tiktok', tiktok)
+      + pctCell(tiktok, ca)
+      + inputCell(wk, 'agences', agences)
+      + inputCell(wk, 'psp', psp)
+      + inputCell(wk, 'bnpl', bnpl)
+      + '<td style="' + TD + ';font-weight:600">' + (cosBlended != null ? cosBlended.toFixed(1) + '%' : '—') + '</td>'
+      + '</tr>';
+  }
+
+  return '<div class="card" style="padding:0;overflow:hidden">'
+    + '<div style="overflow-x:auto;max-height:70vh;overflow-y:auto">'
+    + '<table style="min-width:1750px;border-collapse:collapse;width:100%">'
+    + '<thead><tr>'
+    + '<th style="' + THL + '">Semaine</th>'
+    + '<th style="' + TH + '">CA PS (HT)</th>'
+    + '<th style="' + TH + '">Commandes</th>'
+    + '<th style="' + TH + '">Sessions GA4</th>'
+    + '<th style="' + TH + '">CVR</th>'
+    + '<th style="' + TH + '">Coût GAds (€)</th>'
+    + '<th style="' + TH + '">COS Google</th>'
+    + '<th style="' + TH + '">Coût Meta (€)</th>'
+    + '<th style="' + TH + '">COS Meta</th>'
+    + '<th style="' + TH + '">Coût Pinterest (€)</th>'
+    + '<th style="' + TH + '">COS Pinterest</th>'
+    + '<th style="' + TH + '">Coût TikTok (€)</th>'
+    + '<th style="' + TH + '">COS TikTok</th>'
+    + '<th style="' + TH + '">Agences (€)</th>'
+    + '<th style="' + TH + '">Frais PSP Mollie+Paypal (€)</th>'
+    + '<th style="' + TH + '">Frais BNPL Alma (€)</th>'
+    + '<th style="' + TH + '">COS blended</th>'
+    + '</tr></thead>'
+    + '<tbody>' + rows + '</tbody>'
+    + '</table></div></div>'
+    + '<div style="font-size:11px;color:var(--txS);margin-top:8px">Coût GAds, Meta, Pinterest, TikTok, Agences, Frais PSP (Mollie+Paypal) et Frais BNPL (Alma) : saisie manuelle hebdomadaire, enregistrée pour tous les utilisateurs. Le coût GAds sera alimenté automatiquement via import CSV (onglet "Analyse Perf. G. Ads") une fois disponible.</div>';
+}
+
+// Enregistre une saisie manuelle hebdomadaire COS site web (persisté Supabase, partagé entre tous les users)
+async function saveCosManuel(inputEl, wk, field) {
+  var raw = inputEl.value.trim().replace(',', '.');
+  var num = raw === '' ? null : parseFloat(raw);
+  if (raw !== '' && isNaN(num)) { alert('Valeur invalide'); return; }
+  inputEl.disabled = true;
+  try {
+    var existing = (STATE.cosManuel || []).find(function(r) { return r.semaine === wk; }) || {};
+    var row = Object.assign({ marketplace: 'site_internet', semaine: wk, gads: null, meta: null, pinterest: null, tiktok: null, agences: null, psp: null, bnpl: null }, existing);
+    row[field] = num;
+    delete row.id; delete row.created_at; delete row.updated_at;
+    await sbUpsert('cos_site_manuel', [row], 'marketplace,semaine');
+    STATE.cosManuel = (STATE.cosManuel || []).filter(function(r) { return r.semaine !== wk; });
+    STATE.cosManuel.push(row);
+    var c = document.getElementById('cos-site-container');
+    if (c) c.innerHTML = _buildCosSiteTable(_lastCosGa4Map);
+  } catch (e) {
+    alert("Erreur lors de l'enregistrement : " + e.message);
+  } finally {
+    inputEl.disabled = false;
+  }
+}
+
+// =============================================
+// ANALYSE PERF. GOOGLE ADS
+// =============================================
+async function renderSiteGAdsAnalyse() {
+  const el = document.getElementById('content');
+  el.innerHTML =
+    '<div style="font-size:15px;font-weight:700;margin-bottom:16px">Analyse Perf. G. Ads</div>'
+    + '<div class="card" style="padding:20px;font-size:13px;color:var(--txS);line-height:1.7">'
+    + 'Cet onglet affichera, une fois les fichiers CSV fournis par l\'équipe :'
+    + '<ul style="margin:10px 0 0 18px">'
+    + '<li><b>Budget Google Ads</b> par semaine et par type de campagne — alimente automatiquement la colonne "Coût GAds" de l\'onglet COS site web.</li>'
+    + '<li><b>Top 20 des termes de recherche</b> avec coûts, impressions, clics, conversions.</li>'
+    + '<li><b>Coût par produit</b> rapproché des ventes Prestashop (matching par référence), avec catégorisation automatique : Performers, Brûleurs de budget, Potentiel, Fantômes, Invisibles.</li>'
+    + '</ul>'
+    + '<div style="margin-top:12px">📩 En attente des 3 fichiers CSV.</div>'
+    + '</div>';
 }
 
 async function renderSiteBacklog() {
