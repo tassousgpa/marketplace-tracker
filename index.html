@@ -261,6 +261,7 @@ let _cosHiddenGroups = {};
 let _gadsSearchTerms = {};   // { "S23": [{term, cost, impr, clicks, conv}, ...] }
 let _gadsProductCost = {};   // { "S23": [{ref, title, cost, impr, clicks, conv}, ...] }
 let _gadsLastImports = [];   // log des derniers imports (nom fichier, type, semaine, statut)
+let _gadsCampaignData = {};  // { "S23": [{campaign, cost, impr, clicks, conv}, ...] }
 
 async function sb(table, params="") {
   const r = await fetch(`${SB_URL}/rest/v1/${table}?${params}`, {
@@ -943,10 +944,11 @@ async function loadData() {
       STATE.psSalesDaily = psSalesDaily;
       STATE.productSalesWeekly = productSalesWeekly;
       STATE.cosManuel = cosManuel;
-      _gadsSearchTerms = {}; _gadsProductCost = {};
+      _gadsSearchTerms = {}; _gadsProductCost = {}; _gadsCampaignData = {};
       (gadsAnalysisData || []).forEach(function(r) {
         if (r.type === 'search') _gadsSearchTerms[r.semaine] = r.data;
         else if (r.type === 'product') _gadsProductCost[r.semaine] = r.data;
+        else if (r.type === 'campaign') _gadsCampaignData[r.semaine] = r.data;
       });
       STATE.products = [];
       STATE.allProducts = [];
@@ -11871,7 +11873,8 @@ async function renderSiteGAdsAnalyse() {
 function _renderGAdsAnalysisContent() {
   var hasSearch = Object.keys(_gadsSearchTerms).length > 0;
   var hasProduct = Object.keys(_gadsProductCost).length > 0;
-  if (!hasSearch && !hasProduct) {
+  var hasCampaign = Object.keys(_gadsCampaignData).length > 0;
+  if (!hasSearch && !hasProduct && !hasCampaign) {
     return '<div class="card" style="padding:20px;font-size:13px;color:var(--txS);line-height:1.7">'
       + 'Importe un fichier "Search" (top termes de recherche) ou "ID Produit" (coût par produit) pour voir les analyses ici. '
       + 'L\'import d\'un fichier "Campagne" met automatiquement à jour la colonne "Coût GAds" de l\'onglet COS site web.'
@@ -11882,6 +11885,25 @@ function _renderGAdsAnalysisContent() {
   var THL = TH.replace('text-align:right', 'text-align:left');
   var TD = 'padding:6px 10px;font-size:12px;border-bottom:1px solid var(--borderL);text-align:right;';
   var TDL = TD.replace('text-align:right', 'text-align:left');
+
+  // ── Budget par campagne (semaine la plus récente importée) ──
+  if (hasCampaign) {
+    var cweeks = Object.keys(_gadsCampaignData).sort();
+    var clastWk = cweeks[cweeks.length - 1];
+    var campaigns = (_gadsCampaignData[clastWk] || []).slice().sort(function(a, b) { return b.cost - a.cost; });
+    var ctotCost = 0, ctotImpr = 0, ctotClicks = 0, ctotConv = 0;
+    campaigns.forEach(function(c) { ctotCost += c.cost; ctotImpr += c.impr; ctotClicks += c.clicks; ctotConv += c.conv; });
+    html += '<div class="card" style="padding:0;overflow:hidden;margin-bottom:16px">'
+      + '<div style="padding:10px 14px;font-size:13px;font-weight:600;border-bottom:1px solid var(--border)">Budget par campagne — ' + clastWk + '</div>'
+      + '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%">'
+      + '<thead><tr><th style="' + THL + '">Campagne</th><th style="' + TH + '">Coût (€)</th><th style="' + TH + '">Impr.</th><th style="' + TH + '">Clics</th><th style="' + TH + '">CTR</th><th style="' + TH + '">Conversions</th></tr></thead><tbody>';
+    campaigns.forEach(function(c) {
+      var cCtr = c.impr > 0 ? (c.clicks / c.impr * 100) : null;
+      html += '<tr><td style="' + TDL + '">' + (c.campaign || '—') + '</td><td style="' + TD + '">' + c.cost.toFixed(2) + '€</td><td style="' + TD + '">' + Math.round(c.impr).toLocaleString('fr-FR') + '</td><td style="' + TD + '">' + Math.round(c.clicks).toLocaleString('fr-FR') + '</td><td style="' + TD + '">' + (cCtr != null ? cCtr.toFixed(2) + '%' : '—') + '</td><td style="' + TD + '">' + c.conv.toFixed(2) + '</td></tr>';
+    });
+    html += '<tr><td style="' + TDL + ';font-weight:700">Total</td><td style="' + TD + ';font-weight:700">' + ctotCost.toFixed(2) + '€</td><td style="' + TD + ';font-weight:700">' + Math.round(ctotImpr).toLocaleString('fr-FR') + '</td><td style="' + TD + ';font-weight:700">' + Math.round(ctotClicks).toLocaleString('fr-FR') + '</td><td style="' + TD + ';font-weight:700">' + (ctotImpr > 0 ? (ctotClicks / ctotImpr * 100).toFixed(2) + '%' : '—') + '</td><td style="' + TD + ';font-weight:700">' + ctotConv.toFixed(2) + '</td></tr>';
+    html += '</tbody></table></div></div>';
+  }
 
   // ── Top 20 termes de recherche (semaine la plus récente importée), regroupés par variantes similaires ──
   if (hasSearch) {
@@ -12091,19 +12113,30 @@ async function gadsCampaignImport(fileList) {
       var wk = _gadsDetectWeek(rows, file, logLines);
       if (!wk) continue;
       var costIdx = header.indexOf('cost');
+      var campIdx = header.indexOf('campaign');
+      var imprIdx = header.findIndex(function(h) { return h.indexOf('impr') === 0; });
+      var clicksIdx = header.indexOf('clicks');
+      var convIdx = header.indexOf('conversions');
       var dataRows = rows.slice(3);
       var total = 0;
       dataRows.forEach(function(r) { total += _parseGAdsNumber(r[costIdx]); });
       total = Math.round(total * 100) / 100;
       if (wk.year !== 2026) { logLines.push('⚠️ ' + file.name + ' : semaine S' + wk.week + ' ' + wk.year + ' hors année 2026 — non enregistré.'); continue; }
       var wkLabel = 'S' + wk.week;
+      var campaigns = dataRows.map(function(r) {
+        return { campaign: (r[campIdx] || '').replace(/"/g, ''), cost: _parseGAdsNumber(r[costIdx]), impr: _parseGAdsNumber(r[imprIdx]), clicks: _parseGAdsNumber(r[clicksIdx]), conv: _parseGAdsNumber(r[convIdx]) };
+      }).filter(function(c) { return c.campaign; });
+      _gadsCampaignData = {}; _gadsCampaignData[wkLabel] = campaigns;
       await _upsertGAdsCost([{ wk: wkLabel, cost: total }]);
-      logLines.push('✅ ' + file.name + ' : Coût GAds ' + wkLabel + ' = ' + total.toFixed(2) + '€ enregistré (onglet COS site web).');
+      await sbUpsert('gads_analysis_data', [{ marketplace: 'site_internet', type: 'campaign', semaine: wkLabel, data: campaigns, updated_at: new Date().toISOString() }], 'marketplace,type');
+      logLines.push('✅ ' + file.name + ' : Coût GAds ' + wkLabel + ' = ' + total.toFixed(2) + '€ enregistré (onglet COS site web), ' + campaigns.length + ' campagnes enregistrées.');
     } catch (e) {
       logLines.push('❌ ' + file.name + ' : erreur — ' + e.message);
     }
   }
   if (logEl) logEl.innerHTML = logLines.map(function(l) { return '<div>' + l + '</div>'; }).join('');
+  var ac = document.getElementById('gads-analysis-container');
+  if (ac) ac.innerHTML = _renderGAdsAnalysisContent();
 }
 
 // ── Import "Search" : top termes de recherche ──
