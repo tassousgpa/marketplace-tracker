@@ -128,6 +128,64 @@ module.exports = async function handler(req, res) {
       });
     }
 
+    if (type === 'trends') {
+      // Search Console data lags ~3 days
+      const endD = new Date();
+      endD.setUTCDate(endD.getUTCDate() - 3);
+      const curStart = new Date(endD);
+      curStart.setUTCDate(curStart.getUTCDate() - 27); // 28 derniers jours
+      const prevEnd = new Date(curStart);
+      prevEnd.setUTCDate(prevEnd.getUTCDate() - 1);
+      const prevStart = new Date(prevEnd);
+      prevStart.setUTCDate(prevStart.getUTCDate() - 27); // 28 jours précédents
+      const fmt = d => d.toISOString().slice(0, 10);
+
+      async function fetchQueries(startDate, endDate) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 20000);
+        let r;
+        try {
+          r = await fetch(
+            `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`,
+            {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                startDate: fmt(startDate),
+                endDate: fmt(endDate),
+                dimensions: ['query'],
+                rowLimit: 1000,
+                startRow: 0,
+              }),
+              signal: controller.signal,
+            }
+          );
+        } catch (e) {
+          if (e.name === 'AbortError') throw new Error('Search Console timeout (20s) — la requête a pris trop de temps');
+          throw e;
+        } finally {
+          clearTimeout(timeout);
+        }
+        if (!r.ok) {
+          const t = await r.text();
+          throw new Error(`Search Console ${r.status}: ${t}`);
+        }
+        const data = await r.json();
+        return data.rows || [];
+      }
+
+      const [curRows, prevRows] = await Promise.all([
+        fetchQueries(curStart, endD),
+        fetchQueries(prevStart, prevEnd),
+      ]);
+
+      res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate=300');
+      return res.status(200).json({
+        current: { rows: curRows, period: { start: fmt(curStart), end: fmt(endD) } },
+        previous: { rows: prevRows, period: { start: fmt(prevStart), end: fmt(prevEnd) } },
+      });
+    }
+
     return res.status(400).json({ error: `Unknown type: ${type}` });
   } catch (e) {
     return res.status(500).json({ error: e.message });

@@ -10828,6 +10828,7 @@ async function renderSitePositionsSEO() {
           </label>
         </div>
       </div>
+      <div id="seo-trends-card"></div>
       <div id="seo-pos-table">
         <div style="text-align:center;padding:40px;color:var(--txT);font-size:13px">Chargement des données Search Console…</div>
       </div>
@@ -10855,6 +10856,119 @@ async function renderSitePositionsSEO() {
     if (data.period) recordSeoTop18Snapshot(data.rows || [], data.period);
   } catch(e) {
     document.getElementById('seo-pos-table').innerHTML = _seoErrorHtml('❌ ' + esc(String(e)));
+  }
+
+  renderSeoTrends();
+}
+
+// ─── Tendances de recherche mobilier (Search Console : période actuelle vs précédente) ───
+
+async function renderSeoTrends() {
+  const card = document.getElementById('seo-trends-card');
+  if (!card) return;
+  card.innerHTML = `<div class="card" style="margin-bottom:14px;padding:14px">
+    <div style="font-size:13px;font-weight:700;margin-bottom:4px">🔥 Tendances de recherche — Mobilier</div>
+    <div style="text-align:center;padding:16px;color:var(--txT);font-size:12px">Analyse des 28 derniers jours vs 28 jours précédents…</div>
+  </div>`;
+  try {
+    const data = await fetch('/api/searchconsole?type=trends').then(r => r.json());
+    if (data.error) { card.innerHTML = ''; return; }
+
+    // Agrège chaque période par mot-clé regroupé (espaces/accents/pluriel)
+    function aggregate(rows) {
+      const groups = {};
+      (rows || []).forEach(r => {
+        const q = r.keys?.[0] || '';
+        const key = _gadsKeywordKey(q);
+        if (!key) return;
+        if (!groups[key]) groups[key] = { labelCounts: {}, impressions: 0, clicks: 0, posWeighted: 0 };
+        const g = groups[key];
+        g.labelCounts[q] = (g.labelCounts[q] || 0) + 1;
+        g.impressions += r.impressions || 0;
+        g.clicks += r.clicks || 0;
+        g.posWeighted += (r.position || 0) * (r.impressions || 0);
+      });
+      return groups;
+    }
+
+    const cur = aggregate(data.current?.rows);
+    const prev = aggregate(data.previous?.rows);
+
+    // Ne garde que les requêtes liées au mobilier (filtre existant SEO_KW_FILTERS)
+    const MIN_IMPR = 10;
+    const items = [];
+    Object.keys(cur).forEach(key => {
+      const g = cur[key];
+      const label = Object.keys(g.labelCounts).sort((a,b) => (g.labelCounts[b]-g.labelCounts[a]) || (b.length-a.length))[0];
+      const ql = label.toLowerCase();
+      if (!SEO_KW_FILTERS.some(kw => ql.includes(kw))) return;
+      const curImpr = g.impressions;
+      const prevImpr = prev[key] ? prev[key].impressions : 0;
+      if (curImpr < MIN_IMPR) return;
+      const curPos = curImpr > 0 ? g.posWeighted / curImpr : null;
+      let growthPct;
+      if (prevImpr === 0) growthPct = curImpr >= MIN_IMPR ? 999 : 0; // nouvelle requête émergente
+      else growthPct = ((curImpr - prevImpr) / prevImpr) * 100;
+      items.push({ label, curImpr, prevImpr, curPos, growthPct, clicks: g.clicks, ctr: curImpr > 0 ? g.clicks / curImpr : 0 });
+    });
+
+    // Trie par croissance puis par volume
+    items.sort((a,b) => b.growthPct - a.growthPct || b.curImpr - a.curImpr);
+    const rising = items.filter(it => it.growthPct > 15 && it.curImpr >= MIN_IMPR).slice(0, 10);
+
+    if (!rising.length) {
+      card.innerHTML = `<div class="card" style="margin-bottom:14px;padding:14px">
+        <div style="font-size:13px;font-weight:700;margin-bottom:4px">🔥 Tendances de recherche — Mobilier</div>
+        <div style="font-size:12px;color:var(--txT)">Aucune tendance montante significative détectée sur les 28 derniers jours (vs 28 jours précédents).</div>
+      </div>`;
+      return;
+    }
+
+    // Génère une suggestion d'action concrète par règle simple (pas d'appel LLM)
+    function actionFor(it) {
+      const tracked = SEO_TOP18_NORM.includes(_normSeoTerm(it.label));
+      if (it.prevImpr === 0) {
+        return 'Nouvelle requête émergente — vérifier qu\'une page produit/catégorie y répond, sinon en créer une.';
+      }
+      if (it.curPos !== null && it.curPos > 20) {
+        return 'Forte hausse de la demande mais position faible — prioriser l\'optimisation SEO on-page (titre, meta, contenu) sur cette page.';
+      }
+      if (it.curPos !== null && it.curPos > 10) {
+        return 'Demande en hausse, page en page 2 — renforcer le maillage interne et le contenu pour gagner en page 1.';
+      }
+      if (tracked) {
+        return 'Mot-clé suivi en forte hausse — capitaliser : mise en avant en home/landing, stock et campagnes Ads à aligner.';
+      }
+      return 'Demande en hausse et bien positionné — capitaliser via mise en avant produit (home, push, Ads).';
+    }
+
+    const rows = rising.map(it => {
+      const growthLabel = it.prevImpr === 0 ? 'nouveau' : `+${Math.round(it.growthPct)}%`;
+      const posLabel = it.curPos != null ? (Math.round(it.curPos * 10) / 10) : '—';
+      return `<tr style="border-bottom:.5px solid var(--borderL)">
+        <td style="padding:7px 10px;font-weight:600">${esc(it.label)}</td>
+        <td style="padding:7px 10px;text-align:right;color:var(--gn);font-weight:700">${growthLabel}</td>
+        <td style="padding:7px 10px;text-align:right;color:var(--txS)">${_fmtNum(it.curImpr)} <span style="color:var(--txT);font-size:10px">(vs ${_fmtNum(it.prevImpr)})</span></td>
+        <td style="padding:7px 10px;text-align:right">${posLabel}</td>
+        <td style="padding:7px 10px;font-size:11px;color:var(--txT)">${actionFor(it)}</td>
+      </tr>`;
+    }).join('');
+
+    card.innerHTML = `<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden">
+      <div style="padding:10px 14px;font-size:13px;font-weight:700;border-bottom:1px solid var(--border)">🔥 Tendances de recherche — Mobilier (28j vs 28j précédents)</div>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:var(--bg)">
+          <th style="text-align:left;padding:7px 10px;font-size:11px;color:var(--txS);text-transform:uppercase">Requête</th>
+          <th style="text-align:right;padding:7px 10px;font-size:11px;color:var(--txS);text-transform:uppercase">Croissance</th>
+          <th style="text-align:right;padding:7px 10px;font-size:11px;color:var(--txS);text-transform:uppercase">Impressions</th>
+          <th style="text-align:right;padding:7px 10px;font-size:11px;color:var(--txS);text-transform:uppercase">Position</th>
+          <th style="text-align:left;padding:7px 10px;font-size:11px;color:var(--txS);text-transform:uppercase">Plan d'action</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+    </div>`;
+  } catch(e) {
+    card.innerHTML = '';
   }
 }
 
