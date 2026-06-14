@@ -10872,6 +10872,37 @@ function _filterSeoPositions() {
     return true;
   });
 
+  // Regroupe les requêtes proches (espaces, accents, pluriel/singulier) sous une même ligne,
+  // comme dans l'onglet Analyse Perf. G.Ads
+  const groups = {};
+  filtered.forEach(r => {
+    const q = r.keys?.[0] || '';
+    const key = _gadsKeywordKey(q);
+    if (!key) return;
+    if (!groups[key]) groups[key] = { labelCounts: {}, impressions: 0, clicks: 0, posWeighted: 0, isTracked: false };
+    const g = groups[key];
+    g.labelCounts[q] = (g.labelCounts[q] || 0) + 1;
+    g.impressions += r.impressions || 0;
+    g.clicks += r.clicks || 0;
+    g.posWeighted += (r.position || 0) * (r.impressions || 0);
+    if (SEO_TOP18_NORM.includes(_normSeoTerm(q))) { g.isTracked = true; g.trackedQuery = _normSeoTerm(q); }
+  });
+  filtered = Object.keys(groups).map(key => {
+    const g = groups[key];
+    const label = Object.keys(g.labelCounts).sort((a,b) => (g.labelCounts[b]-g.labelCounts[a]) || (b.length-a.length))[0];
+    const variants = Object.keys(g.labelCounts).length;
+    return {
+      keys: [label],
+      variants,
+      impressions: g.impressions,
+      clicks: g.clicks,
+      position: g.impressions > 0 ? g.posWeighted / g.impressions : 0,
+      ctr: g.impressions > 0 ? g.clicks / g.impressions : 0,
+      isTracked: g.isTracked,
+      trackedQuery: g.trackedQuery,
+    };
+  });
+
   // Trier par impressions desc
   filtered.sort((a,b) => (b.impressions||0) - (a.impressions||0));
 
@@ -10911,9 +10942,8 @@ function _filterSeoPositions() {
           ${filtered.slice(0, 200).map(r => {
             const q = r.keys?.[0] || '';
             const pos = Math.round((r.position || 99) * 10) / 10;
-            const isTracked = SEO_TOP18_NORM.includes(_normSeoTerm(q));
             return `<tr style="border-bottom:.5px solid var(--borderL)" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background=''">
-              <td style="padding:8px 12px;font-weight:500">${esc(q)}</td>
+              <td style="padding:8px 12px;font-weight:500">${esc(q)}${r.variants > 1 ? ` <span style="color:var(--txS);font-size:10px">(+${r.variants-1} variante${r.variants>2?'s':''})</span>` : ''}</td>
               <td style="padding:8px 12px;text-align:center">
                 <span style="display:inline-block;min-width:36px;padding:2px 8px;border-radius:99px;font-weight:700;font-size:12px;background:${posBg(pos)};color:${posColor(pos)}">${pos}</span>
               </td>
@@ -10921,7 +10951,7 @@ function _filterSeoPositions() {
               <td style="padding:8px 12px;text-align:right;font-weight:600">${_fmtNum(r.clicks)}</td>
               <td style="padding:8px 12px;text-align:right;color:var(--txT)">${_fmtPct(r.ctr)}</td>
               <td style="padding:8px 12px;text-align:center">
-                ${isTracked ? `<button onclick="showSeoKeywordEvolution('${esc(_normSeoTerm(q)).replace(/'/g,"\\'")}')" style="padding:4px 10px;border:.5px solid var(--border);background:#fff;border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--ac)">Voir →</button>` : ''}
+                ${r.isTracked ? `<button onclick="showSeoKeywordEvolution('${esc(r.trackedQuery).replace(/'/g,"\\'")}')" style="padding:4px 10px;border:.5px solid var(--border);background:#fff;border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--ac)">Voir →</button>` : ''}
               </td>
             </tr>`;
           }).join('')}
